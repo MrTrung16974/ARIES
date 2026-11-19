@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Mật khẩu dev-only trong realm seed và CI service container"
+paths = [
+  '''deploy/keycloak/realm-aiagent\.json''',
+  '''\.github/workflows/ci\.yml''',
+]

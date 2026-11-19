@@ -1,0 +1,8 @@
+{
+  "apiBaseUrl": "/api",
+  "oidc": {
+    "authority": "http://localhost:8080/realms/aiagent",
+    "clientId": "aiagent-web",
+    "scope": "openid profile email"
+  }
+}

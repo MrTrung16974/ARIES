@@ -1,0 +1,140 @@
+<div class="chat-layout">
+  <aside class="threads">
+    <p-button
+      label="Hội thoại mới"
+      icon="pi pi-plus"
+      size="small"
+      [fluid]="true"
+      (onClick)="newThread()"
+    />
+    <ul>
+      @for (t of threads(); track t.id) {
+      <li>
+        <button
+          type="button"
+          [class.active]="t.id === threadId()"
+          (click)="openThread(t)"
+        >
+          {{ t.title || 'Không tiêu đề' }}
+          <span class="muted small">v{{ t.agent_version }}</span>
+        </button>
+      </li>
+      } @empty {
+      <li class="muted small">Chưa có hội thoại.</li>
+      }
+    </ul>
+  </aside>
+
+  <section class="main">
+    <header>
+      <a routerLink="/agents" class="back"
+        ><i class="pi pi-arrow-left" aria-hidden="true"></i
+      ></a>
+      <strong>{{ agent()?.name }}</strong>
+      @if (versionLabel()) {
+      <p-tag
+        [value]="versionLabel()"
+        [severity]="isDraft() ? 'warn' : 'success'"
+      />
+      }
+      <span class="spacer"></span>
+      @if (agent()?.can_edit) {
+      <a [routerLink]="['/agents', id(), 'edit']">
+        <p-button
+          label="Sửa"
+          icon="pi pi-pencil"
+          size="small"
+          severity="secondary"
+          [text]="true"
+        />
+      </a>
+      }
+    </header>
+
+    <div class="messages" #scroller>
+      @if (items().length === 0) {
+      <div class="empty">
+        @if (agent()?.current?.spec?.opening_statement) {
+        <p>{{ agent()!.current.spec.opening_statement }}</p>
+        } @else {
+        <p class="muted">Bắt đầu trò chuyện với agent.</p>
+        }
+        <div class="starters">
+          @for (s of agent()?.current?.spec?.starter_prompts ?? []; track s) {
+          <button type="button" (click)="useStarter(s)">{{ s }}</button>
+          }
+        </div>
+      </div>
+      } @for (m of items(); track $index) {
+      <div class="msg" [class.user]="m.role === 'user'">
+        @if (m.tools.length) {
+        <div class="tools">
+          @for (t of m.tools; track t.id) {
+          <details>
+            <summary>
+              <i
+                [class]="t.status === 'running' ? 'pi pi-spin pi-spinner' : t.status === 'ok' ? 'pi pi-check' : 'pi pi-times'"
+                aria-hidden="true"
+              ></i>
+              <code>{{ t.name }}</code>
+              @if (t.durationMs !== undefined) {
+              <span class="muted small">{{ t.durationMs }} ms</span>
+              }
+            </summary>
+            <pre>{{ t.preview ?? '…' }}</pre>
+          </details>
+          }
+        </div>
+        } @if (m.thinking) {
+        <p class="thinking">{{ m.thinking }}</p>
+        } @if (m.text) {
+        <div class="bubble">{{ m.text }}</div>
+        } @else if (m.streaming && !m.tools.length) {
+        <div class="bubble muted">
+          <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+        </div>
+        } @if (m.error) {
+        <p-message severity="error" size="small">{{ m.error }}</p-message>
+        }
+      </div>
+      }
+    </div>
+
+    @if (error()) {
+    <p-message severity="error">{{ error()! }}</p-message>
+    }
+
+    <footer>
+      <textarea
+        pTextarea
+        rows="2"
+        [(ngModel)]="input"
+        (keydown)="onKey($event)"
+        placeholder="Nhập tin nhắn… (Enter để gửi, Shift+Enter xuống dòng)"
+        [disabled]="!agent()"
+      ></textarea>
+      @if (busy()) {
+      <p-button
+        icon="pi pi-stop"
+        severity="secondary"
+        aria-label="Dừng"
+        (onClick)="stop()"
+      />
+      } @else {
+      <p-button
+        icon="pi pi-send"
+        aria-label="Gửi"
+        [disabled]="!input.trim()"
+        (onClick)="send()"
+      />
+      }
+    </footer>
+    @if (usage(); as u) {
+    <p class="usage muted small">
+      {{ u.input_tokens + u.cache_read_input_tokens | number }} token vào ({{
+      u.cache_read_input_tokens | number }} từ cache) · {{ u.output_tokens |
+      number }} token ra · ≈ {{ u.cost_usd | number: '1.4-4' }} USD
+    </p>
+    }
+  </section>
+</div>

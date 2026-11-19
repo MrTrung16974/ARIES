@@ -1,0 +1,24 @@
+@import 'primeicons/primeicons.css';
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  background: var(--p-surface-50, #f8fafc);
+  color: var(--p-text-color, #0f172a);
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem;
+}

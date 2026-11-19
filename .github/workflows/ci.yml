@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: aiagent_owner
+          POSTGRES_PASSWORD: ci-owner-password
+          POSTGRES_DB: aiagent
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U aiagent_owner -d aiagent"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      AIAGENT_ENV: test
+      AIAGENT_MIGRATOR_DATABASE_URL: postgresql+asyncpg://aiagent_owner:ci-owner-password@localhost:5432/aiagent
+      AIAGENT_TEST_DATABASE_URL: postgresql+asyncpg://aiagent_app:ci-app-password@localhost:5432/aiagent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.5.11"
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - name: Lint & format
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy
+      - name: Architecture boundaries
+        run: uv run lint-imports
+      - name: Security (SAST + dependencies)
+        run: |
+          uv run bandit -c pyproject.toml -r src
+          uv run pip-audit --strict
+      - name: Prepare database roles
+        env:
+          PGPASSWORD: ci-owner-password
+        run: |
+          psql -h localhost -U aiagent_owner -d aiagent -v ON_ERROR_STOP=1 -c \
+            "CREATE ROLE aiagent_app LOGIN PASSWORD 'ci-app-password' NOSUPERUSER NOBYPASSRLS; GRANT CONNECT ON DATABASE aiagent TO aiagent_app;"
+      - name: Migrate
+        run: uv run alembic upgrade head
+      - name: Tests
+        run: uv run pytest --cov=aiagent --cov-report=term-missing
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx nx run-many -t lint test build
+      - run: npm audit --audit-level=high --omit=dev
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Filesystem & IaC scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          skip-dirs: frontend/node_modules

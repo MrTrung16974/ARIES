@@ -1,0 +1,84 @@
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.back {
+  color: var(--p-text-muted-color);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.muted {
+  color: var(--p-text-muted-color);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+p-message {
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) 1fr;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  max-width: 900px;
+
+  label {
+    font-weight: 500;
+  }
+
+  textarea,
+  input,
+  p-select,
+  p-inputnumber {
+    width: 100%;
+  }
+}
+
+.skill {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--p-content-border-color);
+
+  p {
+    margin: 0.25rem 0;
+  }
+}
+
+.tool {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0.25rem 0;
+}
+
+.json {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.note {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.25rem;
+  max-width: 600px;
+}

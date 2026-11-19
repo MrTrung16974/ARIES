@@ -1,0 +1,253 @@
+<div class="head">
+  <div>
+    <a routerLink="/agents" class="back"
+      ><i class="pi pi-arrow-left" aria-hidden="true"></i> Agent</a
+    >
+    <h1>{{ isNew() ? 'Tạo agent' : spec.name || 'Agent' }}</h1>
+    @if (agent(); as a) {
+    <p class="muted">
+      Version mới nhất v{{ a.latest_version }} · {{ a.published_version ? 'đang
+      chạy v' + a.published_version : 'chưa publish' }}
+    </p>
+    }
+  </div>
+  <div class="actions">
+    @if (agent(); as a) {
+    <a [routerLink]="['/agents', a.id, 'chat']" [queryParams]="{ draft: 1 }">
+      <p-button
+        label="Thử chat (nháp)"
+        icon="pi pi-comments"
+        severity="secondary"
+      />
+    </a>
+    <p-button
+      label="Publish v{{ a.latest_version }}"
+      icon="pi pi-send"
+      severity="success"
+      [disabled]="a.published_version === a.latest_version"
+      (onClick)="publish()"
+    />
+    }
+    <p-button
+      label="Lưu"
+      icon="pi pi-save"
+      [loading]="saving()"
+      (onClick)="save()"
+    />
+  </div>
+</div>
+
+@if (error()) {
+<p-message severity="error">{{ error()! }}</p-message>
+} @if (info()) {
+<p-message severity="success">{{ info()! }}</p-message>
+}
+
+<p-tabs [value]="tab()" (valueChange)="onTab($event)">
+  <p-tablist>
+    <p-tab value="overview">Tổng quan</p-tab>
+    <p-tab value="prompt">Prompt</p-tab>
+    <p-tab value="skills">Skill</p-tab>
+    <p-tab value="limits">Giới hạn</p-tab>
+    <p-tab value="json">JSON</p-tab>
+  </p-tablist>
+  <p-tabpanels>
+    <p-tabpanel value="overview">
+      <div class="form">
+        <label for="name">Tên agent</label>
+        <input pInputText id="name" [(ngModel)]="spec.name" maxlength="80" />
+
+        <label for="desc">Mô tả</label>
+        <textarea
+          pTextarea
+          id="desc"
+          rows="2"
+          [(ngModel)]="spec.description"
+          maxlength="1000"
+        ></textarea>
+
+        <label for="model">Model</label>
+        <p-select
+          inputId="model"
+          [options]="modelOptions()"
+          optionLabel="label"
+          optionValue="value"
+          optionDisabled="disabled"
+          [(ngModel)]="modelKey"
+        />
+
+        <label for="effort">Mức suy nghĩ (effort)</label>
+        <p-select
+          inputId="effort"
+          [options]="effortOptions"
+          optionLabel="label"
+          optionValue="value"
+          [(ngModel)]="spec.model.effort"
+        />
+
+        <label for="cls">Phân loại dữ liệu</label>
+        <p-select
+          inputId="cls"
+          [options]="classificationOptions"
+          optionLabel="label"
+          optionValue="value"
+          [(ngModel)]="spec.data_classification"
+        />
+      </div>
+    </p-tabpanel>
+
+    <p-tabpanel value="prompt">
+      <div class="form">
+        <label for="persona">Vai trò (persona)</label>
+        <textarea
+          pTextarea
+          id="persona"
+          rows="3"
+          [(ngModel)]="spec.persona"
+          placeholder="Bạn là trợ lý CSKH của công ty X…"
+        ></textarea>
+
+        <label for="instr">Hướng dẫn</label>
+        <textarea
+          pTextarea
+          id="instr"
+          rows="8"
+          [(ngModel)]="spec.instructions"
+          placeholder="Việc cần làm, thứ tự ưu tiên, khi nào dùng tool nào…"
+        ></textarea>
+
+        <label for="rules">Quy tắc (mỗi dòng một quy tắc)</label>
+        <textarea
+          pTextarea
+          id="rules"
+          rows="4"
+          [(ngModel)]="rulesText"
+          placeholder="Không hứa hoàn tiền"
+        ></textarea>
+
+        <label for="style">Phong cách trả lời</label>
+        <input
+          pInputText
+          id="style"
+          [(ngModel)]="spec.output_format.style"
+          placeholder="Ngắn gọn, lịch sự, dùng gạch đầu dòng khi liệt kê"
+        />
+
+        <label for="opening">Lời chào mở đầu</label>
+        <input pInputText id="opening" [(ngModel)]="spec.opening_statement" />
+
+        <label for="starters">Câu hỏi gợi ý (mỗi dòng một câu, tối đa 6)</label>
+        <textarea
+          pTextarea
+          id="starters"
+          rows="3"
+          [(ngModel)]="startersText"
+        ></textarea>
+      </div>
+    </p-tabpanel>
+
+    <p-tabpanel value="skills">
+      <p class="muted">
+        Tool có rủi ro "gửi ra ngoài" hoặc "phá hủy" luôn cần người duyệt. Cơ
+        chế duyệt có ở Phase 3, trước đó các tool này bị ẩn khỏi agent.
+      </p>
+      @for (s of skills(); track s.id) {
+      <div class="skill">
+        <p-checkbox
+          [binary]="true"
+          [inputId]="'skill-' + s.id"
+          [ngModel]="hasSkill(s.id)"
+          (ngModelChange)="toggleSkill(s.id, $event)"
+        />
+        <div>
+          <label [for]="'skill-' + s.id"
+            ><strong>{{ s.name }}</strong> <code>{{ s.id }}</code></label
+          >
+          <p class="muted">{{ s.description }}</p>
+          @for (t of s.tools; track t.name) {
+          <div class="tool">
+            <code>{{ t.name }}</code>
+            <p-tag
+              [value]="riskLabel[t.risk]"
+              [severity]="needsApproval(t.risk) ? 'warn' : 'info'"
+            />
+            @if (needsApproval(t.risk)) {
+            <span class="muted small">cần duyệt — đang ẩn</span>
+            }
+            <span class="muted small">{{ t.description }}</span>
+          </div>
+          }
+        </div>
+      </div>
+      } @empty {
+      <p>Chưa có skill nào được cài.</p>
+      }
+    </p-tabpanel>
+
+    <p-tabpanel value="limits">
+      <div class="form">
+        <label for="iter">Số vòng tool tối đa</label>
+        <p-inputnumber
+          inputId="iter"
+          [(ngModel)]="spec.limits.max_iterations"
+          [min]="1"
+          [max]="50"
+        />
+        <label for="timeout">Thời gian tối đa mỗi lần chạy (giây)</label>
+        <p-inputnumber
+          inputId="timeout"
+          [(ngModel)]="spec.limits.timeout_s"
+          [min]="5"
+          [max]="900"
+        />
+        <label for="tokens">Token tối đa mỗi lần chạy</label>
+        <p-inputnumber
+          inputId="tokens"
+          [(ngModel)]="spec.limits.max_tokens_per_run"
+          [min]="1000"
+          [max]="2000000"
+          [step]="10000"
+        />
+        <label for="maxtok">max_tokens mỗi lượt model</label>
+        <p-inputnumber
+          inputId="maxtok"
+          [(ngModel)]="spec.model.max_tokens"
+          [min]="1024"
+          [max]="128000"
+          [step]="1024"
+        />
+      </div>
+    </p-tabpanel>
+
+    <p-tabpanel value="json">
+      <p class="muted">
+        AgentSpec v2 — sửa trực tiếp rồi bấm Áp dụng. Server kiểm tra lại khi
+        Lưu.
+      </p>
+      <textarea
+        pTextarea
+        class="json"
+        rows="24"
+        [(ngModel)]="jsonText"
+        spellcheck="false"
+      ></textarea>
+      <p-button
+        label="Áp dụng JSON"
+        icon="pi pi-check"
+        severity="secondary"
+        (onClick)="applyJson()"
+      />
+    </p-tabpanel>
+  </p-tabpanels>
+</p-tabs>
+
+<div class="note">
+  <label for="note">Ghi chú thay đổi (tùy chọn)</label>
+  <input
+    pInputText
+    id="note"
+    [(ngModel)]="note"
+    maxlength="500"
+    placeholder="Ví dụ: thêm quy tắc không hứa hoàn tiền"
+  />
+</div>

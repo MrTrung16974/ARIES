@@ -1,0 +1,224 @@
+{
+  "realm": "aiagent",
+  "displayName": "AI Agent Platform",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "waitIncrementSeconds": 60,
+  "passwordPolicy": "length(12) and notUsername and notEmail and passwordHistory(3)",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "eventsEnabled": true,
+  "eventsExpiration": 2592000,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "owner",
+        "description": "Toàn quyền tenant"
+      },
+      {
+        "name": "admin",
+        "description": "Quản lý người dùng, connector, channel"
+      },
+      {
+        "name": "builder",
+        "description": "Tạo và sửa agent, knowledge base, skill"
+      },
+      {
+        "name": "user",
+        "description": "Chat với agent được chia sẻ"
+      },
+      {
+        "name": "viewer",
+        "description": "Chỉ xem"
+      },
+      {
+        "name": "auditor",
+        "description": "Đọc audit log"
+      },
+      {
+        "name": "offline_access",
+        "description": "Truy cập offline (refresh token)"
+      },
+      {
+        "name": "uma_authorization",
+        "description": "UMA"
+      },
+      {
+        "name": "default-roles-aiagent",
+        "description": "Vai trò mặc định cho mọi người dùng",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "user",
+            "offline_access",
+            "uma_authorization"
+          ],
+          "client": {
+            "account": [
+              "view-profile",
+              "manage-account"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "defaultRole": {
+    "name": "default-roles-aiagent",
+    "composite": true
+  },
+  "clients": [
+    {
+      "clientId": "aiagent-api",
+      "name": "AI Agent API (audience)",
+      "enabled": true,
+      "bearerOnly": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "aiagent-web",
+      "name": "AI Agent Web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "rootUrl": "http://localhost",
+      "redirectUris": [
+        "http://localhost/*",
+        "http://localhost:4200/*"
+      ],
+      "webOrigins": [
+        "http://localhost",
+        "http://localhost:4200"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost/*##http://localhost:4200/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-aiagent-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "aiagent-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "tenant-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "tenant_id",
+            "claim.value": "default",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "owner.dev",
+      "email": "owner.dev@aiagent.local",
+      "emailVerified": true,
+      "firstName": "Owner",
+      "lastName": "Dev",
+      "enabled": true,
+      "realmRoles": [
+        "owner",
+        "default-roles-aiagent"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev-Owner-Only-2026!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "builder.dev",
+      "email": "builder.dev@aiagent.local",
+      "emailVerified": true,
+      "firstName": "Builder",
+      "lastName": "Dev",
+      "enabled": true,
+      "realmRoles": [
+        "builder",
+        "default-roles-aiagent"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev-Builder-Only-2026!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "user.dev",
+      "email": "user.dev@aiagent.local",
+      "emailVerified": true,
+      "firstName": "User",
+      "lastName": "Dev",
+      "enabled": true,
+      "realmRoles": [
+        "default-roles-aiagent"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev-User-Only-2026!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "auditor.dev",
+      "email": "auditor.dev@aiagent.local",
+      "emailVerified": true,
+      "firstName": "Auditor",
+      "lastName": "Dev",
+      "enabled": true,
+      "realmRoles": [
+        "auditor",
+        "default-roles-aiagent"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Dev-Auditor-Only-2026!",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+[project]
+name = "aiagent"
+version = "0.1.0"
+description = "AI Agent Platform - backend (FastAPI + LangGraph)"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "sqlalchemy[asyncio]>=2.0.36",
+  "asyncpg>=0.30",
+  "alembic>=1.14",
+  "pyjwt[crypto]>=2.10",
+  "httpx>=0.28",
+  "redis>=5.2",
+  "arq>=0.26",
+  "structlog>=24.4",
+  "anthropic>=1.0",
+  "langgraph>=1.0",
+  "jsonschema>=4.23",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6.0",
+  "asgi-lifespan>=2.1",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "import-linter>=2.1",
+  "bandit>=1.8",
+  "pip-audit>=2.7",
+  "types-jsonschema>=4.26.0.20261006",
+]
+
+# Plugin built-in: đăng ký qua entry points, giống hệt plugin bên thứ ba.
+[project.entry-points."aiagent.skills"]
+echo = "aiagent_plugins.skill_echo:EchoSkill"
+clock = "aiagent_plugins.skill_clock:ClockSkill"
+
+[project.scripts]
+aiagent-worker = "aiagent.workers.main:run"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aiagent", "src/aiagent_plugins"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "S", "ASYNC", "RUF", "SIM", "PTH", "T20"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # cho phép tiếng Việt trong chuỗi/comment
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"migrations/**" = ["S608"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["aiagent", "aiagent_plugins"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["arq.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["integration: cần Postgres thật (đặt AIAGENT_TEST_DATABASE_URL)"]
+addopts = "-ra"
+
+# ---------------------------------------------------------------- bandit
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+
+# ---------------------------------------------------------------- import-linter
+# Giữ ranh giới kiến trúc: xem docs/architecture.md và ADR-0001/0002/0003.
+[tool.importlinter]
+root_packages = ["aiagent", "aiagent_plugins"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "plugin_sdk chỉ phụ thuộc shared_kernel"
+type = "forbidden"
+source_modules = ["aiagent.plugin_sdk"]
+forbidden_modules = ["aiagent.modules", "aiagent.bootstrap", "aiagent.adapters", "aiagent.api", "aiagent.workers"]
+
+[[tool.importlinter.contracts]]
+name = "Plugin chỉ được dùng plugin_sdk"
+type = "forbidden"
+source_modules = ["aiagent_plugins"]
+forbidden_modules = ["aiagent.modules", "aiagent.bootstrap", "aiagent.adapters", "aiagent.api", "aiagent.workers"]
+
+[[tool.importlinter.contracts]]
+name = "Domain không phụ thuộc framework/hạ tầng"
+type = "forbidden"
+source_modules = [
+  "aiagent.shared_kernel",
+  "aiagent.modules.identity.domain",
+  "aiagent.modules.audit.domain",
+  "aiagent.modules.agents.domain",
+  "aiagent.modules.conversations.domain",
+  "aiagent.modules.runtime.domain",
+]
+forbidden_modules = [
+  "fastapi", "sqlalchemy", "httpx", "redis", "arq", "langgraph", "anthropic",
+  "aiagent.adapters", "aiagent.bootstrap",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module identity"
+type = "layers"
+layers = [
+  "aiagent.modules.identity.api",
+  "aiagent.modules.identity.application | aiagent.modules.identity.infrastructure",
+  "aiagent.modules.identity.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module audit"
+type = "layers"
+layers = [
+  "aiagent.modules.audit.api",
+  "aiagent.modules.audit.application | aiagent.modules.audit.infrastructure",
+  "aiagent.modules.audit.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Module identity và audit độc lập ở tầng domain"
+type = "independence"
+modules = ["aiagent.modules.identity.domain", "aiagent.modules.audit.domain"]
+
+[[tool.importlinter.contracts]]
+name = "LangGraph và Anthropic SDK chỉ nằm trong runtime.infrastructure (ADR-0002, ADR-0014)"
+type = "forbidden"
+source_modules = [
+  "aiagent.shared_kernel", "aiagent.plugin_sdk", "aiagent.api",
+  "aiagent.modules.identity", "aiagent.modules.audit", "aiagent.modules.agents",
+  "aiagent.modules.conversations",
+  "aiagent.modules.runtime.domain", "aiagent.modules.runtime.application",
+  "aiagent.modules.runtime.api",
+]
+forbidden_modules = ["langgraph", "anthropic"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module agents"
+type = "layers"
+layers = [
+  "aiagent.modules.agents.api",
+  "aiagent.modules.agents.application | aiagent.modules.agents.infrastructure",
+  "aiagent.modules.agents.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module conversations"
+type = "layers"
+layers = [
+  "aiagent.modules.conversations.application | aiagent.modules.conversations.infrastructure",
+  "aiagent.modules.conversations.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module runtime"
+type = "layers"
+layers = [
+  "aiagent.modules.runtime.api",
+  "aiagent.modules.runtime.application | aiagent.modules.runtime.infrastructure",
+  "aiagent.modules.runtime.domain",
+]
