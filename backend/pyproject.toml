@@ -1,7 +1,7 @@
 [project]
 name = "aiagent"
 version = "0.1.0"
-description = "AI Agent Platform - backend (FastAPI + LangGraph)"
+description = "ARIES - AI agent platform backend (FastAPI + LangGraph)"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

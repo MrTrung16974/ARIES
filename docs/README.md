@@ -1,4 +1,4 @@
-# AI Agent Platform — Tài liệu thiết kế
+# ARIES — Tài liệu thiết kế
 
 Nền tảng xây dựng và vận hành nhiều AI agent (LangGraph) có RAG, Skill/Connector, cấu hình qua web, triển khai **on-premise**.
 
@@ -38,6 +38,6 @@ Nền tảng xây dựng và vận hành nhiều AI agent (LangGraph) có RAG, S
 |---|---|---|
 | Model tự host | Chưa chọn — khi có GPU, đánh giá model mở hỗ trợ tool calling tốt qua vLLM | Adapter OpenAI-compatible làm sẵn từ Phase 1 |
 | Multi-tenant | Một tổ chức, nhưng **có `tenant_id` + RLS ngay từ đầu** | Rẻ khi làm sớm, rất đắt khi thêm sau |
-| UI kit | **PrimeNG** | Có sẵn bảng, upload, tree, phù hợp trang quản trị |
+| UI kit | **Angular Material 3** (MIT) + icon Material Symbols (Apache-2.0) tự host | Xem ADR-0015 — PrimeNG đã chuyển sang giấy phép thương mại |
 | Embedding | `bge-m3` self-host **trên CPU** (đa ngôn ngữ, tốt cho tiếng Việt) | Đủ cho < 50 người; ingest chậm hơn, chuyển GPU khi có |
 | Web search | **SearXNG** tự host + adapter Tavily/Brave tùy chọn | Phù hợp on-prem, không cần key bên ngoài |

@@ -1,6 +1,6 @@
 {
   "realm": "aiagent",
-  "displayName": "AI Agent Platform",
+  "displayName": "ARIES",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
@@ -84,7 +84,7 @@
   "clients": [
     {
       "clientId": "aiagent-api",
-      "name": "AI Agent API (audience)",
+      "name": "ARIES API (audience)",
       "enabled": true,
       "bearerOnly": true,
       "publicClient": false,
@@ -94,7 +94,7 @@
     },
     {
       "clientId": "aiagent-web",
-      "name": "AI Agent Web",
+      "name": "ARIES Web",
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,

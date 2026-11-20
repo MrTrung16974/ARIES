@@ -6,13 +6,15 @@
 
 /* Thanh trên cùng tông "đêm sao" giống logo ARIES */
 .topbar {
-  --aries-night: #0b0614;
-  --aries-glow: #ff3d8b;
   display: flex;
   align-items: center;
   gap: 1.5rem;
   padding: 0.45rem 1rem;
-  background: radial-gradient(120% 220% at 0% 0%, #2a0a24 0%, var(--aries-night) 55%);
+  background: radial-gradient(
+    120% 220% at 0% 0%,
+    #2a0a24 0%,
+    var(--aries-night) 55%
+  );
   border-bottom: 1px solid rgba(255, 61, 139, 0.25);
   color: #f5e9f1;
   flex-wrap: wrap;
@@ -47,7 +49,7 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.4rem 0.75rem;
-    border-radius: var(--p-border-radius-md);
+    border-radius: var(--app-radius-md);
     color: rgba(245, 233, 241, 0.72);
     text-decoration: none;
 
@@ -73,8 +75,8 @@
     font-weight: 500;
   }
 
-  ::ng-deep .p-button.p-button-text {
-    color: rgba(245, 233, 241, 0.8);
+  .logout {
+    color: rgba(245, 233, 241, 0.85);
   }
 }
 
@@ -90,7 +92,7 @@
 .kbd {
   border: 1px solid rgba(255, 61, 139, 0.4);
   background: rgba(255, 255, 255, 0.04);
-  border-radius: var(--p-border-radius-md);
+  border-radius: var(--app-radius-md);
   padding: 0.25rem 0.6rem;
   font: inherit;
   font-size: 0.8rem;
@@ -101,4 +103,10 @@
     border-color: var(--aries-glow);
     color: #fff;
   }
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
 }

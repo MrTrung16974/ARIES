@@ -1,4 +1,4 @@
-# Backend — AI Agent Platform
+# Backend — ARIES
 
 FastAPI + LangGraph, kiến trúc modular monolith / hexagonal. Xem [docs/architecture.md](../docs/architecture.md).
 

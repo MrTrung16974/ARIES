@@ -1,10 +1,14 @@
-# AI Agent Platform
+<p align="center">
+  <img src="frontend/apps/web/public/assets/brand/aries-icon-192.png" alt="ARIES" width="120" />
+</p>
 
-Nền tảng xây dựng và vận hành nhiều AI agent (LangGraph) có RAG, Skill/Connector, cấu hình qua web, triển khai on-premise.
+# ARIES
+
+**ARIES** — nền tảng xây dựng và vận hành nhiều AI agent (LangGraph) có RAG, Skill/Connector, cấu hình qua web, triển khai on-premise.
 
 - Thiết kế: [docs/](docs/README.md) — kiến trúc, bảo mật, tích hợp, triển khai, roadmap, ADR.
 - Backend: [backend/](backend/README.md) — Python 3.12, FastAPI, (LangGraph từ Phase 1).
-- Frontend: [frontend/](frontend/) — Nx + Angular, PrimeNG, đăng nhập OIDC (Keycloak).
+- Frontend: [frontend/](frontend/) — Nx + Angular, Angular Material (MIT), đăng nhập OIDC (Keycloak).
 - Hạ tầng: [deploy/](deploy/) — Docker Compose (Traefik, Postgres+pgvector, Redis, Keycloak, OpenBao).
 
 ## Chạy toàn bộ bằng Docker
@@ -48,3 +52,12 @@ docker compose -f deploy/docker-compose.yml up -d api worker
 
 Biến cần đặt trong `deploy/.env`: `ANTHROPIC_API_KEY=...`. Model cho phép: `claude-opus-5-5` (mặc định),
 `claude-sonnet-5-5`, `claude-haiku-5-5`.
+
+## Thương hiệu
+
+- Tên sản phẩm: **ARIES**. Logo: đầu cừu phát sáng hồng neon trên nền đêm sao.
+- Tài sản: `frontend/apps/web/public/assets/brand/` (`aries-logo.webp`, `aries-icon-192.png`,
+  `aries-icon-512.png`, `aries-mark-64.png`) và `frontend/apps/web/public/favicon.ico`.
+- Màu: hồng neon (`#ff3d8b`, palette `rose` của Angular Material 3) trên nền đêm `#0b0614`.
+- Định danh kỹ thuật nội bộ giữ nguyên `aiagent` (package Python, role DB, realm Keycloak, tên
+  compose) để không ảnh hưởng migration và cấu hình đã triển khai.

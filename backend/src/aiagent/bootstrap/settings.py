@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AIAGENT_", env_file=".env", extra="ignore")
 
     env: Literal["dev", "test", "staging", "prod"] = "dev"
-    app_name: str = "AI Agent Platform"
+    app_name: str = "ARIES"
     log_level: str = "INFO"
     log_json: bool = True
 
