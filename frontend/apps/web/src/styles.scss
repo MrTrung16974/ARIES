@@ -452,6 +452,90 @@ mat-icon.sm {
   font-size: 0.83rem;
 }
 
+/* Thẻ duyệt thao tác (HITL) và thẻ Master giao việc dùng chung */
+.approvals,
+.delegations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+}
+
+.approval-card,
+.delegation {
+  width: 100%;
+  border: 1px solid var(--app-border);
+  border-left: 4px solid var(--app-primary);
+  border-radius: var(--app-radius-md);
+  padding: 0.6rem 0.8rem;
+  background: var(--app-surface);
+}
+
+.approval-card {
+  border-left-color: #d97706;
+  &[data-status='approved'] {
+    border-left-color: #16a34a;
+  }
+  &[data-status='denied'],
+  &[data-status='expired'] {
+    border-left-color: var(--app-muted);
+    opacity: 0.85;
+  }
+  .approval-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+  p {
+    margin: 0.3rem 0;
+  }
+  .args {
+    margin: 0.3rem 0;
+    padding: 0.45rem;
+    max-height: 11rem;
+    overflow: auto;
+    font-size: 0.78rem;
+    background: var(--app-surface-2);
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+}
+
+.delegation {
+  &[data-status='completed'] {
+    border-left-color: #16a34a;
+  }
+  &[data-status='awaiting_approval'] {
+    border-left-color: #d97706;
+  }
+  &[data-status='failed'] {
+    border-left-color: var(--app-muted);
+  }
+  .delegation-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .task {
+    margin: 0.25rem 0 0;
+    color: var(--app-muted);
+    white-space: pre-wrap;
+  }
+  .delegation-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+    font-size: 0.78rem;
+  }
+}
+
 .flow-chip {
   display: inline-flex;
   align-items: center;

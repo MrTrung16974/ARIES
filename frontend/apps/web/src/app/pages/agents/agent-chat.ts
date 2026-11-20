@@ -150,6 +150,7 @@ export function toChatItems(messages: StoredMessage[]): ChatItem[] {
 export class AgentChat implements OnInit, OnDestroy {
   readonly id = input.required<string>();
   readonly draft = input<string>();
+  readonly q = input<string>();
 
   private readonly api = inject(AgentsApi);
   private readonly stream = inject(ChatStreamService);
@@ -182,7 +183,14 @@ export class AgentChat implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.api.get(this.id()).subscribe({
-      next: (a) => this.agent.set(a),
+      next: (a) => {
+        this.agent.set(a);
+        const first = this.q()?.trim();
+        if (first) {
+          this.inputCtrl.setValue(first);
+          void this.send();
+        }
+      },
       error: () => this.error.set('Không tải được agent.'),
     });
     this.loadThreads();
