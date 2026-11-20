@@ -55,6 +55,12 @@ export class Shell implements OnInit {
         { label: 'Kết nối', icon: 'cable', link: '/connections', visible: true },
         { label: 'Duyệt', icon: 'gavel', link: '/approvals', visible: true },
         {
+          label: 'MCP',
+          icon: 'hub',
+          link: '/mcp',
+          visible: this.session.hasAnyRole('admin'),
+        },
+        {
           label: 'Plugin',
           icon: 'deployed_code',
           link: '/plugins',

@@ -77,6 +77,10 @@ class PluginManifest(BaseModel):
     api_version: int = Field(ge=1)
     config_schema: dict[str, Any] = Field(default_factory=dict)
     secrets: tuple[str, ...] = ()
+    # Connector dùng OAuth (ADR-0018): broker lấy/làm mới access token, plugin chỉ nhận
+    # `secrets["access_token"]` (không bao giờ thấy refresh token).
+    oauth_provider: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{1,30}$")
+    oauth_scopes: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
     tools: tuple[ToolSpec, ...] = ()
     ui_hints: dict[str, Any] = Field(default_factory=dict)

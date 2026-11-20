@@ -1,4 +1,5 @@
 import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -13,6 +14,8 @@ import {
   ConnectionsApi,
   ConnectorInfo,
   JsonSchema,
+  OAuthApi,
+  OAuthProviderInfo,
   SessionService,
 } from '@aiagent/core';
 import { Notice, Tag } from '@aiagent/ui';
@@ -116,6 +119,9 @@ function initialValues(
     @if (error()) {
       <ui-notice severity="error">{{ error() }}</ui-notice>
     }
+    @if (info()) {
+      <ui-notice severity="success">{{ info() }}</ui-notice>
+    }
 
     @if (editing(); as e) {
       <form class="panel" (ngSubmit)="save()">
@@ -153,6 +159,29 @@ function initialValues(
 
         @if (connector(); as c) {
           <p class="muted small">{{ c.description }}</p>
+          @if (c.oauth_provider && !e.id) {
+            <div class="oauth-box">
+              @if (providerName(c.oauth_provider); as pn) {
+                <p class="small">
+                  Kết nối bằng tài khoản {{ pn }} (OAuth). Bạn sẽ được chuyển sang trang đăng nhập
+                  của {{ pn }}; ARIES chỉ lưu token trong kho bí mật, không thấy mật khẩu.
+                </p>
+                <button
+                  mat-flat-button
+                  class="btn-aries"
+                  type="button"
+                  [disabled]="saving() || !e.name.trim()"
+                  (click)="startOAuth()"
+                >
+                  <mat-icon svgIcon="login" /> Kết nối với {{ pn }}
+                </button>
+              } @else {
+                <ui-notice severity="warn" [compact]="true">
+                  Chưa cấu hình nhà cung cấp OAuth “{{ c.oauth_provider }}” — liên hệ quản trị.
+                </ui-notice>
+              }
+            </div>
+          }
           <div class="grid">
             @for (f of fields(); track f.key) {
               @switch (f.kind) {
@@ -210,9 +239,11 @@ function initialValues(
         }
 
         <div class="actions">
-          <button mat-flat-button class="btn-aries" type="submit" [disabled]="saving()">
-            <mat-icon svgIcon="save" /> Lưu
-          </button>
+          @if (!(connector()?.oauth_provider && !e.id)) {
+            <button mat-flat-button class="btn-aries" type="submit" [disabled]="saving()">
+              <mat-icon svgIcon="save" /> Lưu
+            </button>
+          }
           <button mat-stroked-button type="button" (click)="editing.set(null)">Hủy</button>
         </div>
       </form>
@@ -294,6 +325,7 @@ function initialValues(
       gap: 0.2rem 0.9rem;
       align-items: center;
     }
+    .oauth-box { padding: 0.7rem 0.9rem; border: 1px dashed var(--app-border); border-radius: var(--app-radius-md); margin-bottom: 0.6rem; }
     .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
     .conn-grid {
       display: grid;
@@ -314,6 +346,11 @@ function initialValues(
 })
 export class Connections implements OnInit {
   private readonly api = inject(ConnectionsApi);
+  private readonly oauthApi = inject(OAuthApi);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  protected readonly providers = signal<OAuthProviderInfo[]>([]);
+  protected readonly info = signal<string | null>(null);
   private readonly session = inject(SessionService);
 
   protected readonly connectors = signal<ConnectorInfo[]>([]);
@@ -347,7 +384,28 @@ export class Connections implements OnInit {
   });
 
   ngOnInit(): void {
-    this.api.connectors().subscribe((c) => this.connectors.set(c));
+    const q = this.route.snapshot.queryParamMap;
+    if (q.get('oauth') === 'ok') this.info.set('Đã kết nối tài khoản thành công.');
+    if (q.get('oauth_error')) this.error.set(q.get('oauth_error'));
+    const wanted = q.get('connect');
+    if (q.keys.length) {
+      void this.router.navigate([], { queryParams: {}, replaceUrl: true });
+    }
+    this.oauthApi.providers().subscribe((p) => this.providers.set(p));
+    this.api.connectors().subscribe((c) => {
+      this.connectors.set(c);
+      // /connect <provider>: mở sẵn form với connector dùng nhà cung cấp đó.
+      const target = wanted ? c.find((x) => x.oauth_provider === wanted) : undefined;
+      // Không chặn theo vai trò ở đây (hồ sơ có thể chưa tải xong); API vẫn kiểm quyền.
+      if (target) {
+        this.startCreate();
+        this.pickConnector(target.id);
+        const e = this.editing();
+        if (e) this.editing.set({ ...e, connectorId: target.id, name: target.name });
+      } else if (wanted) {
+        this.error.set(`Không có connector dùng nhà cung cấp “${wanted}”.`);
+      }
+    });
     this.reload();
   }
 
@@ -360,6 +418,24 @@ export class Connections implements OnInit {
       .filter(([, v]) => v !== '' && v !== null && !(Array.isArray(v) && !v.length))
       .slice(0, 6)
       .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : String(v)}`);
+  }
+
+  protected providerName(id: string): string | null {
+    return this.providers().find((p) => p.id === id)?.name ?? null;
+  }
+
+  protected startOAuth(): void {
+    const e = this.editing();
+    const c = this.connector();
+    if (!e || !c?.oauth_provider) return;
+    this.saving.set(true);
+    this.error.set(null);
+    this.oauthApi
+      .start(c.oauth_provider, { connector_id: c.id, name: e.name.trim(), scope: e.scope })
+      .subscribe({
+        next: (r) => window.location.assign(r.authorize_url),
+        error: (err) => this.fail(err),
+      });
   }
 
   protected startCreate(): void {

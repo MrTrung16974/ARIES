@@ -114,27 +114,33 @@ const MASTER_TASK_PRESETS = [
         </div>
       </div>
 
-      <div class="master-input-row">
-        <mat-form-field appearance="outline" subscriptSizing="dynamic">
-          <textarea
-            matInput
-            id="master-task"
-            rows="2"
-            [(ngModel)]="taskText"
-            (keydown.enter)="$event.preventDefault(); delegateToMaster()"
-            placeholder="Nhập yêu cầu giao việc cho ARIES Master… (Enter để gửi ngay, ví dụ: Tra cứu giờ làm việc và kiểm tra dữ liệu hệ thống)"
-          ></textarea>
-        </mat-form-field>
-        <button
-          mat-flat-button
-          class="btn-aries send-task-btn"
-          type="button"
-          [disabled]="sendingMaster()"
-          (click)="delegateToMaster()"
-        >
-          <mat-icon svgIcon="send" />
-          {{ taskText.trim() ? 'Giao việc' : 'Chat Master' }}
-        </button>
+      <div class="composer-box">
+        <textarea
+          id="master-task"
+          rows="2"
+          [(ngModel)]="taskText"
+          (keydown.enter)="$event.preventDefault(); delegateToMaster()"
+          placeholder="Nhập yêu cầu giao việc cho ARIES Master… (ví dụ: Tra cứu giờ làm việc và kiểm tra dữ liệu hệ thống)"
+        ></textarea>
+        <div class="composer-bar">
+          <div class="composer-hints">
+            <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+            <span
+              >Nhấn <kbd>Enter</kbd> để giao việc ngay · Master tự điều phối
+              Agent con</span
+            >
+          </div>
+          <button
+            mat-flat-button
+            class="btn-aries"
+            type="button"
+            [disabled]="sendingMaster()"
+            (click)="delegateToMaster()"
+          >
+            <mat-icon svgIcon="send" />
+            {{ taskText.trim() ? 'Giao việc cho Master' : 'Mở Chat Master' }}
+          </button>
+        </div>
       </div>
 
       <div class="presets">

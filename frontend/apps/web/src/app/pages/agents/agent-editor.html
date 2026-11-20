@@ -393,6 +393,55 @@
             </p>
           }
         </div>
+
+        <div class="section-intro conn-intro">
+          <h2 class="sec-title">
+            <mat-icon class="sm" svgIcon="hub" aria-hidden="true" />
+            <span>MCP server</span>
+          </h2>
+          <p class="muted small">
+            Tool từ MCP server do Admin đăng ký. Mặc định chỉ bật tool đọc; kết quả luôn được coi là
+            dữ liệu bên ngoài.
+          </p>
+        </div>
+        <div class="skills-list">
+          @for (s of mcpServers(); track s.id) {
+            <div class="skill-card" [class.enabled]="hasMcp(s.id)">
+              <div class="skill-head">
+                <mat-checkbox
+                  [ngModel]="hasMcp(s.id)"
+                  (ngModelChange)="toggleMcp(s.id, $event)"
+                  [disabled]="!s.enabled && !hasMcp(s.id)"
+                >
+                  <strong>{{ s.name }}</strong> <code>{{ s.slug }}</code>
+                </mat-checkbox>
+              </div>
+              @if (hasMcp(s.id)) {
+                <div class="skill-body">
+                  <div class="tools-grid">
+                    @for (t of s.tools; track t.tool) {
+                      <div class="tool-item">
+                        <mat-checkbox
+                          [ngModel]="mcpToolAllowed(s.id, t.tool)"
+                          (ngModelChange)="toggleMcpTool(s.id, t.tool, $event)"
+                        >
+                          <code>{{ t.tool }}</code>
+                        </mat-checkbox>
+                        <ui-tag
+                          [value]="riskLabel[t.risk]"
+                          [severity]="t.risk === 'read' ? 'info' : 'warn'"
+                        />
+                        <span class="muted small tool-desc">{{ t.description }}</span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          } @empty {
+            <p class="muted small">Chưa có MCP server nào được đăng ký.</p>
+          }
+        </div>
       </div>
     </mat-tab>
 

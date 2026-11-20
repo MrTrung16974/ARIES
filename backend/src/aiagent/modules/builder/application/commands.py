@@ -72,6 +72,9 @@ class CommandService:
             agent = await self._find(principal, command.target)
             session = await self._architect.create_session(principal, agent.id)
             return {"kind": "architect", "session_id": str(session.id), "message": command.text}
+        if kind is CommandKind.CONNECT:
+            query = f"?connect={command.target}" if command.target else ""
+            return {"kind": "navigate", "url": f"/connections{query}"}
         if kind is CommandKind.AGENT_CHAT:
             agent = await self._find(principal, command.target)
             return {"kind": "navigate", "url": f"/agents/{agent.id}/chat"}

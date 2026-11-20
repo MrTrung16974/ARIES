@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated, Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from aiagent.api.deps import ContainerDep, get_principal
 from aiagent.modules.connections.domain import Connection, ConnectionScope
 from aiagent.modules.identity.domain import Principal
+from aiagent.shared_kernel.errors import AppError
 
 router = APIRouter(prefix="/api/v1", tags=["connections"])
 
@@ -32,6 +35,7 @@ class ConnectorOut(BaseModel):
     config_schema: dict[str, Any]
     secrets: list[str]
     tools: list[ConnectorToolOut]
+    oauth_provider: str | None = None
     ui_hints: dict[str, Any]
 
 
@@ -104,6 +108,7 @@ async def list_connectors(_: AnyUser, c: ContainerDep) -> list[ConnectorOut]:
                 for t in m.tools
             ],
             ui_hints=m.ui_hints,
+            oauth_provider=m.oauth_provider,
         )
         for m in c.connections.connectors()
     ]
@@ -156,3 +161,55 @@ async def test_connection(connection_id: UUID, p: AnyUser, c: ContainerDep) -> C
 async def delete_connection(connection_id: UUID, p: AnyUser, c: ContainerDep) -> Response:
     await c.connections.delete(p, connection_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------- OAuth (ADR-0018)
+class OAuthProviderOut(BaseModel):
+    id: str
+    name: str
+
+
+class OAuthStartIn(BaseModel):
+    connector_id: str = Field(pattern=r"^[a-z][a-z0-9_]{1,62}$")
+    name: str = Field(min_length=1, max_length=80)
+    scope: ConnectionScope = ConnectionScope.PERSONAL
+
+
+class OAuthStartOut(BaseModel):
+    authorize_url: str
+
+
+@router.get("/oauth/providers", response_model=list[OAuthProviderOut])
+async def oauth_providers(_: AnyUser, c: ContainerDep) -> list[OAuthProviderOut]:
+    return [OAuthProviderOut(id=p.id, name=p.name) for p in c.oauth.providers.values()]
+
+
+@router.post("/oauth/{provider_id}/start", response_model=OAuthStartOut)
+async def oauth_start(
+    provider_id: str, body: OAuthStartIn, p: AnyUser, c: ContainerDep
+) -> OAuthStartOut:
+    url = await c.oauth.start(
+        p, provider_id, connector_id=body.connector_id, name=body.name, scope=body.scope
+    )
+    return OAuthStartOut(authorize_url=url)
+
+
+@router.get("/oauth/callback", include_in_schema=False)
+async def oauth_callback(
+    c: ContainerDep,
+    state: str | None = None,
+    code: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Nhà cung cấp chuyển trình duyệt về đây (không có Bearer token) → quay về trang Kết nối."""
+    base = c.settings.public_base_url.rstrip("/")
+    try:
+        conn = await c.oauth.callback(state=state, code=code, error=error)
+    except AppError as exc:
+        return RedirectResponse(
+            f"{base}/connections?{urlencode({'oauth_error': exc.message[:200]})}", status_code=302
+        )
+    return RedirectResponse(
+        f"{base}/connections?{urlencode({'oauth': 'ok', 'connection_id': str(conn.id)})}",
+        status_code=302,
+    )

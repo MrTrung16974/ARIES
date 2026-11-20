@@ -87,6 +87,14 @@ class ConnectionAccessPort(Protocol):
         ...
 
 
+class McpAccessPort(Protocol):
+    """MCP server nhìn từ runtime (hiện thực ở module mcp, ADR-0018)."""
+
+    async def plugins(
+        self, principal: Principal, server_ids: list[str]
+    ) -> list[tuple[str, Plugin]]: ...
+
+
 @dataclass(frozen=True)
 class _Bound:
     plugin: Plugin
@@ -256,11 +264,13 @@ class ToolGateway:
         audit: AuditService,
         timeout_s: float = 30.0,
         access: ConnectionAccessPort | None = None,
+        mcp: McpAccessPort | None = None,
     ):
         self._plugins = plugins
         self._audit = audit
         self._timeout_s = timeout_s
         self._access = access
+        self._mcp = mcp
 
     def _add(
         self, bound: BoundTools, plugin: Plugin, tool: ToolSpec, connection: ConnectionRef | None
@@ -327,6 +337,19 @@ class ToolGateway:
                 for tool in plugin.manifest.tools:
                     if not allowed or tool.name in allowed:
                         self._add(bound, plugin, tool, ref)
+
+        if spec.mcp_servers:
+            wanted = [str(m.server_id) for m in spec.mcp_servers]
+            found = dict(await self._mcp.plugins(principal, wanted)) if self._mcp else {}
+            for mb in spec.mcp_servers:
+                adapter = found.get(str(mb.server_id))
+                if adapter is None:
+                    bound.hidden.append(f"mcp:{mb.server_id}")  # đã tắt/xóa
+                    continue
+                allowed = set(mb.allowed_tools)
+                for tool in adapter.manifest.tools:
+                    if not allowed or tool.name in allowed:
+                        self._add(bound, adapter, tool, None)
         return bound
 
 

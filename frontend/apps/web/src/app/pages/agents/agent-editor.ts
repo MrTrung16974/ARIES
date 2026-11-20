@@ -17,6 +17,8 @@ import {
   ConnectionInfo,
   ConnectionsApi,
   ConnectorInfo,
+  McpApi,
+  McpServerInfo,
   defaultSpec,
   defaultTeam,
   ModelInfo,
@@ -81,6 +83,7 @@ export class AgentEditor implements OnInit {
 
   private readonly api = inject(AgentsApi);
   private readonly connectionsApi = inject(ConnectionsApi);
+  private readonly mcpApi = inject(McpApi);
   private readonly router = inject(Router);
 
   protected spec: AgentSpec = defaultSpec();
@@ -98,6 +101,7 @@ export class AgentEditor implements OnInit {
     this.agents().filter((a) => a.published_version !== null && a.id !== this.id()),
   );
   protected readonly connectors = signal<ConnectorInfo[]>([]);
+  protected readonly mcpServers = signal<McpServerInfo[]>([]);
   protected readonly models = signal<ModelInfo[]>([]);
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -140,6 +144,7 @@ export class AgentEditor implements OnInit {
     this.connectionsApi.list().subscribe((c) => this.connections.set(c));
     this.api.list().subscribe((a) => this.agents.set(a));
     this.connectionsApi.connectors().subscribe((c) => this.connectors.set(c));
+    this.mcpApi.list().subscribe({ next: (m) => this.mcpServers.set(m), error: () => undefined });
     this.api.models().subscribe((m) => this.models.set(m));
     if (!this.isNew()) {
       this.api.get(this.id() as string).subscribe({
@@ -176,6 +181,37 @@ export class AgentEditor implements OnInit {
       : this.spec.skills.filter((s) => s.skill_id !== id);
   }
 
+  // ---------------------------------------------------------------- MCP
+  protected hasMcp(id: string): boolean {
+    return this.spec.mcp_servers.some((m) => m.server_id === id);
+  }
+
+  protected toggleMcp(id: string, on: boolean): void {
+    const others = this.spec.mcp_servers.filter((m) => m.server_id !== id);
+    if (!on) {
+      this.spec.mcp_servers = others;
+      return;
+    }
+    const server = this.mcpServers().find((s) => s.id === id);
+    const read = (server?.tools ?? []).filter((t) => t.risk === 'read').map((t) => t.tool);
+    this.spec.mcp_servers = [...others, { server_id: id, allowed_tools: read }];
+  }
+
+  protected mcpToolAllowed(id: string, tool: string): boolean {
+    const b = this.spec.mcp_servers.find((m) => m.server_id === id);
+    return !!b && (b.allowed_tools.length === 0 || b.allowed_tools.includes(tool));
+  }
+
+  protected toggleMcpTool(id: string, tool: string, on: boolean): void {
+    const b = this.spec.mcp_servers.find((m) => m.server_id === id);
+    if (!b) return;
+    const all = (this.mcpServers().find((s) => s.id === id)?.tools ?? []).map((t) => t.tool);
+    const current = b.allowed_tools.length ? b.allowed_tools : all;
+    const next = on ? [...new Set([...current, tool])] : current.filter((t) => t !== tool);
+    b.allowed_tools = next.length === all.length ? [] : next;
+    if (!next.length) this.toggleMcp(id, false);
+  }
+
   // ---------------------------------------------------------------- team (Master)
   protected setSupervisor(on: boolean): void {
     this.spec.graph_type = on ? 'supervisor' : 'react';
@@ -183,6 +219,7 @@ export class AgentEditor implements OnInit {
     if (on) {
       this.spec.skills = [];
       this.spec.connections = [];
+      this.spec.mcp_servers = [];
     }
   }
 
@@ -320,6 +357,7 @@ export class AgentEditor implements OnInit {
     this.agent.set(a);
     this.spec = structuredClone(a.current.spec);
     this.spec.connections ??= [];
+    this.spec.mcp_servers ??= [];
     this.spec.when_to_use ??= '';
     this.syncText();
   }

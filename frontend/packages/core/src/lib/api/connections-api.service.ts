@@ -6,6 +6,10 @@ import {
   Approval,
   ApprovalStatus,
   ConnectionInfo,
+  ConnectionScope,
+  CreateMcpServer,
+  McpServerInfo,
+  OAuthProviderInfo,
   ConnectorInfo,
   CreateConnection,
   MasterInfo,
@@ -84,5 +88,71 @@ export class ApprovalsApi {
       `${this.base}/v1/approvals/${encodeURIComponent(id)}/decision`,
       { approve, note: note || null },
     );
+  }
+}
+
+/** OAuth broker (ADR-0018): bắt đầu kết nối tài khoản qua nhà cung cấp OAuth. */
+@Injectable({ providedIn: 'root' })
+export class OAuthApi {
+  private readonly http = inject(HttpClient);
+  private readonly base = inject(APP_CONFIG).apiBaseUrl;
+
+  providers(): Observable<OAuthProviderInfo[]> {
+    return this.http.get<OAuthProviderInfo[]>(`${this.base}/v1/oauth/providers`);
+  }
+
+  start(
+    provider: string,
+    body: { connector_id: string; name: string; scope: ConnectionScope },
+  ): Observable<{ authorize_url: string }> {
+    return this.http.post<{ authorize_url: string }>(
+      `${this.base}/v1/oauth/${encodeURIComponent(provider)}/start`,
+      body,
+    );
+  }
+}
+
+/** MCP server do Admin đăng ký (ADR-0018). Secret chỉ gửi lên. */
+@Injectable({ providedIn: 'root' })
+export class McpApi {
+  private readonly http = inject(HttpClient);
+  private readonly base = inject(APP_CONFIG).apiBaseUrl;
+
+  list(): Observable<McpServerInfo[]> {
+    return this.http.get<McpServerInfo[]>(`${this.base}/v1/mcp/servers`);
+  }
+
+  commands(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.base}/v1/mcp/commands`);
+  }
+
+  create(body: CreateMcpServer): Observable<McpServerInfo> {
+    return this.http.post<McpServerInfo>(`${this.base}/v1/mcp/servers`, body);
+  }
+
+  update(
+    id: string,
+    body: {
+      name?: string;
+      enabled?: boolean;
+      secrets?: Record<string, string>;
+      risk_overrides?: Record<string, string>;
+    },
+  ): Observable<McpServerInfo> {
+    return this.http.patch<McpServerInfo>(
+      `${this.base}/v1/mcp/servers/${encodeURIComponent(id)}`,
+      body,
+    );
+  }
+
+  sync(id: string): Observable<McpServerInfo> {
+    return this.http.post<McpServerInfo>(
+      `${this.base}/v1/mcp/servers/${encodeURIComponent(id)}/sync`,
+      {},
+    );
+  }
+
+  remove(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/v1/mcp/servers/${encodeURIComponent(id)}`);
   }
 }

@@ -21,6 +21,7 @@ dependencies = [
   "langgraph>=1.0",
   "jsonschema>=4.23",
   "sqlglot>=27",
+  "mcp>=1.20",
 ]
 
 [dependency-groups]
@@ -45,6 +46,8 @@ web = "aiagent_plugins.skill_web:WebSkill"
 
 [project.entry-points."aiagent.connectors"]
 postgres = "aiagent_plugins.connector_postgres:PostgresConnector"
+google = "aiagent_plugins.connector_oidc:GoogleAccountConnector"
+sso = "aiagent_plugins.connector_oidc:SsoProfileConnector"
 
 [project.scripts]
 aiagent-worker = "aiagent.workers.main:run"
@@ -131,6 +134,7 @@ source_modules = [
   "aiagent.modules.runtime.domain",
   "aiagent.modules.builder.domain",
   "aiagent.modules.connections.domain",
+  "aiagent.modules.mcp.domain",
 ]
 forbidden_modules = [
   "fastapi", "sqlalchemy", "httpx", "redis", "arq", "langgraph", "anthropic",
@@ -169,6 +173,7 @@ source_modules = [
   "aiagent.modules.identity", "aiagent.modules.audit", "aiagent.modules.agents",
   "aiagent.modules.conversations", "aiagent.modules.builder",
   "aiagent.modules.connections",
+  "aiagent.modules.mcp",
   "aiagent.modules.runtime.domain", "aiagent.modules.runtime.application",
   "aiagent.modules.runtime.api",
 ]
@@ -218,3 +223,23 @@ layers = [
   "aiagent.modules.connections.application | aiagent.modules.connections.infrastructure",
   "aiagent.modules.connections.domain",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module mcp"
+type = "layers"
+layers = [
+  "aiagent.modules.mcp.api",
+  "aiagent.modules.mcp.application | aiagent.modules.mcp.infrastructure",
+  "aiagent.modules.mcp.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "SDK MCP chỉ nằm trong mcp.infrastructure"
+type = "forbidden"
+source_modules = [
+  "aiagent.shared_kernel", "aiagent.plugin_sdk", "aiagent.modules.runtime",
+  "aiagent.modules.agents", "aiagent.modules.mcp.domain", "aiagent.modules.mcp.application",
+  "aiagent.modules.mcp.api",
+]
+forbidden_modules = ["mcp"]
+allow_indirect_imports = true

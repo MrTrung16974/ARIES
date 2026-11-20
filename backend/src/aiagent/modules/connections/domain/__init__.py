@@ -6,7 +6,7 @@ ngay lúc gọi tool qua Credential Broker.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol
@@ -48,6 +48,45 @@ def secret_path(tenant_id: str, connection_id: UUID) -> str:
     return f"aries/{tenant_id}/connections/{connection_id}"
 
 
+# ---------------------------------------------------------------- OAuth (ADR-0018)
+@dataclass(frozen=True)
+class OAuthProvider:
+    id: str
+    name: str
+    authorize_url: str  # trình duyệt mở
+    token_url: str  # API gọi (qua egress proxy nếu ra Internet)
+    userinfo_url: str | None
+    client_id: str
+    client_secret: str = field(repr=False)
+    scopes: tuple[str, ...] = ()
+    extra_params: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TokenSet:
+    access_token: str = field(repr=False)
+    refresh_token: str | None = field(default=None, repr=False)
+    expires_at: float = 0.0  # epoch giây
+
+
+class OAuthStatePort(Protocol):
+    """Lưu `state` một lần dùng (TTL ngắn)."""
+
+    async def put(self, state: str, data: dict[str, Any], ttl_s: int) -> None: ...
+
+    async def pop(self, state: str) -> dict[str, Any] | None: ...
+
+
+class OAuthClientPort(Protocol):
+    async def exchange(
+        self, provider: OAuthProvider, code: str, code_verifier: str, redirect_uri: str
+    ) -> TokenSet: ...
+
+    async def refresh(self, provider: OAuthProvider, refresh_token: str) -> TokenSet: ...
+
+    async def userinfo(self, provider: OAuthProvider, access_token: str) -> dict[str, Any]: ...
+
+
 class ConnectionRepositoryPort(Protocol):
     async def create(self, connection: Connection) -> Connection: ...
 
@@ -86,6 +125,10 @@ __all__ = [
     "ConnectionScope",
     "ConnectionStatus",
     "ConnectorLookupPort",
+    "OAuthClientPort",
+    "OAuthProvider",
+    "OAuthStatePort",
     "SecretVaultPort",
+    "TokenSet",
     "secret_path",
 ]

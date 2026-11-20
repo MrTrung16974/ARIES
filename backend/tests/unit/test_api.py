@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncIterator, Callable
 
 import httpx
@@ -21,10 +22,13 @@ from aiagent.modules.agents.application import AgentService
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.builder.application import ArchitectService, CommandService
 from aiagent.modules.builder.infrastructure.heuristic_brain import HeuristicArchitectBrain
-from aiagent.modules.connections.application import ConnectionService
+from aiagent.modules.connections.application import ConnectionService, OAuthBroker
+from aiagent.modules.connections.domain import OAuthProvider
 from aiagent.modules.conversations.application import ConversationService
 from aiagent.modules.identity.application import IdentityService
 from aiagent.modules.identity.infrastructure.jwks_verifier import JwksTokenVerifier
+from aiagent.modules.mcp.application import McpService
+from aiagent.modules.mcp.infrastructure.sdk_client import SdkMcpClient
 from aiagent.modules.runtime.application import (
     ApprovalService,
     ModelRouter,
@@ -34,16 +38,20 @@ from aiagent.modules.runtime.application import (
 from aiagent.modules.runtime.infrastructure.fake_model import FakeChatModel
 from aiagent.modules.runtime.infrastructure.react_graph import LangGraphReactLoop
 from aiagent.shared_kernel.events import InProcessEventBus
+from aiagent_plugins.connector_oidc import SsoProfileConnector
 from tests.conftest import AUDIENCE, ISSUER, JWKS_URL
 from tests.fakes import (
     FakeDbConnector,
+    FakeOAuthClient,
     FakeUsers,
     InMemoryAgentRepository,
     InMemoryAuditLog,
     InMemoryBuilderSessionRepository,
     InMemoryConnectionRepository,
     InMemoryConversationRepository,
+    InMemoryMcpServerRepository,
     InMemoryVault,
+    MemoryOAuthStates,
     NotifySkill,
     source_with,
 )
@@ -75,13 +83,30 @@ def vault() -> InMemoryVault:
 
 
 @pytest.fixture
+def oauth_client() -> FakeOAuthClient:
+    return FakeOAuthClient()
+
+
+KC_PROVIDER = OAuthProvider(
+    id="keycloak",
+    name="Keycloak",
+    authorize_url="http://idp.test/auth",
+    token_url="http://idp.test/token",
+    userinfo_url="http://idp.test/userinfo",
+    client_id="aries-connector",
+    client_secret="kc-secret",
+    scopes=("openid",),
+)
+
+
+@pytest.fixture
 def ready() -> dict[str, bool]:
     return {"database": True, "redis": True}
 
 
 @pytest.fixture
 async def client(
-    jwks_transport, audit_log, ready, conv_repo, notify, fakedb, vault
+    jwks_transport, audit_log, ready, conv_repo, notify, fakedb, vault, oauth_client
 ) -> AsyncIterator[httpx.AsyncClient]:  # type: ignore[no-untyped-def]
     transport, _ = jwks_transport
     settings = Settings(env="test", log_json=False, oidc_issuer=ISSUER, oidc_audience=AUDIENCE)
@@ -93,20 +118,39 @@ async def client(
         async def check_redis() -> bool:
             return ready["redis"]
 
-        plugins = PluginRegistry(source=source_with(notify, fakedb))
+        plugins = PluginRegistry(source=source_with(notify, fakedb, SsoProfileConnector()))
         plugins.load_all()
         audit = AuditService(audit_log)
         conversations = ConversationService(conv_repo)
         router = ModelRouter({"fake": FakeChatModel()})
         connections = ConnectionService(
-            InMemoryConnectionRepository(), vault, PluginConnectorLookup(plugins), audit
+            InMemoryConnectionRepository(),
+            vault,
+            PluginConnectorLookup(plugins),
+            audit,
+            oauth=oauth_client,
+            providers={"keycloak": KC_PROVIDER},
+        )
+        oauth = OAuthBroker(
+            connections,
+            MemoryOAuthStates(),
+            oauth_client,
+            redirect_uri="http://test/api/v1/oauth/callback",
+        )
+        mcp = McpService(
+            InMemoryMcpServerRepository(),
+            vault,
+            SdkMcpClient(timeout_s=20),
+            audit,
+            {"aries_demo": [sys.executable, "-m", "aiagent_plugins.mcp_demo"]},
         )
         agents = AgentService(
             InMemoryAgentRepository(),
             PluginSkillCatalog(plugins),
             connections=ConnectionCatalogAdapter(connections, plugins),
+            mcp=mcp,
         )
-        gateway = ToolGateway(plugins, audit, access=ConnectionAccessAdapter(connections))
+        gateway = ToolGateway(plugins, audit, access=ConnectionAccessAdapter(connections), mcp=mcp)
         runs = RunAgentService(agents, conversations, gateway, router, LangGraphReactLoop(), audit)
         architect = ArchitectService(
             InMemoryBuilderSessionRepository(),
@@ -133,6 +177,8 @@ async def client(
             runs=runs,
             approvals=ApprovalService(conv_repo, audit),
             connections=connections,
+            mcp=mcp,
+            oauth=oauth,
             model_router=router,
             architect=architect,
             commands=CommandService(architect, agents, audit),
@@ -924,3 +970,170 @@ async def test_supervisor_spec_rules(client: httpx.AsyncClient, make_token) -> N
     }
     r = await client.post("/api/v1/agents", json={"spec": nested}, headers=auth(b1))
     assert r.status_code == 422 and "điều phối" in r.text
+
+
+# ---------------------------------------------------------------- MCP bridge (Phase 3b)
+async def test_mcp_server_lifecycle_and_agent_usage(
+    client: httpx.AsyncClient,
+    make_token,
+    vault,
+    audit_log,  # type: ignore[no-untyped-def]
+) -> None:
+    admin = auth(make_token(sub="a1", roles=["admin"]))
+    builder_token = make_token(sub="b1", roles=["builder"])
+    builder = auth(builder_token)
+    user = auth(make_token(sub="u1"))
+
+    assert (await client.get("/api/v1/mcp/servers", headers=user)).status_code == 403
+    assert (await client.get("/api/v1/mcp/commands", headers=builder)).status_code == 403
+    assert (await client.get("/api/v1/mcp/commands", headers=admin)).json() == ["aries_demo"]
+
+    body = {
+        "name": "Demo",
+        "slug": "demo",
+        "transport": "stdio",
+        "command_key": "aries_demo",
+        "secrets": {"DEMO_TOKEN": "tok-123"},
+    }
+    assert (await client.post("/api/v1/mcp/servers", json=body, headers=builder)).status_code == 403
+    bad = {**body, "command_key": "rm_rf"}
+    assert (await client.post("/api/v1/mcp/servers", json=bad, headers=admin)).status_code == 422
+
+    r = await client.post("/api/v1/mcp/servers", json=body, headers=admin)
+    assert r.status_code == 201, r.text
+    server = r.json()
+    assert "tok-123" not in r.text and server["secret_keys"] == ["DEMO_TOKEN"]
+    assert server["last_error"] is None, server
+    risks = {t["tool"]: t["risk"] for t in server["tools"]}
+    assert risks == {
+        "mcp.demo.add": "read",
+        "mcp.demo.exchange_rate": "read",
+        "mcp.demo.create_ticket": "write",
+        "mcp.demo.env_check": "read",
+    }
+    r = await client.patch(
+        f"/api/v1/mcp/servers/{server['id']}",
+        headers=admin,
+        json={"risk_overrides": {"create_ticket": "destructive"}},
+    )
+    assert {t["name"]: t["risk"] for t in r.json()["tools"]}["create_ticket"] == "destructive"
+
+    spec = {
+        **SPEC,
+        "skills": [],
+        "mcp_servers": [
+            {
+                "server_id": server["id"],
+                "allowed_tools": ["mcp.demo.add", "mcp.demo.env_check", "mcp.demo.create_ticket"],
+            }
+        ],
+    }
+    bad_spec = {**spec, "mcp_servers": [{"server_id": server["id"], "allowed_tools": ["x.y"]}]}
+    r = await client.post("/api/v1/agents", json={"spec": bad_spec}, headers=builder)
+    assert r.status_code == 422
+    agent_id = await _publish(client, builder_token, spec)
+
+    async def chat(message: str) -> list[tuple[str, dict]]:  # type: ignore[type-arg]
+        r = await client.post(
+            f"/api/v1/agents/{agent_id}/chat", headers=user, json={"message": message}
+        )
+        return parse_sse(r.text)
+
+    events = await chat('/tool mcp__demo__add {"a": 2, "b": 3}')
+    tool_end = next(d for n, d in events if n == "tool_end")
+    assert not tool_end["is_error"] and "5.0" in tool_end["preview"]
+    assert tool_end["preview"].startswith("⟦DỮ LIỆU BÊN NGOÀI")  # output MCP không tin cậy
+
+    events = await chat("/tool mcp__demo__env_check {}")
+    assert "DEMO_TOKEN=có" in next(d for n, d in events if n == "tool_end")["preview"]
+
+    events = await chat('/tool mcp__demo__create_ticket {"title": "x"}')
+    req = next(d for n, d in events if n == "approval_required")["requests"][0]
+    assert req["tool"] == "mcp.demo.create_ticket" and req["approver_roles"] == ["admin", "owner"]
+
+    await client.patch(
+        f"/api/v1/mcp/servers/{server['id']}", headers=admin, json={"enabled": False}
+    )
+    events = await chat('/tool mcp__demo__add {"a": 1, "b": 1}')
+    assert events[0][1]["hidden_tools"] == [f"mcp:{server['id']}"]
+
+    r = await client.delete(f"/api/v1/mcp/servers/{server['id']}", headers=admin)
+    assert r.status_code == 204 and vault.data == {}
+    assert {"mcp.server_created", "mcp.server_synced", "mcp.server_deleted"} <= set(
+        audit_log.actions()
+    )
+
+
+# ---------------------------------------------------------------- OAuth broker (Phase 3b)
+async def test_oauth_connect_flow_with_pkce_and_refresh(
+    client: httpx.AsyncClient,
+    make_token,
+    vault,
+    oauth_client,  # type: ignore[no-untyped-def]
+) -> None:
+    from urllib.parse import parse_qs, urlsplit
+
+    from aiagent.modules.connections.application import pkce_challenge
+
+    builder = auth(make_token(sub="b1", roles=["builder"]))
+    user = auth(make_token(sub="u1"))
+
+    providers = (await client.get("/api/v1/oauth/providers", headers=user)).json()
+    assert providers == [{"id": "keycloak", "name": "Keycloak"}]
+    connectors = (await client.get("/api/v1/connectors", headers=user)).json()
+    assert next(c for c in connectors if c["id"] == "sso")["oauth_provider"] == "keycloak"
+
+    # Connector OAuth không tạo bằng form secret
+    r = await client.post(
+        "/api/v1/connections",
+        headers=builder,
+        json={"name": "x", "connector_id": "sso", "config": {}, "secrets": {}},
+    )
+    assert r.status_code == 422
+    body = {"connector_id": "sso", "name": "SSO của tôi"}
+    assert (
+        await client.post("/api/v1/oauth/keycloak/start", headers=user, json=body)
+    ).status_code == 403
+    r = await client.post("/api/v1/oauth/google/start", headers=builder, json=body)
+    assert r.status_code == 404  # google chưa cấu hình
+
+    r = await client.post("/api/v1/oauth/keycloak/start", headers=builder, json=body)
+    assert r.status_code == 200, r.text
+    url = urlsplit(r.json()["authorize_url"])
+    q = {k: v[0] for k, v in parse_qs(url.query).items()}
+    assert url.netloc == "idp.test" and q["code_challenge_method"] == "S256"
+    assert q["redirect_uri"] == "http://test/api/v1/oauth/callback"
+    assert "openid" in q["scope"].split() and "profile" in q["scope"].split()
+
+    # Nhà cung cấp trả về code → callback (không cần Bearer) → tạo connection
+    r = await client.get(f"/api/v1/oauth/callback?state={q['state']}&code=good")
+    assert r.status_code == 302 and "oauth=ok" in r.headers["location"]
+    sent = oauth_client.exchanges[-1]
+    assert pkce_challenge(sent["verifier"]) == q["code_challenge"]  # đúng cặp PKCE
+    conn_id = parse_qs(urlsplit(r.headers["location"]).query)["connection_id"][0]
+    conns = (await client.get("/api/v1/connections", headers=builder)).json()
+    conn = next(c for c in conns if c["id"] == conn_id)
+    assert conn["config"]["account"] == "builder@aries.local" and conn["owner_id"] == "b1"
+    assert "rt-1" not in str(conns)
+    stored = next(iter(vault.data.values()))
+    assert stored["refresh_token"] == "rt-1"
+
+    # state chỉ dùng một lần
+    r = await client.get(f"/api/v1/oauth/callback?state={q['state']}&code=good")
+    assert "oauth_error" in r.headers["location"]
+
+    # Credential Broker: token hết hạn → tự làm mới, plugin chỉ nhận access token mới
+    from aiagent.modules.identity.domain import Principal, Role
+
+    container = client._transport.app.state.container  # type: ignore[attr-defined]
+    p = Principal("b1", "default", None, None, frozenset({Role.BUILDER}))
+    ctx = await container.connections.open(p, conn_id)
+    assert ctx.secrets == {"access_token": "at-2"} and oauth_client.refreshes == 1
+    ctx = await container.connections.open(p, conn_id)
+    assert oauth_client.refreshes == 1  # còn hạn, không refresh lại
+
+    # Người dùng từ chối ở trang nhà cung cấp
+    r = await client.post("/api/v1/oauth/keycloak/start", headers=builder, json=body)
+    st = parse_qs(urlsplit(r.json()["authorize_url"]).query)["state"][0]
+    r = await client.get(f"/api/v1/oauth/callback?state={st}&error=access_denied")
+    assert "oauth_error" in r.headers["location"]

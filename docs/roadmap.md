@@ -37,9 +37,19 @@ Mỗi phase kết thúc bằng bản chạy được trên môi trường on-pre
 **Hạn chế còn lại:** OpenBao chạy dev mode (RAM — khởi động lại phải nhập lại secret), web.fetch
 chưa chặn DNS rebinding → cả hai xử lý ở 3b (storage bền + AppRole, egress proxy).
 
-## Phase 3b — MCP, egress, OAuth
-- MCP bridge (allowlist server, sandbox stdio), egress proxy Squid (allowlist domain).
-- OAuth broker (Google) + `/connect`; OpenBao AppRole thay token dev, OpenBao storage bền (raft); Cedar nếu cần ABAC.
+## Phase 3b — MCP, egress, OAuth ✅ (2026-11-20, ADR-0018)
+- OpenBao server mode + raft (secret không mất khi khởi động lại) + AppRole cho API (không còn
+  root token trong API).
+- Egress proxy Squid: mạng app/data internal; :3128 allowlist domain, :3129 web.fetch chặn IP nội
+  bộ ở tầng proxy (đóng lỗ DNS rebinding).
+- MCP bridge: Admin đăng ký server HTTP/stdio (allowlist lệnh), tool tự khám phá, rủi ro theo
+  annotation (ghi đè được), output luôn untrusted, đi qua policy/HITL/audit; gắn vào agent.
+- OAuth broker: Authorization Code + PKCE, state một lần (Redis), refresh tự động trong Credential
+  Broker (plugin chỉ nhận access token); nhà cung cấp Google + SSO nội bộ (Keycloak); `/connect`.
+- Cedar: chưa cần (policy code + test đủ).
+
+**Còn lại:** Architect chưa tự chọn MCP server; Google chưa kiểm thật (cần client id/secret);
+sandbox stdio mạnh hơn (gVisor/container riêng) ở Phase 7.
 
 ## Phase 3c — Master agent (giao việc cho các agent khác) ✅ (2026-11-20, kiểm bằng model giả)
 Người dùng chỉ cần nói với **ARIES Master**; Master hiểu yêu cầu, chia việc, giao cho agent

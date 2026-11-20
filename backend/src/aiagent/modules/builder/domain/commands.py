@@ -15,6 +15,7 @@ class CommandKind(StrEnum):
     AGENT_PUBLISH = "agent_publish"
     AGENT_ROLLBACK = "agent_rollback"
     AGENT_CHAT = "agent_chat"
+    CONNECT = "connect"
     INVALID = "invalid"
 
 
@@ -34,6 +35,7 @@ HELP_TEXT = """Lệnh có sẵn:
 /agent publish "<tên>" [version]   — publish version (mặc định bản mới nhất)
 /agent rollback "<tên>" <version>  — publish lại một version cũ
 /agent chat "<tên>"                — mở chat với agent
+/connect [google|keycloak…]          — kết nối tài khoản qua OAuth (mở trang Kết nối)
 Gõ không có dấu / sẽ được hiểu là /agent new <mô tả>."""
 
 
@@ -54,6 +56,11 @@ def parse_command(raw: str) -> Command:
     head = parts[0].lower()
     if head in ("/help", "/?"):
         return Command(CommandKind.HELP)
+    if head == "/connect":
+        provider = parts[1].lower() if len(parts) > 1 else None
+        if provider and not provider.replace("_", "").isalnum():
+            return _invalid("Tên nhà cung cấp không hợp lệ.")
+        return Command(CommandKind.CONNECT, target=provider)
     if head != "/agent" or len(parts) < 2:
         return _invalid(f"Lệnh không hỗ trợ: {parts[0]}. Gõ /help.")
 

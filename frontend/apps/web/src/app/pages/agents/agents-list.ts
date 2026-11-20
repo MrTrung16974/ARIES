@@ -68,26 +68,31 @@ const IDEA_PRESETS = [
           </div>
         </div>
 
-        <div class="ask-row">
-          <mat-form-field appearance="outline" subscriptSizing="dynamic">
-            <textarea
-              matInput
-              id="ask"
-              rows="2"
-              [(ngModel)]="idea"
-              (keydown.enter)="$event.preventDefault(); createByIdea()"
-              placeholder="Ví dụ: Trợ lý nội bộ trả lời giờ làm việc ở các văn phòng, ngắn gọn, không bàn chuyện chính trị…"
-            ></textarea>
-          </mat-form-field>
-          <button
-            mat-flat-button
-            class="btn-aries create-btn"
-            type="button"
-            [disabled]="!idea.trim()"
-            (click)="createByIdea()"
-          >
-            <mat-icon svgIcon="bolt" /> Tạo Agent
-          </button>
+        <div class="composer-box">
+          <textarea
+            id="ask"
+            rows="2"
+            [(ngModel)]="idea"
+            (keydown.enter)="$event.preventDefault(); createByIdea()"
+            placeholder="Ví dụ: Trợ lý nội bộ trả lời giờ làm việc ở các văn phòng, ngắn gọn, không bàn chuyện chính trị…"
+          ></textarea>
+          <div class="composer-bar">
+            <div class="composer-hints">
+              <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+              <span
+                >Nhấn <kbd>Enter</kbd> để dựng Agent tự động với Architect</span
+              >
+            </div>
+            <button
+              mat-flat-button
+              class="btn-aries"
+              type="button"
+              [disabled]="!idea.trim()"
+              (click)="createByIdea()"
+            >
+              <mat-icon svgIcon="bolt" /> Tạo Agent
+            </button>
+          </div>
         </div>
 
         <div class="presets">

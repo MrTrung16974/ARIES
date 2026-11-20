@@ -424,3 +424,11 @@ async def test_heuristic_edit_splits_rule_at_comma() -> None:
     values = {o.path: o.value for o in proposal.ops}
     assert values["/rules/-"] == "không bao giờ dùng từ lóng"
     assert values["/name"] == "Trợ lý giờ"
+
+
+def test_connect_command_parses() -> None:
+    from aiagent.modules.builder.domain import CommandKind, parse_command
+
+    assert parse_command("/connect google").target == "google"
+    assert parse_command("/connect").kind is CommandKind.CONNECT
+    assert parse_command("/connect bad;rm").kind is CommandKind.INVALID

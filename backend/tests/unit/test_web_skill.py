@@ -117,3 +117,26 @@ async def test_fetch_follows_safe_redirects_and_blocks_internal_ones() -> None:
     assert r.is_error and "image/png" in r.content
     r = await skill.call_tool("web.fetch", {"url": "https://example.com/missing"}, CTX)
     assert r.is_error and "404" in r.content
+
+
+async def test_ssrf_via_proxy_skips_dns_but_blocks_internal_names() -> None:
+    # Qua egress proxy: không phân giải ở API (proxy chặn IP nội bộ), nhưng vẫn chặn tên một nhãn.
+    assert await check_url("https://example.com/x", None) == "https://example.com/x"
+    for url in (
+        "http://openbao:8200/",
+        "http://postgres/",
+        "http://10.1.2.3/",
+        "http://localhost/",
+    ):
+        with pytest.raises(BlockedUrlError):
+            await check_url(url, None)
+
+
+async def test_fetch_uses_proxy_client_when_configured() -> None:
+    skill = WebSkill()
+    await skill.on_load(PluginContext(config={"fetch_proxy": "http://squid:3129"}))
+    try:
+        assert skill._fetch_http is not skill._http
+        assert skill._resolver is None
+    finally:
+        await skill.on_unload()

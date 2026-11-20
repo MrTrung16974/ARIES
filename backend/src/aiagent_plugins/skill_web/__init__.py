@@ -155,9 +155,10 @@ class WebSkill(Plugin):
     def __init__(
         self, http: httpx.AsyncClient | None = None, resolver: Resolver = system_resolver
     ) -> None:
-        self._http = http
+        self._http = http  # gọi SearXNG (nội bộ)
+        self._fetch_http = http  # web.fetch (qua egress proxy nếu cấu hình)
         self._owns_http = http is None
-        self._resolver = resolver
+        self._resolver: Resolver | None = resolver
         self._searxng_url: str | None = None
         self._language = "vi"
 
@@ -170,15 +171,25 @@ class WebSkill(Plugin):
         self._searxng_url = str(url).rstrip("/") if url else None
         self._language = str(ctx.config.get("language", "vi"))
         if self._http is None:
-            self._http = httpx.AsyncClient(
-                follow_redirects=False,
-                timeout=httpx.Timeout(10.0, connect=5.0),
-                headers={"User-Agent": USER_AGENT},
-            )
+            common: dict[str, Any] = {
+                "follow_redirects": False,
+                "timeout": httpx.Timeout(10.0, connect=5.0),
+                "headers": {"User-Agent": USER_AGENT},
+            }
+            self._http = httpx.AsyncClient(trust_env=False, **common)
+            proxy = ctx.config.get("fetch_proxy")
+            if proxy:
+                # Proxy phân giải DNS và chặn IP nội bộ — đóng lỗ DNS rebinding (ADR-0018).
+                self._fetch_http = httpx.AsyncClient(proxy=str(proxy), trust_env=False, **common)
+                self._resolver = None
+            else:
+                self._fetch_http = self._http
 
     async def on_unload(self) -> None:
-        if self._owns_http and self._http is not None:
-            await self._http.aclose()
+        if self._owns_http:
+            for client in {self._http, self._fetch_http}:
+                if client is not None:
+                    await client.aclose()
 
     @property
     def http(self) -> httpx.AsyncClient:
@@ -201,6 +212,11 @@ class WebSkill(Plugin):
                 return await self._fetch(str(arguments["url"]))
         except BlockedUrlError as exc:
             return ToolResult(f"URL bị chặn: {exc}", is_error=True)
+        except httpx.ProxyError:
+            return ToolResult(
+                "URL bị chặn bởi egress proxy (đích nội bộ/riêng hoặc không được phép).",
+                is_error=True,
+            )
         except httpx.TimeoutException:
             return ToolResult("Hết thời gian chờ phản hồi.", is_error=True)
         except httpx.HTTPError as exc:
@@ -231,10 +247,15 @@ class WebSkill(Plugin):
         current = url
         for _ in range(MAX_REDIRECTS + 1):
             current = await check_url(current, self._resolver)
-            async with self.http.stream("GET", current) as r:
+            fetcher = self._fetch_http or self.http
+            async with fetcher.stream("GET", current) as r:
                 if r.status_code in (301, 302, 303, 307, 308) and "location" in r.headers:
                     current = urljoin(current, r.headers["location"])
                     continue
+                if r.status_code == 403 and "squid" in r.headers.get("server", "").lower():
+                    return ToolResult(
+                        "URL bị chặn bởi egress proxy (địa chỉ nội bộ).", is_error=True
+                    )
                 if r.status_code != 200:
                     return ToolResult(f"Trang trả về HTTP {r.status_code}.", is_error=True)
                 ctype = r.headers.get("content-type", "").split(";")[0].strip().lower()

@@ -67,6 +67,11 @@ export interface SkillBinding {
   config: Record<string, unknown>;
 }
 
+export interface McpBinding {
+  server_id: string;
+  allowed_tools: string[];
+}
+
 export interface ConnectionBinding {
   connection_id: string;
   allowed_tools: string[];
@@ -101,6 +106,7 @@ export interface AgentSpec {
   starter_prompts: string[];
   skills: SkillBinding[];
   connections: ConnectionBinding[];
+  mcp_servers: McpBinding[];
   knowledge_bases: string[];
   limits: {
     max_iterations: number;
@@ -215,6 +221,7 @@ export function defaultSpec(): AgentSpec {
     starter_prompts: [],
     skills: [],
     connections: [],
+    mcp_servers: [],
     knowledge_bases: [],
     limits: { max_iterations: 10, timeout_s: 120, max_tokens_per_run: 200000 },
     approval: { require_for: ['destructive', 'external_send'] },
@@ -303,6 +310,7 @@ export interface ConnectorInfo {
   secrets: string[];
   tools: ToolSpec[];
   ui_hints: Record<string, unknown>;
+  oauth_provider: string | null;
 }
 
 export interface JsonSchema {
@@ -410,4 +418,43 @@ export function defaultTeam(): TeamSettings {
     max_delegations_per_run: 8,
     max_parallel: 3,
   };
+}
+
+// ---------------------------------------------------------------- Phase 3b: MCP + OAuth
+export interface OAuthProviderInfo {
+  id: string;
+  name: string;
+}
+
+export interface McpToolInfo {
+  name: string;
+  tool: string;
+  description: string;
+  risk: RiskLevel;
+  detected_risk: RiskLevel;
+}
+
+export interface McpServerInfo {
+  id: string;
+  name: string;
+  slug: string;
+  transport: 'http' | 'stdio';
+  url: string | null;
+  command_key: string | null;
+  secret_keys: string[];
+  enabled: boolean;
+  tools: McpToolInfo[];
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMcpServer {
+  name: string;
+  slug: string;
+  transport: 'http' | 'stdio';
+  url?: string | null;
+  command_key?: string | null;
+  secrets: Record<string, string>;
 }

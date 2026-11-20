@@ -79,6 +79,13 @@ class Team(_Strict):
     max_parallel: int = Field(default=3, ge=1, le=6)
 
 
+class McpBinding(_Strict):
+    """Gắn một MCP server do Admin đăng ký (ADR-0018)."""
+
+    server_id: UUID
+    allowed_tools: list[str] = Field(default_factory=list, max_length=100)
+
+
 class OutputFormat(_Strict):
     language: str = Field(default="vi", max_length=16)
     style: str = Field(default="", max_length=500)
@@ -117,6 +124,7 @@ class AgentSpec(_Strict):
 
     skills: list[SkillBinding] = Field(default_factory=list, max_length=30)
     connections: list[ConnectionBinding] = Field(default_factory=list, max_length=20)
+    mcp_servers: list[McpBinding] = Field(default_factory=list, max_length=20)
     knowledge_bases: list[str] = Field(default_factory=list, max_length=20)  # Phase 4
     team: Team | None = None  # chỉ cho graph_type supervisor
 
@@ -140,9 +148,12 @@ class AgentSpec(_Strict):
         conns = [c.connection_id for c in self.connections]
         if len(conns) != len(set(conns)):
             raise ValueError("connection_id bị trùng")
+        servers = [m.server_id for m in self.mcp_servers]
+        if len(servers) != len(set(servers)):
+            raise ValueError("server_id MCP bị trùng")
         if self.graph_type == "supervisor":
             # Master chỉ giao việc; tool/kết nối nằm ở agent thành viên (quyền rõ ràng, độ sâu 1).
-            if self.skills or self.connections:
+            if self.skills or self.connections or self.mcp_servers:
                 raise ValueError("agent supervisor không gắn skill/kết nối trực tiếp")
             if self.team is None:
                 self.team = Team()

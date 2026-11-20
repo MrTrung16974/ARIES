@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from dataclasses import replace
 from typing import Any
 from uuid import UUID, uuid4
@@ -27,7 +28,10 @@ from aiagent.modules.connections.domain import (
     ConnectionScope,
     ConnectionStatus,
     ConnectorLookupPort,
+    OAuthClientPort,
+    OAuthProvider,
     SecretVaultPort,
+    TokenSet,
     secret_path,
 )
 from aiagent.modules.identity.domain import Principal, Role
@@ -42,6 +46,7 @@ from aiagent.shared_kernel.errors import (
 
 logger = logging.getLogger(__name__)
 
+_TOKEN_MARGIN_S = 60
 _NAME_RE = re.compile(r"^[\w][\w .\-()]{0,79}$", re.UNICODE)
 MAX_SECRET_CHARS = 8192
 TEST_TIMEOUT_S = 15.0
@@ -54,11 +59,17 @@ class ConnectionService:
         vault: SecretVaultPort,
         connectors: ConnectorLookupPort,
         audit: AuditService,
+        *,
+        oauth: OAuthClientPort | None = None,
+        providers: dict[str, OAuthProvider] | None = None,
     ) -> None:
         self._repo = repo
         self._vault = vault
         self._connectors = connectors
         self._audit = audit
+        self._oauth = oauth
+        self.providers: dict[str, OAuthProvider] = dict(providers or {})
+        self._refresh_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ quyền
     @staticmethod
@@ -82,7 +93,7 @@ class ConnectionService:
     def connectors(self) -> list[PluginManifest]:
         return sorted(self._connectors.connectors(), key=lambda m: m.name)
 
-    def _manifest(self, connector_id: str) -> PluginManifest:
+    def manifest_of(self, connector_id: str) -> PluginManifest:
         plugin = self._connectors.get(connector_id)
         if plugin is None or plugin.manifest.kind is not PluginKind.CONNECTOR:
             raise ValidationError(f"Connector '{connector_id}' không tồn tại hoặc đang tắt.")
@@ -119,7 +130,7 @@ class ConnectionService:
         return secrets
 
     @staticmethod
-    def _check_name(name: str) -> str:
+    def check_name(name: str) -> str:
         name = name.strip()
         if not _NAME_RE.match(name):
             raise ValidationError("Tên kết nối 1–80 ký tự, gồm chữ, số, khoảng trắng, . - ( ) _")
@@ -157,14 +168,62 @@ class ConnectionService:
             raise ForbiddenError("Cần vai trò Builder để tạo kết nối.")
         if scope is ConnectionScope.WORKSPACE and not principal.has_any_role(Role.ADMIN):
             raise ForbiddenError("Chỉ Admin tạo được kết nối dùng chung (workspace).")
-        manifest = self._manifest(connector_id)
-        name = self._check_name(name)
+        manifest = self.manifest_of(connector_id)
+        if manifest.oauth_provider:
+            raise ValidationError("Connector này kết nối bằng OAuth — dùng nút “Kết nối với …”.")
+        name = self.check_name(name)
         self._check_config(manifest, config)
         secrets = {k: v for k, v in self._check_secrets(manifest, secrets).items() if v}
         missing = set(manifest.secrets) - set(secrets)
         if missing:
             raise ValidationError(f"Thiếu secret: {', '.join(sorted(missing))}")
+        return await self._store(principal, name, connector_id, scope, config, secrets)
 
+    async def create_oauth(
+        self,
+        principal: Principal,
+        *,
+        name: str,
+        connector_id: str,
+        scope: ConnectionScope,
+        provider: OAuthProvider,
+        account: str,
+        tokens: TokenSet,
+    ) -> Connection:
+        """Do OAuth broker gọi sau khi đổi code lấy token (ADR-0018)."""
+        self.check_create_rights(principal, scope)
+        manifest = self.manifest_of(connector_id)
+        if manifest.oauth_provider != provider.id:
+            raise ValidationError("Connector không dùng nhà cung cấp OAuth này.")
+        secrets = {
+            "access_token": tokens.access_token,
+            "expires_at": str(int(tokens.expires_at)),
+        }
+        if tokens.refresh_token:
+            secrets["refresh_token"] = tokens.refresh_token
+        config: dict[str, Any] = {"oauth_provider": provider.id, "account": account[:200]}
+        if provider.userinfo_url:
+            config["userinfo_url"] = provider.userinfo_url
+        return await self._store(
+            principal, self.check_name(name), connector_id, scope, config, secrets
+        )
+
+    @staticmethod
+    def check_create_rights(principal: Principal, scope: ConnectionScope) -> None:
+        if not principal.has_any_role(Role.BUILDER, Role.ADMIN):
+            raise ForbiddenError("Cần vai trò Builder để tạo kết nối.")
+        if scope is ConnectionScope.WORKSPACE and not principal.has_any_role(Role.ADMIN):
+            raise ForbiddenError("Chỉ Admin tạo được kết nối dùng chung (workspace).")
+
+    async def _store(
+        self,
+        principal: Principal,
+        name: str,
+        connector_id: str,
+        scope: ConnectionScope,
+        config: dict[str, Any],
+        secrets: dict[str, str],
+    ) -> Connection:
         now = utcnow()
         connection = Connection(
             id=uuid4(),
@@ -205,10 +264,10 @@ class ConnectionService:
         enabled: bool | None = None,
     ) -> Connection:
         c = await self._managed(principal, connection_id)
-        manifest = self._manifest(c.connector_id)
+        manifest = self.manifest_of(c.connector_id)
         changes: dict[str, Any] = {}
         if name is not None:
-            changes["name"] = self._check_name(name)
+            changes["name"] = self.check_name(name)
         if config is not None:
             changes["config"] = self._check_config(manifest, config)
         if secrets:
@@ -289,6 +348,9 @@ class ConnectionService:
             raise AppError(
                 f"Secret của kết nối '{c.name}' không còn trong kho bí mật — hãy nhập lại."
             )
+        provider_id = c.config.get("oauth_provider")
+        if provider_id:
+            secrets = {"access_token": await self._fresh_access_token(c, str(provider_id), secrets)}
         return ConnectionContext(
             id=str(c.id),
             name=c.name,
@@ -296,6 +358,28 @@ class ConnectionService:
             config=dict(c.config),
             secrets=secrets,
         )
+
+    async def _fresh_access_token(
+        self, c: Connection, provider_id: str, secrets: dict[str, str]
+    ) -> str:
+        """Access token còn hạn; hết hạn thì dùng refresh token đổi mới và lưu lại. Plugin không
+        bao giờ nhận refresh token."""
+        expires_at = float(secrets.get("expires_at") or 0)
+        if secrets.get("access_token") and expires_at - time.time() > _TOKEN_MARGIN_S:
+            return secrets["access_token"]
+        provider = self.providers.get(provider_id)
+        refresh = secrets.get("refresh_token")
+        if provider is None or self._oauth is None or not refresh:
+            raise AppError(f"Kết nối '{c.name}' đã hết hạn — hãy kết nối lại với {provider_id}.")
+        async with self._refresh_lock:
+            tokens = await self._oauth.refresh(provider, refresh)
+        fresh = {
+            "access_token": tokens.access_token,
+            "refresh_token": tokens.refresh_token or refresh,
+            "expires_at": str(int(tokens.expires_at)),
+        }
+        await self._vault.put(secret_path(c.tenant_id, c.id), fresh)
+        return tokens.access_token
 
     # ------------------------------------------------------------------ tiện ích
     async def _safe_delete(self, path: str) -> None:

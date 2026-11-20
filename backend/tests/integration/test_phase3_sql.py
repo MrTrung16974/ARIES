@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 from dataclasses import replace
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
@@ -14,7 +15,10 @@ from aiagent.adapters.db import Database
 from aiagent.modules.agents.domain import AgentSpec, CreatedVia
 from aiagent.modules.agents.infrastructure.sql_agent_repository import SqlAgentRepository
 from aiagent.modules.connections.domain import Connection, ConnectionScope, ConnectionStatus
-from aiagent.modules.connections.infrastructure.openbao_vault import OpenBaoVault
+from aiagent.modules.connections.infrastructure.openbao_vault import (
+    AppRoleCredentials,
+    OpenBaoVault,
+)
 from aiagent.modules.connections.infrastructure.sql_connection_repository import (
     SqlConnectionRepository,
 )
@@ -121,18 +125,25 @@ async def test_connection_repository_soft_delete_and_unique_name(db: Database) -
     assert await repo.get("other-tenant", again.id) is None
 
 
-async def test_openbao_vault_roundtrip() -> None:
-    token = os.environ.get("AIAGENT_OPENBAO_TOKEN")
+async def test_openbao_vault_roundtrip_with_approle() -> None:
     addr = os.environ.get("AIAGENT_OPENBAO_ADDR")
-    if not token or not addr:
-        pytest.skip("Chưa cấu hình OpenBao")
-    async with httpx.AsyncClient() as http:
-        vault = OpenBaoVault(addr, token, http)
+    role = os.environ.get("AIAGENT_OPENBAO_ROLE_ID_FILE")
+    secret = os.environ.get("AIAGENT_OPENBAO_SECRET_ID_FILE")
+    if not addr or not role or not secret or not os.path.exists(role):  # noqa: PTH110, ASYNC240
+        pytest.skip("Chưa cấu hình OpenBao AppRole")
+    async with httpx.AsyncClient(trust_env=False) as http:
+        vault = OpenBaoVault(addr, http, approle=AppRoleCredentials(Path(role), Path(secret)))
         path = f"aries/it/connections/{uuid4()}"
         await vault.put(path, {"password": "s3cret"})
         assert await vault.get(path) == {"password": "s3cret"}
         await vault.delete(path)
         assert await vault.get(path) == {}
+        # Policy aries-api: ngoài aries/* là bị cấm.
+        r = await http.get(
+            f"{addr}/v1/secret/data/other/x",
+            headers={"X-Vault-Token": await vault._current_token()},
+        )
+        assert r.status_code == 403
 
 
 async def test_postgres_connector_against_demo_db() -> None:
@@ -182,8 +193,11 @@ async def test_delegations_roundtrip(db: Database) -> None:
     agents = SqlAgentRepository(db)
     conv = SqlConversationRepository(db)
     spec = AgentSpec.model_validate(
-        {"name": "Master IT", "graph_type": "supervisor",
-         "model": {"provider": "fake", "model": "fake-echo"}}
+        {
+            "name": "Master IT",
+            "graph_type": "supervisor",
+            "model": {"provider": "fake", "model": "fake-echo"},
+        }
     )
     agent, _ = await agents.create("default", "it-user", spec, CreatedVia.API, "")
     thread = await conv.create_thread("default", "it-user", agent.id, 1, False, "t")
@@ -191,9 +205,39 @@ async def test_delegations_roundtrip(db: Database) -> None:
     d = await conv.create_delegation("default", thread.id, run.id, "toolu_m1", agent.id, "việc")
     assert d.status is DelegationStatus.RUNNING
     await conv.update_delegation(
-        "default", d.id, status=DelegationStatus.COMPLETED, child_thread_id=thread.id,
-        child_run_id=run.id, result="xong", tainted=True,
+        "default",
+        d.id,
+        status=DelegationStatus.COMPLETED,
+        child_thread_id=thread.id,
+        child_run_id=run.id,
+        result="xong",
+        tainted=True,
     )
     found = await conv.delegations_for_tool_uses("default", thread.id, ["toolu_m1"])
     assert found[0].result == "xong" and found[0].tainted
     assert await conv.delegations_for_tool_uses("other-tenant", thread.id, ["toolu_m1"]) == []
+
+
+async def test_mcp_repository_roundtrip(db: Database) -> None:
+    from aiagent.modules.mcp.domain import McpServer, McpTool, McpTransport
+    from aiagent.modules.mcp.infrastructure.sql_mcp_repository import SqlMcpServerRepository
+    from aiagent.plugin_sdk import RiskLevel
+
+    repo = SqlMcpServerRepository(db)
+    now = utcnow()
+    slug = f"it_{uuid4().hex[:8]}"
+    s = McpServer(
+        id=uuid4(), tenant_id="default", name="IT MCP", slug=slug, transport=McpTransport.STDIO,
+        url=None, command_key="aries_demo", secret_keys=["T"], enabled=True, deleted=False,
+        tools=[], risk_overrides={}, last_sync_at=None, last_error=None, created_by="it",
+        created_at=now, updated_at=now,
+    )
+    created = await repo.create(s)
+    with pytest.raises(ConflictError):
+        await repo.create(replace(s, id=uuid4()))
+    tool = McpTool("add", "Cộng", {"type": "object"}, RiskLevel.READ)
+    saved = await repo.save(replace(created, tools=[tool], risk_overrides={"add": "write"}))
+    assert saved.tools == [tool] and saved.effective_risk(tool) is RiskLevel.WRITE
+    await repo.save(replace(saved, deleted=True))
+    assert all(x.id != s.id for x in await repo.list_all("default"))
+    assert await repo.get("other-tenant", s.id) is None

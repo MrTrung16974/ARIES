@@ -16,7 +16,9 @@
         <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
         <span>Lịch sử hội thoại</span>
       </span>
+      <span class="thread-count">{{ threads().length }}</span>
     </div>
+
     <ul>
       @for (t of threads(); track t.id) {
         <li>
@@ -25,38 +27,63 @@
             [class.active]="t.id === threadId()"
             (click)="openThread(t)"
           >
-            <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
+            <span class="t-icon" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="forum" />
+            </span>
             <span class="thread-title">{{ t.title || 'Không tiêu đề' }}</span>
             <span class="ver-badge">v{{ t.agent_version }}</span>
           </button>
         </li>
       } @empty {
-        <li class="empty-thread muted small">Chưa có hội thoại nào.</li>
+        <li class="empty-thread muted small">
+          Chưa có lịch sử hội thoại. Hãy gửi tin nhắn đầu tiên để bắt đầu.
+        </li>
       }
     </ul>
+
+    @if (agent(); as a) {
+      <div class="threads-foot">
+        <div class="foot-row">
+          <mat-icon class="sm" svgIcon="dns" aria-hidden="true" />
+          <span class="muted small">Model:</span>
+          <code>{{ a.current.spec.model.model }}</code>
+        </div>
+        <div class="foot-row">
+          <mat-icon class="sm" svgIcon="shield" aria-hidden="true" />
+          <span class="muted small">Dữ liệu:</span>
+          <ui-tag [value]="a.current.spec.data_classification" severity="info" />
+        </div>
+      </div>
+    }
   </aside>
 
   <section class="main">
     <header>
       <a
         mat-icon-button
-        routerLink="/agents"
+        routerLink="/"
         class="back"
-        aria-label="Quay lại danh sách agent"
-        title="Quay lại danh sách Agent"
+        aria-label="Quay lại"
+        title="Quay lại"
       >
         <mat-icon svgIcon="arrow_back" />
       </a>
-      <div class="agent-badge accent" aria-hidden="true">
-        <mat-icon class="sm" svgIcon="robot_2" />
+      <div class="head-avatar">
+        <img
+          src="assets/brand/aries-mark-v3.png?v=aries4"
+          alt="ARIES"
+          width="38"
+          height="38"
+        />
       </div>
       <div class="head-meta">
         <div class="head-title-row">
-          <strong>{{ agent()?.name }}</strong>
+          <strong>{{ agent()?.name || 'ARIES Agent' }}</strong>
+          <span class="run-pill">● Online</span>
           @if (versionLabel()) {
             <ui-tag
               [value]="versionLabel()"
-              [severity]="isDraft() ? 'warn' : 'success'"
+              [severity]="isDraft() ? 'warn' : 'secondary'"
             />
           }
         </div>
@@ -65,11 +92,25 @@
         }
       </div>
       <span class="spacer"></span>
-      @if (agent()?.can_edit) {
-        <a mat-stroked-button [routerLink]="['/agents', id(), 'edit']">
-          <mat-icon svgIcon="edit" /> Sửa
-        </a>
-      }
+      <div class="head-actions">
+        <button
+          mat-stroked-button
+          class="pill-btn"
+          type="button"
+          (click)="newThread()"
+        >
+          <mat-icon svgIcon="refresh" /> Làm mới
+        </button>
+        @if (agent()?.can_edit) {
+          <a
+            mat-stroked-button
+            class="pill-btn"
+            [routerLink]="['/agents', id(), 'edit']"
+          >
+            <mat-icon svgIcon="edit" /> Cấu hình
+          </a>
+        }
+      </div>
     </header>
 
     <div class="messages" #scroller>
@@ -77,196 +118,266 @@
         <div class="empty">
           <div class="empty-avatar">
             <img
-              src="assets/brand/aries-mark-v3.png?v=aries4"
+              src="assets/brand/aries-logo-v3.webp?v=aries4"
               alt="ARIES"
-              width="64"
-              height="64"
+              width="72"
+              height="72"
             />
+          </div>
+          <div class="empty-badges">
+            <span class="run-pill">● Sẵn sàng nhận việc</span>
+            @if (agent()?.current?.spec?.model?.model; as m) {
+              <span class="flow-chip chip-read">
+                <mat-icon class="sm" svgIcon="dns" aria-hidden="true" />
+                {{ m }}
+              </span>
+            }
           </div>
           <h2>{{ agent()?.name || 'ARIES Agent' }}</h2>
           @if (agent()?.current?.spec?.opening_statement) {
             <p class="opening">{{ agent()!.current.spec.opening_statement }}</p>
           } @else {
-            <p class="muted">
-              Bắt đầu trò chuyện hoặc chọn một câu hỏi gợi ý bên dưới.
+            <p class="opening muted">
+              {{
+                agent()?.description ||
+                  'Bắt đầu trò chuyện hoặc chọn một tác vụ mẫu bên dưới để Agent thực thi.'
+              }}
             </p>
           }
-          <div class="starters">
-            @for (
-              s of agent()?.current?.spec?.starter_prompts ?? [];
-              track s
-            ) {
-              <button type="button" (click)="useStarter(s)">
-                <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
-                <span>{{ s }}</span>
+
+          <div class="starter-grid">
+            @for (s of starterList(); track s) {
+              <button
+                type="button"
+                class="starter-card"
+                (click)="useStarter(s)"
+              >
+                <span class="starter-icon" aria-hidden="true">
+                  <mat-icon class="sm" svgIcon="bolt" />
+                </span>
+                <span class="starter-text">{{ s }}</span>
               </button>
             }
           </div>
         </div>
       }
+
       @for (m of items(); track $index) {
-        <div class="msg" [class.user]="m.role === 'user'">
-          <div class="msg-meta">
-            <span class="msg-author">
-              <mat-icon
-                class="sm"
-                [svgIcon]="m.role === 'user' ? 'person' : 'robot_2'"
-                aria-hidden="true"
+        <div class="msg-row" [class.user]="m.role === 'user'">
+          @if (m.role === 'assistant') {
+            <div class="row-avatar">
+              <img
+                src="assets/brand/aries-mark-v3.png?v=aries4"
+                alt="ARIES"
+                width="32"
+                height="32"
               />
-              {{ m.role === 'user' ? 'Bạn' : agent()?.name || 'Agent' }}
-            </span>
-          </div>
-          @if (m.delegations?.length) {
-            <div class="delegations" role="list" aria-label="Việc đã giao cho agent khác">
-              @for (dl of m.delegations; track dl.id) {
-                <div class="delegation" role="listitem" [attr.data-status]="dl.status">
-                  <div class="delegation-head">
-                    @if (dl.status === 'running') {
-                      <mat-spinner diameter="14" />
-                    } @else {
+            </div>
+          }
+
+          <div class="msg" [class.user]="m.role === 'user'">
+            <div class="msg-meta">
+              <span class="msg-author">
+                {{ m.role === 'user' ? 'Bạn' : agent()?.name || 'ARIES Agent' }}
+              </span>
+            </div>
+
+            @if (m.delegations?.length) {
+              <div
+                class="delegations"
+                role="list"
+                aria-label="Việc đã giao cho agent khác"
+              >
+                @for (dl of m.delegations; track dl.id) {
+                  <div
+                    class="delegation"
+                    role="listitem"
+                    [attr.data-status]="dl.status"
+                  >
+                    <div class="delegation-head">
+                      @if (dl.status === 'running') {
+                        <mat-spinner diameter="14" />
+                      } @else {
+                        <mat-icon
+                          class="sm"
+                          [svgIcon]="
+                            dl.status === 'completed'
+                              ? 'check_circle'
+                              : dl.status === 'awaiting_approval'
+                                ? 'gavel'
+                                : 'cancel'
+                          "
+                          aria-hidden="true"
+                        />
+                      }
                       <mat-icon
                         class="sm"
-                        [svgIcon]="
-                          dl.status === 'completed'
-                            ? 'check_circle'
-                            : dl.status === 'awaiting_approval'
-                              ? 'gavel'
-                              : 'cancel'
-                        "
+                        svgIcon="robot_2"
                         aria-hidden="true"
                       />
+                      <strong>{{ dl.agentName }}</strong>
+                      <span class="muted small">
+                        @switch (dl.status) {
+                          @case ('running') {
+                            đang làm…
+                          }
+                          @case ('completed') {
+                            xong
+                          }
+                          @case ('awaiting_approval') {
+                            chờ duyệt
+                          }
+                          @default {
+                            lỗi
+                          }
+                        }
+                      </span>
+                    </div>
+                    <p class="small task">{{ dl.task }}</p>
+                    @if (dl.steps.length) {
+                      <div class="delegation-steps">
+                        @for (st of dl.steps; track st.id) {
+                          <span
+                            class="step"
+                            [class.err]="st.status === 'error'"
+                          >
+                            <code>{{ st.name }}</code>
+                            {{
+                              st.status === 'running'
+                                ? '…'
+                                : st.status === 'ok'
+                                  ? '✓'
+                                  : '✗'
+                            }}
+                          </span>
+                        }
+                      </div>
                     }
-                    <mat-icon class="sm" svgIcon="robot_2" aria-hidden="true" />
-                    <strong>{{ dl.agentName }}</strong>
-                    <span class="muted small">
-                      @switch (dl.status) {
-                        @case ('running') { đang làm… }
-                        @case ('completed') { xong }
-                        @case ('awaiting_approval') { chờ duyệt }
-                        @default { lỗi }
-                      }
-                    </span>
                   </div>
-                  <p class="small task">{{ dl.task }}</p>
-                  @if (dl.steps.length) {
-                    <div class="delegation-steps">
-                      @for (st of dl.steps; track st.id) {
-                        <span class="step" [class.err]="st.status === 'error'">
-                          <code>{{ st.name }}</code>
-                          {{ st.status === 'running' ? '…' : st.status === 'ok' ? '✓' : '✗' }}
-                        </span>
+                }
+              </div>
+            }
+
+            @if (visibleTools(m).length) {
+              <div class="tools">
+                @for (t of visibleTools(m); track t.id) {
+                  <details>
+                    <summary>
+                      @if (t.status === 'running') {
+                        <mat-spinner diameter="14" />
+                      } @else {
+                        <mat-icon
+                          class="sm"
+                          [svgIcon]="t.status === 'ok' ? 'check' : 'close'"
+                          [class.ok]="t.status === 'ok'"
+                          [class.err]="t.status === 'error'"
+                        />
+                      }
+                      <code>{{ t.name }}</code>
+                      @if (t.durationMs !== undefined) {
+                        <span class="muted small">{{ t.durationMs }} ms</span>
+                      }
+                    </summary>
+                    <pre>{{ t.preview ?? '…' }}</pre>
+                  </details>
+                }
+              </div>
+            }
+
+            @if (m.approvals?.length) {
+              <div
+                class="approvals"
+                role="group"
+                aria-label="Thao tác cần duyệt"
+              >
+                @for (c of m.approvals; track c.id) {
+                  <div class="approval-card" [attr.data-status]="c.status">
+                    <div class="approval-head">
+                      <mat-icon class="sm" svgIcon="gavel" aria-hidden="true" />
+                      <strong>Cần duyệt:</strong>
+                      <code>{{ c.tool }}</code>
+                      <ui-tag
+                        [value]="c.risk"
+                        [severity]="
+                          c.risk === 'destructive' ? 'danger' : 'warn'
+                        "
+                      />
+                      <span class="spacer"></span>
+                      @switch (c.status) {
+                        @case ('approved') {
+                          <ui-tag value="Đã duyệt" severity="success" />
+                        }
+                        @case ('denied') {
+                          <ui-tag value="Đã từ chối" severity="danger" />
+                        }
+                        @case ('expired') {
+                          <ui-tag value="Hết hiệu lực" severity="secondary" />
+                        }
                       }
                     </div>
-                  }
-                </div>
-              }
-            </div>
-          }
-          @if (visibleTools(m).length) {
-            <div class="tools">
-              @for (t of visibleTools(m); track t.id) {
-                <details>
-                  <summary>
-                    @if (t.status === 'running') {
-                      <mat-spinner diameter="14" />
-                    } @else {
-                      <mat-icon
-                        class="sm"
-                        [svgIcon]="t.status === 'ok' ? 'check' : 'close'"
-                        [class.ok]="t.status === 'ok'"
-                        [class.err]="t.status === 'error'"
-                      />
+                    <p class="small">{{ c.reason }}</p>
+                    @if (c.agentName) {
+                      <p class="muted small">
+                        Do agent “{{ c.agentName }}” yêu cầu.
+                      </p>
                     }
-                    <code>{{ t.name }}</code>
-                    @if (t.durationMs !== undefined) {
-                      <span class="muted small">{{ t.durationMs }} ms</span>
-                    }
-                  </summary>
-                  <pre>{{ t.preview ?? '…' }}</pre>
-                </details>
-              }
-            </div>
-          }
-          @if (m.approvals?.length) {
-            <div class="approvals" role="group" aria-label="Thao tác cần duyệt">
-              @for (c of m.approvals; track c.id) {
-                <div class="approval-card" [attr.data-status]="c.status">
-                  <div class="approval-head">
-                    <mat-icon class="sm" svgIcon="gavel" aria-hidden="true" />
-                    <strong>Cần duyệt:</strong>
-                    <code>{{ c.tool }}</code>
-                    <ui-tag
-                      [value]="c.risk"
-                      [severity]="c.risk === 'destructive' ? 'danger' : 'warn'"
-                    />
-                    <span class="spacer"></span>
-                    @switch (c.status) {
-                      @case ('approved') {
-                        <ui-tag value="Đã duyệt" severity="success" />
-                      }
-                      @case ('denied') {
-                        <ui-tag value="Đã từ chối" severity="danger" />
-                      }
-                      @case ('expired') {
-                        <ui-tag value="Hết hiệu lực" severity="secondary" />
+                    <pre class="args">{{ c.arguments | json }}</pre>
+                    @if (c.status === 'pending') {
+                      @if (c.canDecide) {
+                        <div class="approval-actions">
+                          <button
+                            mat-flat-button
+                            class="btn-aries"
+                            type="button"
+                            [disabled]="c.deciding"
+                            (click)="decide(m, c, true)"
+                          >
+                            <mat-icon svgIcon="check_circle" /> Cho phép
+                          </button>
+                          <button
+                            mat-stroked-button
+                            type="button"
+                            [disabled]="c.deciding"
+                            (click)="decide(m, c, false)"
+                          >
+                            <mat-icon svgIcon="cancel" /> Từ chối
+                          </button>
+                        </div>
+                      } @else {
+                        <p class="muted small">
+                          Đang chờ {{ c.approverRoles.join(' / ') }} duyệt (hộp
+                          <a routerLink="/approvals">Duyệt</a>).
+                        </p>
                       }
                     }
                   </div>
-                  <p class="small">{{ c.reason }}</p>
-                  @if (c.agentName) {
-                    <p class="muted small">Do agent “{{ c.agentName }}” yêu cầu.</p>
-                  }
-                  <pre class="args">{{ c.arguments | json }}</pre>
-                  @if (c.status === 'pending') {
-                    @if (c.canDecide) {
-                      <div class="approval-actions">
-                        <button
-                          mat-flat-button
-                          class="btn-aries"
-                          type="button"
-                          [disabled]="c.deciding"
-                          (click)="decide(m, c, true)"
-                        >
-                          <mat-icon svgIcon="check_circle" /> Cho phép
-                        </button>
-                        <button
-                          mat-stroked-button
-                          type="button"
-                          [disabled]="c.deciding"
-                          (click)="decide(m, c, false)"
-                        >
-                          <mat-icon svgIcon="cancel" /> Từ chối
-                        </button>
-                      </div>
-                    } @else {
-                      <p class="muted small">
-                        Đang chờ {{ c.approverRoles.join(' / ') }} duyệt (hộp
-                        <a routerLink="/approvals">Duyệt</a>).
-                      </p>
-                    }
-                  }
-                </div>
-              }
-              @if (m.canResume && !busy()) {
-                <button mat-stroked-button type="button" (click)="resume(m)">
-                  <mat-icon svgIcon="play_arrow" /> Tiếp tục
-                </button>
-              }
-            </div>
-          }
-          @if (m.thinking) {
-            <p class="thinking">{{ m.thinking }}</p>
-          }
-          @if (m.text) {
-            <div class="bubble">{{ m.text }}</div>
-          } @else if (m.streaming && !m.tools.length) {
-            <div class="bubble typing"><mat-spinner diameter="16" /></div>
-          }
-          @if (m.error) {
-            <ui-notice severity="error" [compact]="true">{{
-              m.error
-            }}</ui-notice>
-          }
+                }
+                @if (m.canResume && !busy()) {
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    (click)="resume(m)"
+                  >
+                    <mat-icon svgIcon="play_arrow" /> Tiếp tục
+                  </button>
+                }
+              </div>
+            }
+
+            @if (m.thinking) {
+              <p class="thinking">{{ m.thinking }}</p>
+            }
+            @if (m.text) {
+              <div class="bubble">{{ m.text }}</div>
+            } @else if (m.streaming && !m.tools.length) {
+              <div class="bubble typing"><mat-spinner diameter="16" /></div>
+            }
+            @if (m.error) {
+              <ui-notice severity="error" [compact]="true">{{
+                m.error
+              }}</ui-notice>
+            }
+          </div>
         </div>
       }
     </div>
@@ -277,52 +388,54 @@
       </div>
     }
 
-    <footer>
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="input"
-      >
+    <div class="composer-wrap">
+      <div class="composer-box">
         <textarea
-          matInput
           rows="2"
           [formControl]="inputCtrl"
           (keydown)="onKey($event)"
-          placeholder="Nhập tin nhắn… (Enter để gửi, Shift+Enter xuống dòng)"
+          placeholder="Nhập yêu cầu hoặc tin nhắn cho {{
+            agent()?.name || 'Agent'
+          }}…"
         ></textarea>
-      </mat-form-field>
-      @if (busy()) {
-        <button
-          mat-icon-button
-          class="stop-btn"
-          type="button"
-          aria-label="Dừng"
-          title="Dừng phản hồi"
-          (click)="stop()"
-        >
-          <mat-icon svgIcon="stop" />
-        </button>
-      } @else {
-        <button
-          mat-flat-button
-          class="btn-aries send-btn"
-          type="button"
-          aria-label="Gửi"
-          [disabled]="!inputCtrl.value.trim() || !agent()"
-          (click)="send()"
-        >
-          <mat-icon svgIcon="send" /> Gửi
-        </button>
-      }
-    </footer>
-    @if (usage(); as u) {
-      <p class="usage muted small">
-        {{ u.input_tokens + u.cache_read_input_tokens | number }} token vào ({{
-          u.cache_read_input_tokens | number
-        }}
-        từ cache) · {{ u.output_tokens | number }} token ra · ≈
-        {{ u.cost_usd | number: '1.4-4' }} USD
-      </p>
-    }
+
+        <div class="composer-bar">
+          <div class="composer-hints">
+            <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+            <span>Nhấn <kbd>Enter</kbd> để gửi · <kbd>Shift + Enter</kbd> xuống dòng</span>
+            @if (usage(); as u) {
+              <span>
+                · {{ u.input_tokens + u.cache_read_input_tokens | number }} in /
+                {{ u.output_tokens | number }} out (≈
+                {{ u.cost_usd | number: '1.4-4' }} USD)
+              </span>
+            }
+          </div>
+
+          @if (busy()) {
+            <button
+              mat-stroked-button
+              class="pill-btn"
+              type="button"
+              aria-label="Dừng"
+              (click)="stop()"
+            >
+              <mat-icon svgIcon="stop" /> Dừng
+            </button>
+          } @else {
+            <button
+              mat-flat-button
+              class="btn-aries"
+              type="button"
+              aria-label="Gửi"
+              [disabled]="!inputCtrl.value.trim() || !agent()"
+              (click)="send()"
+            >
+              <mat-icon svgIcon="send" /> Gửi tin nhắn
+            </button>
+          }
+        </div>
+      </div>
+    </div>
   </section>
 </div>

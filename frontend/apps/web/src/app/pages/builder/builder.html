@@ -133,46 +133,52 @@
       </div>
     }
 
-    <footer>
-      <mat-form-field
-        appearance="outline"
-        subscriptSizing="dynamic"
-        class="input"
-      >
+    <div class="composer-wrap">
+      <div class="composer-box">
         <textarea
-          matInput
           rows="2"
           [formControl]="inputCtrl"
           (keydown)="onKey($event)"
           [placeholder]="
             spec()
               ? 'Yêu cầu sửa, “thử: <câu hỏi>”, hoặc “publish”…'
-              : 'Mô tả agent…'
+              : 'Mô tả agent bạn muốn tạo…'
           "
         ></textarea>
-      </mat-form-field>
-      @if (busy()) {
-        <button
-          mat-icon-button
-          type="button"
-          aria-label="Dừng"
-          title="Dừng xử lý"
-          (click)="stop()"
-        >
-          <mat-icon svgIcon="stop" />
-        </button>
-      } @else {
-        <button
-          mat-flat-button
-          class="btn-aries send-btn"
-          type="button"
-          [disabled]="!inputCtrl.value.trim() || !view()"
-          (click)="send()"
-        >
-          <mat-icon svgIcon="send" /> Gửi
-        </button>
-      }
-    </footer>
+
+        <div class="composer-bar">
+          <div class="composer-hints">
+            <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+            <span
+              >Nhấn <kbd>Enter</kbd> để gửi ·
+              <kbd>Shift + Enter</kbd> xuống dòng</span
+            >
+          </div>
+
+          @if (busy()) {
+            <button
+              mat-stroked-button
+              class="pill-btn"
+              type="button"
+              aria-label="Dừng"
+              (click)="stop()"
+            >
+              <mat-icon svgIcon="stop" /> Dừng
+            </button>
+          } @else {
+            <button
+              mat-flat-button
+              class="btn-aries"
+              type="button"
+              [disabled]="!inputCtrl.value.trim() || !view()"
+              (click)="send()"
+            >
+              <mat-icon svgIcon="send" /> Gửi yêu cầu
+            </button>
+          }
+        </div>
+      </div>
+    </div>
   </section>
 
   <aside class="preview">

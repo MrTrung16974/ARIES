@@ -17,9 +17,26 @@ x-backend-env: &backend-env
   AIAGENT_LLM_FAKE_ENABLED: ${AIAGENT_LLM_FAKE_ENABLED:-true}
   # Kho bí mật cho secret của connection (ADR-0016). Dev: root token của OpenBao dev mode.
   AIAGENT_OPENBAO_ADDR: http://openbao:8200
-  AIAGENT_OPENBAO_TOKEN: ${OPENBAO_DEV_ROOT_TOKEN:?}
+  # API đăng nhập AppRole (file do openbao-init cấp) — không dùng root token (ADR-0018).
+  AIAGENT_OPENBAO_ROLE_ID_FILE: /run/openbao/role_id
+  AIAGENT_OPENBAO_SECRET_ID_FILE: /run/openbao/secret_id
   # Cấu hình không bí mật theo plugin.
-  AIAGENT_PLUGIN_CONFIG: '{"web": {"searxng_url": "http://searxng:8080"}}'
+  AIAGENT_PLUGIN_CONFIG: '{"web": {"searxng_url": "http://searxng:8080", "fetch_proxy": "http://squid:3129"}}'
+  AIAGENT_PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+  # OAuth cho connector (ADR-0018). Bỏ trống secret = tắt nhà cung cấp đó.
+  AIAGENT_OAUTH_PROVIDERS: >-
+    {"keycloak": {"name": "SSO nội bộ (Keycloak)",
+    "authorize_url": "${PUBLIC_KEYCLOAK_URL:-http://localhost:8080}/realms/aiagent/protocol/openid-connect/auth",
+    "token_url": "http://keycloak:8080/realms/aiagent/protocol/openid-connect/token",
+    "userinfo_url": "http://keycloak:8080/realms/aiagent/protocol/openid-connect/userinfo",
+    "client_id": "aries-connector", "client_secret": "${OAUTH_KEYCLOAK_CLIENT_SECRET:-}",
+    "scopes": ["openid"]}}
+  AIAGENT_OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:-}
+  AIAGENT_OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:-}
+  # Mọi lưu lượng ra Internet đi qua Squid (ADR-0018); dịch vụ nội bộ đi thẳng.
+  HTTPS_PROXY: http://squid:3128
+  HTTP_PROXY: http://squid:3128
+  NO_PROXY: localhost,127.0.0.1,keycloak,openbao,postgres,redis,searxng,squid,traefik,web,mcp-demo
 
 services:
   # ------------------------------------------------------------------ edge
@@ -37,7 +54,7 @@ services:
     volumes:
       # Dev: socket read-only. Prod: dùng docker-socket-proxy hoặc file provider.
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks: [app]
+    networks: [app, edge]
     restart: unless-stopped
 
   # ------------------------------------------------------------------ data
@@ -77,13 +94,30 @@ services:
 
   openbao:
     image: openbao/openbao:2.7.2
-    # Chế độ dev (in-memory, tự unseal). Prod: storage raft + Shamir unseal (docs/security.md mục 3).
-    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
-    environment:
-      BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_DEV_ROOT_TOKEN:?}
+    # Server mode, raft trên volume (ADR-0018). Khởi động lại sẽ ở trạng thái khóa → openbao-init mở.
+    command: ["server", "-config=/openbao/config/aries.hcl"]
+    volumes:
+      - ./openbao/aries.hcl:/openbao/config/aries.hcl:ro
+      - baodata:/openbao/file
     cap_add: [IPC_LOCK]
     networks: [data]
     restart: unless-stopped
+
+  openbao-init:
+    image: openbao/openbao:2.7.2
+    # DEV/STAGING: tự init + unseal + cấp AppRole cho API. PROD: unseal thủ công/auto-unseal.
+    entrypoint: ["sh", "/scripts/init.sh"]
+    user: "0"  # ghi vào volume mới (root-owned); chỉ chạy CLI một lần rồi thoát
+    environment:
+      BAO_ADDR: http://openbao:8200
+    volumes:
+      - ./openbao/init.sh:/scripts/init.sh:ro
+      - baoinit:/init
+      - baoapprole:/approle
+    depends_on:
+      openbao: { condition: service_started }
+    networks: [data]
+    restart: "no"
 
   searxng:
     image: searxng/searxng:2026.9.20-fdd8525b1
@@ -93,7 +127,16 @@ services:
       SEARXNG_BASE_URL: http://searxng:8080/
     volumes:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
-    networks: [app]
+    networks: [app, edge]
+    restart: unless-stopped
+
+  squid:
+    image: ubuntu/squid:6.6-24.04_beta
+    # Egress proxy duy nhất cho API/worker (ADR-0018). :3128 allowlist, :3129 web.fetch.
+    volumes:
+      - ./squid/squid.conf:/etc/squid/squid.conf:ro
+      - ./squid/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro
+    networks: [app, edge]
     restart: unless-stopped
 
   # ------------------------------------------------------------------ identity
@@ -127,7 +170,7 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
-    networks: [app, data]
+    networks: [app, data, edge]  # edge: cổng 8080 cho trình duyệt
     restart: unless-stopped
 
   # ------------------------------------------------------------------ backend
@@ -146,11 +189,14 @@ services:
   api:
     image: aiagent-backend:dev
     pull_policy: never  # image do service migrate build
+    volumes:
+      - baoapprole:/run/openbao:ro
     environment:
       <<: *backend-env
       FORWARDED_ALLOW_IPS: "*"  # api chỉ nhận traffic qua Traefik trong mạng nội bộ
     depends_on:
       migrate: { condition: service_completed_successfully }
+      openbao-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       keycloak: { condition: service_healthy }
     healthcheck:
@@ -173,10 +219,13 @@ services:
   worker:
     image: aiagent-backend:dev
     pull_policy: never
+    volumes:
+      - baoapprole:/run/openbao:ro
     command: ["aiagent-worker"]
     environment: *backend-env
     depends_on:
       migrate: { condition: service_completed_successfully }
+      openbao-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     networks: [data, app]
     restart: unless-stopped
@@ -195,6 +244,33 @@ services:
     restart: unless-stopped
 
   # ------------------------------------------------------------------ công cụ dev
+  keycloak-setup:
+    profiles: [demo]
+    image: quay.io/keycloak/keycloak:26.0
+    entrypoint: ["bash", "/setup/setup-connector-client.sh"]
+    environment:
+      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-kcadmin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?}
+      OAUTH_KEYCLOAK_CLIENT_SECRET: ${OAUTH_KEYCLOAK_CLIENT_SECRET:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+    volumes:
+      - ./keycloak/setup-connector-client.sh:/setup/setup-connector-client.sh:ro
+    depends_on:
+      keycloak: { condition: service_healthy }
+    networks: [app]
+    restart: "no"
+
+  mcp-demo:
+    profiles: [demo]
+    image: aiagent-backend:dev
+    pull_policy: never
+    # MCP server mẫu (streamable HTTP, yêu cầu header X-Api-Key) để thử MCP bridge.
+    command: ["python", "-m", "aiagent_plugins.mcp_demo", "--http", "8765"]
+    environment:
+      DEMO_API_KEY: ${MCP_DEMO_API_KEY:-}
+    networks: [app]
+    restart: unless-stopped
+
   demo-seed:
     profiles: [demo]
     image: pgvector/pgvector:pg16
@@ -223,11 +299,16 @@ services:
       - ../backend/src:/app/src
       - ../backend/tests:/app/tests
       - ../backend/migrations:/app/migrations
+      - baoapprole:/run/openbao:ro
     networks: [data]
 
 networks:
+  # app + data đều internal: API/worker chỉ ra Internet qua Squid.
   app:
     name: aiagent_app
+    internal: true
+  edge:
+    name: aiagent_edge  # có Internet: traefik, keycloak (publish cổng), squid, searxng
   data:
     name: aiagent_data
     internal: true   # vùng dữ liệu không ra Internet
@@ -236,3 +317,6 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  baodata:
+  baoinit:
+  baoapprole:

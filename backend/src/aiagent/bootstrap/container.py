@@ -31,9 +31,17 @@ from aiagent.modules.builder.infrastructure.llm_brain import LlmArchitectBrain
 from aiagent.modules.builder.infrastructure.sql_session_repository import (
     SqlBuilderSessionRepository,
 )
-from aiagent.modules.connections.application import ConnectionService
-from aiagent.modules.connections.domain import SecretVaultPort
-from aiagent.modules.connections.infrastructure.openbao_vault import OpenBaoVault, UnconfiguredVault
+from aiagent.modules.connections.application import ConnectionService, OAuthBroker
+from aiagent.modules.connections.domain import OAuthProvider, SecretVaultPort
+from aiagent.modules.connections.infrastructure.oauth_http import (
+    HttpOAuthClient,
+    RedisOAuthStateStore,
+)
+from aiagent.modules.connections.infrastructure.openbao_vault import (
+    AppRoleCredentials,
+    OpenBaoVault,
+    UnconfiguredVault,
+)
 from aiagent.modules.connections.infrastructure.sql_connection_repository import (
     SqlConnectionRepository,
 )
@@ -45,6 +53,9 @@ from aiagent.modules.identity.application import IdentityService
 from aiagent.modules.identity.domain import Principal, TokenVerifierPort
 from aiagent.modules.identity.infrastructure.jwks_verifier import JwksTokenVerifier
 from aiagent.modules.identity.infrastructure.sql_user_repository import SqlUserRepository
+from aiagent.modules.mcp.application import McpService
+from aiagent.modules.mcp.infrastructure.sdk_client import SdkMcpClient
+from aiagent.modules.mcp.infrastructure.sql_mcp_repository import SqlMcpServerRepository
 from aiagent.modules.runtime.application import (
     ApprovalService,
     ConnectionRef,
@@ -215,6 +226,8 @@ class Container:
     runs: RunAgentService
     approvals: ApprovalService
     connections: ConnectionService
+    mcp: McpService
+    oauth: OAuthBroker
     model_router: ModelRouter
     architect: ArchitectService
     commands: CommandService
@@ -244,6 +257,23 @@ class Container:
         return dict(zip(names, results, strict=True))
 
 
+def build_oauth_providers(settings: Settings) -> dict[str, OAuthProvider]:
+    return {
+        pid: OAuthProvider(
+            id=pid,
+            name=p.name,
+            authorize_url=p.authorize_url,
+            token_url=p.token_url,
+            userinfo_url=p.userinfo_url,
+            client_id=p.client_id,
+            client_secret=p.client_secret.get_secret_value(),
+            scopes=tuple(p.scopes),
+            extra_params=dict(p.extra_params),
+        )
+        for pid, p in settings.all_oauth_providers().items()
+    }
+
+
 def build_model_providers(settings: Settings) -> dict[str, ChatModelPort]:
     providers: dict[str, ChatModelPort] = {}
     if settings.anthropic_api_key is not None and settings.anthropic_api_key.get_secret_value():
@@ -261,7 +291,8 @@ def build_model_providers(settings: Settings) -> dict[str, ChatModelPort]:
 def build_container(settings: Settings) -> Container:
     db = Database(settings.database_url.get_secret_value(), pool_size=settings.db_pool_size)
     redis = Redis.from_url(settings.redis_url.get_secret_value())
-    http = httpx.AsyncClient(follow_redirects=False)
+    # Client cho dịch vụ NỘI BỘ (Keycloak JWKS, OpenBao): không đi qua egress proxy.
+    http = httpx.AsyncClient(follow_redirects=False, trust_env=False)
 
     async def redis_ok() -> bool:
         return bool(await cast("Awaitable[bool]", redis.ping()))
@@ -273,24 +304,53 @@ def build_container(settings: Settings) -> Container:
     conversations = ConversationService(SqlConversationRepository(db))
     vault: SecretVaultPort = UnconfiguredVault()
     health_checks: dict[str, HealthCheck] = {"database": db.ping, "redis": redis_ok}
-    if settings.openbao_token is not None and settings.openbao_token.get_secret_value():
+    token = settings.openbao_token.get_secret_value() if settings.openbao_token else ""
+    approle = (
+        AppRoleCredentials(settings.openbao_role_id_file, settings.openbao_secret_id_file)
+        if settings.openbao_role_id_file and settings.openbao_secret_id_file
+        else None
+    )
+    if token or approle is not None:
         bao = OpenBaoVault(
             settings.openbao_addr,
-            settings.openbao_token.get_secret_value(),
             http,
+            token=token or None,
+            approle=approle,
             mount=settings.openbao_kv_mount,
         )
         vault = bao
         health_checks["vault"] = bao.ping
     else:
         logger.warning("Chưa cấu hình OpenBao — không tạo được kết nối có secret")
+    # Client ra Internet (OAuth token endpoint…): tôn trọng HTTPS_PROXY → đi qua egress proxy.
+    egress_http = httpx.AsyncClient(follow_redirects=False)
+    oauth_client = HttpOAuthClient(egress_http)
     connections = ConnectionService(
-        SqlConnectionRepository(db), vault, PluginConnectorLookup(plugins), audit
+        SqlConnectionRepository(db),
+        vault,
+        PluginConnectorLookup(plugins),
+        audit,
+        oauth=oauth_client,
+        providers=build_oauth_providers(settings),
+    )
+    oauth = OAuthBroker(
+        connections,
+        RedisOAuthStateStore(redis),
+        oauth_client,
+        redirect_uri=f"{settings.public_base_url.rstrip('/')}/api/v1/oauth/callback",
+    )
+    mcp = McpService(
+        SqlMcpServerRepository(db),
+        vault,
+        SdkMcpClient(timeout_s=settings.tool_timeout_seconds),
+        audit,
+        settings.mcp_stdio_commands,
     )
     agents = AgentService(
         SqlAgentRepository(db),
         PluginSkillCatalog(plugins),
         connections=ConnectionCatalogAdapter(connections, plugins),
+        mcp=mcp,
     )
     providers = build_model_providers(settings)
     router = ModelRouter(providers)
@@ -302,6 +362,7 @@ def build_container(settings: Settings) -> Container:
             audit,
             timeout_s=settings.tool_timeout_seconds,
             access=ConnectionAccessAdapter(connections),
+            mcp=mcp,
         ),
         router=router,
         loop=LangGraphReactLoop(),
@@ -336,9 +397,11 @@ def build_container(settings: Settings) -> Container:
         runs=runs,
         approvals=ApprovalService(conversations.repo, audit),
         connections=connections,
+        mcp=mcp,
+        oauth=oauth,
         model_router=router,
         architect=architect,
         commands=CommandService(architect, agents, audit),
         health_checks=health_checks,
-        closers=[db.dispose, redis.aclose, http.aclose],
+        closers=[db.dispose, redis.aclose, http.aclose, egress_http.aclose],
     )

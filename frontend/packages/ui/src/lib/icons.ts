@@ -45,6 +45,9 @@ export const APP_ICONS = [
   'play_arrow',
   'travel_explore',
   'warning',
+  'hub',
+  'sync',
+  'login',
 ] as const;
 
 export type AppIcon = (typeof APP_ICONS)[number];

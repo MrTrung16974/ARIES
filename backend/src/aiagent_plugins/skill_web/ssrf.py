@@ -27,6 +27,13 @@ async def system_resolver(host: str, port: int) -> list[str]:
     return sorted({str(info[4][0]) for info in infos})
 
 
+def _ip_literal(host: str) -> str | None:
+    try:
+        return str(ipaddress.ip_address(host.strip("[]")))
+    except ValueError:
+        return None
+
+
 def _is_public(ip: str) -> bool:
     addr = ipaddress.ip_address(ip)
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
@@ -34,8 +41,12 @@ def _is_public(ip: str) -> bool:
     return addr.is_global and not addr.is_multicast
 
 
-async def check_url(url: str, resolver: Resolver = system_resolver) -> str:
-    """Trả lại URL đã chuẩn hóa nếu an toàn; ném BlockedUrlError nếu không."""
+async def check_url(url: str, resolver: Resolver | None = system_resolver) -> str:
+    """Trả lại URL đã chuẩn hóa nếu an toàn; ném BlockedUrlError nếu không.
+
+    `resolver=None`: đi qua egress proxy — proxy tự phân giải và chặn IP nội bộ (ADR-0018),
+    ở đây chỉ kiểm cú pháp, IP viết thẳng và tên máy nội bộ một nhãn (`postgres`, `openbao`…).
+    """
     if len(url) > 2048:
         raise BlockedUrlError("URL quá dài.")
     parts = urlsplit(url.strip())
@@ -54,6 +65,15 @@ async def check_url(url: str, resolver: Resolver = system_resolver) -> str:
         raise BlockedUrlError("Cổng không hợp lệ.") from exc
     if port not in ALLOWED_PORTS:
         raise BlockedUrlError(f"Cổng {port} không được phép.")
+    literal = _ip_literal(host)
+    if literal is not None:
+        if not _is_public(literal):
+            raise BlockedUrlError("Không được truy cập địa chỉ nội bộ/riêng.")
+        return parts.geturl()
+    if "." not in host:
+        raise BlockedUrlError("Không được truy cập máy nội bộ.")
+    if resolver is None:
+        return parts.geturl()
     try:
         ips = await resolver(host, port)
     except OSError as exc:

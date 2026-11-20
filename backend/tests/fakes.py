@@ -24,6 +24,7 @@ from aiagent.modules.conversations.domain import (
     Thread,
 )
 from aiagent.modules.identity.domain import Principal, Role, UserProfile
+from aiagent.modules.mcp.domain import McpServer
 from aiagent.plugin_sdk import (
     PLUGIN_API_VERSION,
     ConnectionContext,
@@ -599,3 +600,70 @@ def _add_delegation_methods() -> None:
 
 
 _add_delegation_methods()
+
+
+class InMemoryMcpServerRepository:
+    def __init__(self) -> None:
+        self.items: dict[UUID, McpServer] = {}
+
+    async def create(self, server: McpServer) -> McpServer:
+        if any(
+            s.slug == server.slug and s.tenant_id == server.tenant_id and not s.deleted
+            for s in self.items.values()
+        ):
+            raise ConflictError("Mã MCP server đã tồn tại.")
+        self.items[server.id] = server
+        return server
+
+    async def get(self, tenant_id: str, server_id: UUID) -> McpServer | None:
+        s = self.items.get(server_id)
+        return s if s and s.tenant_id == tenant_id else None
+
+    async def list_all(self, tenant_id: str) -> list[McpServer]:
+        return [s for s in self.items.values() if s.tenant_id == tenant_id and not s.deleted]
+
+    async def save(self, server: McpServer) -> McpServer:
+        self.items[server.id] = server
+        return server
+
+
+class MemoryOAuthStates:
+    def __init__(self) -> None:
+        self.data: dict[str, dict[str, Any]] = {}
+
+    async def put(self, state: str, data: dict[str, Any], ttl_s: int) -> None:
+        self.data[state] = dict(data)
+
+    async def pop(self, state: str) -> dict[str, Any] | None:
+        return self.data.pop(state, None)
+
+
+class FakeOAuthClient:
+    """Nhà cung cấp OAuth giả: code `good` hợp lệ; ghi lại verifier để kiểm PKCE."""
+
+    def __init__(self) -> None:
+        self.exchanges: list[dict[str, str]] = []
+        self.refreshes = 0
+
+    async def exchange(
+        self, provider: Any, code: str, code_verifier: str, redirect_uri: str
+    ) -> Any:
+        from aiagent.modules.connections.domain import TokenSet
+        from aiagent.shared_kernel.errors import AppError
+
+        self.exchanges.append({"code": code, "verifier": code_verifier, "redirect": redirect_uri})
+        if code != "good":
+            raise AppError("Nhà cung cấp từ chối cấp token (invalid_grant).")
+        return TokenSet(access_token="at-1", refresh_token="rt-1", expires_at=0.0)  # đã hết hạn
+
+    async def refresh(self, provider: Any, refresh_token: str) -> Any:
+        import time
+
+        from aiagent.modules.connections.domain import TokenSet
+
+        self.refreshes += 1
+        assert refresh_token == "rt-1"
+        return TokenSet(access_token="at-2", refresh_token=None, expires_at=time.time() + 3600)
+
+    async def userinfo(self, provider: Any, access_token: str) -> dict[str, Any]:
+        return {"sub": "kc-1", "email": "builder@aries.local"}

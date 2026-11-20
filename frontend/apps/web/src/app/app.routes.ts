@@ -60,6 +60,12 @@ export const appRoutes: Route[] = [
           import('./pages/approvals/approvals').then((m) => m.Approvals),
       },
       {
+        path: 'mcp',
+        title: 'MCP server',
+        canActivate: [roleGuard('admin')],
+        loadComponent: () => import('./pages/mcp/mcp').then((m) => m.Mcp),
+      },
+      {
         path: 'plugins',
         title: 'Plugin',
         canActivate: [roleGuard('admin')],

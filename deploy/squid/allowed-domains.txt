@@ -1,0 +1,5 @@
+# Domain cổng :3128 (lưu lượng hệ thống) được phép ra ngoài. Dấu chấm đầu = cả subdomain.
+# Thêm MCP server HTTP / provider OAuth mới vào đây rồi: docker compose restart squid
+.anthropic.com
+accounts.google.com
+.googleapis.com

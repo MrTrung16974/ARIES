@@ -179,6 +179,25 @@ export class AgentChat implements OnInit, OnDestroy {
       : `v${a.published_version ?? '?'}`;
   });
 
+  protected readonly starterList = computed<string[]>(() => {
+    const configured = this.agent()?.current?.spec?.starter_prompts ?? [];
+    if (configured.length > 0) return configured;
+    const name = (this.agent()?.name ?? '').toLowerCase();
+    if (name.includes('master')) {
+      return [
+        'Báo cáo giờ hệ thống hiện tại và liệt kê các agent chuyên trách đang sẵn sàng',
+        'Kiểm tra cấu trúc các bảng dữ liệu trong cơ sở dữ liệu và tóm tắt',
+        'Phân tích yêu cầu hỗ trợ nội bộ và giao việc cho agent phù hợp',
+        'Hướng dẫn tôi cách phối hợp nhiều agent để xử lý quy trình tự động',
+      ];
+    }
+    return [
+      'Giới thiệu ngắn gọn về vai trò và các kỹ năng bạn có thể thực hiện',
+      'Bạn được cấp quyền sử dụng những công cụ (tool) nào?',
+      'Thực hiện một tác vụ mẫu theo đúng quy tắc của bạn',
+    ];
+  });
+
   private abort: AbortController | null = null;
 
   ngOnInit(): void {

@@ -32,11 +32,13 @@ class AgentService:
         catalog: SkillCatalogPort,
         allowed_models: dict[str, frozenset[str]] = ALLOWED_MODELS,
         connections: ConnectionCatalogPort | None = None,
+        mcp: ConnectionCatalogPort | None = None,  # cùng hình dạng: tools_for(principal, id)
     ) -> None:
         self._repo = repo
         self._catalog = catalog
         self._allowed_models = allowed_models
         self._connections = connections
+        self._mcp = mcp
 
     # ----------------------------------------------------------- validation
     def validate(self, spec: AgentSpec) -> None:
@@ -83,6 +85,21 @@ class AgentService:
             unknown = sorted(set(binding.allowed_tools) - {t.name for t in tools})
             if unknown:
                 errors.append(f"Kết nối {cid} không có tool: {', '.join(unknown)}")
+        if errors:
+            raise ValidationError("; ".join(errors))
+
+    async def check_mcp(self, principal: Principal, spec: AgentSpec) -> None:
+        """MCP server gắn vào agent phải còn bật; tool chọn phải tồn tại (ADR-0018)."""
+        errors: list[str] = []
+        for mb in spec.mcp_servers:
+            sid = str(mb.server_id)
+            tools = await self._mcp.tools_for(principal, sid) if self._mcp is not None else None
+            if tools is None:
+                errors.append(f"MCP server {sid} không tồn tại hoặc đang tắt")
+                continue
+            unknown = sorted(set(mb.allowed_tools) - {t.name for t in tools})
+            if unknown:
+                errors.append(f"MCP server {sid} không có tool: {', '.join(unknown)}")
         if errors:
             raise ValidationError("; ".join(errors))
 
@@ -157,6 +174,7 @@ class AgentService:
         self.validate(spec)
         await self.check_connections(principal, spec)
         await self.check_team(principal, spec)
+        await self.check_mcp(principal, spec)
         return await self._repo.create(principal.tenant_id, principal.subject, spec, via, note)
 
     async def update(
@@ -177,6 +195,7 @@ class AgentService:
         )
         await self.check_connections(principal, spec, already=already)
         await self.check_team(principal, spec)
+        await self.check_mcp(principal, spec)
         return await self._repo.add_version(
             principal.tenant_id, agent_id, spec, principal.subject, via, note, expected_version
         )

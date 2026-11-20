@@ -62,3 +62,42 @@ Prompt caching (đọc cache $0,20/1M với Opus 5.5) có thể giảm đáng k�
 - Giám sát: Prometheus + Grafana + Loki; cảnh báo audit qua Telegram/email nội bộ.
 - Nâng cấp: image có tag theo version, Alembic migrate trước khi rollout, rollback được.
 - Khi cần scale: chuyển sang Kubernetes (Helm), tách `knowledge` và `runtime`.
+
+## 5. Phase 3b — vận hành OpenBao, egress, MCP, OAuth (ADR-0018)
+
+### Mạng trong Compose
+| Mạng | Internet | Thành phần |
+|---|---|---|
+| `aiagent_app` | ✗ (internal) | traefik, web, api, worker, keycloak, searxng, squid, mcp-demo |
+| `aiagent_data` | ✗ (internal) | postgres, redis, openbao, (api, worker, keycloak, migrate) |
+| `aiagent_edge` | ✓ | traefik, keycloak (publish cổng), squid, searxng |
+
+API/worker **không có đường ra Internet nào ngoài Squid**:
+- `squid:3128` — lưu lượng hệ thống, chỉ domain trong `deploy/squid/allowed-domains.txt`
+  (Anthropic, Google…). Thêm domain cho MCP server HTTP / nhà cung cấp OAuth mới rồi
+  `docker compose restart squid`.
+- `squid:3129` — `web.fetch`: mọi domain công khai, chặn mọi IP nội bộ/riêng (kể cả tên miền
+  công khai trỏ về IP nội bộ).
+- Kết nối CSDL ngoài Docker (connector Postgres): gắn thêm mạng/route cho api có chủ đích —
+  không mở Internet chung.
+
+### OpenBao (server mode + raft + AppRole)
+- `openbao-init` chạy mỗi lần `docker compose up`: lần đầu init, mỗi lần unseal và cấp
+  `secret_id` mới cho API (file trong volume `baoapprole`, chỉ api/worker mount).
+- OpenBao khởi động lại một mình sẽ **bị khóa** (API báo `vault: false` ở `/readyz`) — chạy lại:
+  `docker compose up -d openbao-init`.
+- **Prod:** không dùng `openbao-init` (unseal key nằm trên volume); dùng Shamir nhiều người giữ
+  hoặc auto-unseal (Transit/KMS/HSM), bật TLS listener, sao lưu snapshot raft định kỳ.
+
+### MCP server
+- Admin đăng ký ở trang **MCP**. Kiểu `stdio` chỉ chọn được lệnh trong
+  `AIAGENT_MCP_STDIO_COMMANDS` (JSON `{"tên": ["lệnh", "tham số"…]}`) do người vận hành cài.
+- Thử nhanh: `docker compose --profile demo up -d mcp-demo` rồi đăng ký URL
+  `http://mcp-demo:8765/mcp` với header `X-Api-Key` = `MCP_DEMO_API_KEY` trong `.env`.
+
+### OAuth cho connector
+- `AIAGENT_PUBLIC_BASE_URL` phải là địa chỉ trình duyệt dùng; redirect URI =
+  `<PUBLIC_BASE_URL>/api/v1/oauth/callback` (đăng ký ở nhà cung cấp).
+- Google: đặt `OAUTH_GOOGLE_CLIENT_ID`/`OAUTH_GOOGLE_CLIENT_SECRET`.
+- SSO nội bộ (Keycloak, để thử luồng đầy đủ): đặt `OAUTH_KEYCLOAK_CLIENT_SECRET` rồi
+  `docker compose --profile demo run --rm keycloak-setup`.

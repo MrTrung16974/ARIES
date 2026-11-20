@@ -8,7 +8,7 @@ const ICONS = [
   'deployed_code', 'dns', 'edit', 'forum', 'home', 'light_mode', 'lock', 'logout',
   'person', 'refresh', 'robot_2', 'save', 'search', 'send', 'shield', 'stop', 'tune',
   'verified', 'cable', 'cancel', 'check_circle', 'database', 'delete', 'gavel', 'key',
-  'play_arrow', 'travel_explore', 'warning',
+  'play_arrow', 'travel_explore', 'warning', 'hub', 'sync', 'login',
 ];
 const src = 'node_modules/@material-symbols/svg-400/outlined';
 const out = 'apps/web/public/assets/icons';
