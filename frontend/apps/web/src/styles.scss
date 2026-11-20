@@ -1,6 +1,9 @@
 @use '@angular/material' as mat;
 
-/* Theme ARIES — Angular Material 3 (MIT). Màu chủ đạo hồng (rose) theo logo. */
+/* ==========================================================================
+   ARIES Design System — Flowly Studio Layout & Cosmic Neon Rose Theme
+   ========================================================================== */
+
 html {
   color-scheme: light;
   @include mat.theme(
@@ -32,38 +35,110 @@ html {
     )
   );
 
-  /* Design token của ứng dụng — component chỉ dùng các biến này, không dùng màu cứng. */
-  --app-bg: var(--mat-sys-surface-container-low);
-  --app-surface: var(--mat-sys-surface-container-lowest);
-  --app-surface-2: var(--mat-sys-surface-container);
-  --app-hover: var(--mat-sys-surface-container-high);
-  --app-text: var(--mat-sys-on-surface);
-  --app-muted: var(--mat-sys-on-surface-variant);
-  --app-border: var(--mat-sys-outline-variant);
-  --app-primary: var(--mat-sys-primary);
-  --app-on-primary: var(--mat-sys-on-primary);
-  --app-highlight: var(--mat-sys-primary-container);
-  --app-radius-md: 8px;
-  --app-radius-lg: 12px;
-  --app-radius-xl: 16px;
-
-  --app-success: #15803d;
-  --app-success-bg: #f0fdf4;
-  --app-info: #0369a1;
-  --app-info-bg: #f0f9ff;
-  --app-warn: #b45309;
-  --app-warn-bg: #fffbeb;
-  --app-danger: #b91c1c;
-  --app-danger-bg: #fef2f2;
-
   /* Thương hiệu ARIES */
   --aries-night: #0b0614;
+  --aries-cosmos: #150926;
+  --aries-nebula: #2a0a24;
   --aries-glow: #ff3d8b;
+  --aries-glow-strong: #ff1f7a;
+  --aries-star: #ff85b8;
+  --aries-gradient: linear-gradient(135deg, #ff3d8b 0%, #c026d3 100%);
+  --aries-hero-bg:
+    radial-gradient(circle at 85% 20%, rgba(255, 61, 139, 0.22) 0%, transparent 45%),
+    radial-gradient(140% 180% at 0% 50%, #2d0b28 0%, #120821 55%, #0b0614 100%);
+
+  /* Khung vỏ ngoài (Sidebar frame) & Bề mặt Canvas kiểu Flowly */
+  --shell-frame-bg: #160b24;
+  --app-bg: #fcfbfd;
+  --app-surface: #ffffff;
+  --app-surface-2: #f4f0f8;
+  --app-surface-3: #eae3f1;
+  --app-hover: #efe8f6;
+  --app-text: #180f26;
+  --app-muted: #6c5e7c;
+  --app-border: #ebe4f2;
+  --app-border-strong: #d8cce6;
+  --app-primary: var(--mat-sys-primary);
+  --app-on-primary: var(--mat-sys-on-primary);
+  --app-highlight: rgba(255, 61, 139, 0.11);
+
+  --app-radius-sm: 8px;
+  --app-radius-md: 12px;
+  --app-radius-lg: 16px;
+  --app-radius-xl: 22px;
+
+  --app-shadow-sm: 0 2px 8px rgba(20, 10, 38, 0.04), 0 1px 2px rgba(20, 10, 38, 0.03);
+  --app-shadow-md: 0 10px 28px -6px rgba(20, 10, 38, 0.07), 0 2px 6px -1px rgba(20, 10, 38, 0.04);
+  --app-shadow-glow: 0 0 24px rgba(255, 61, 139, 0.25);
+
+  --app-success: #15803d;
+  --app-success-bg: #e8faf0;
+  --app-success-border: #bbf7d0;
+  --app-info: #0369a1;
+  --app-info-bg: #edf7ff;
+  --app-info-border: #bae6fd;
+  --app-warn: #b45309;
+  --app-warn-bg: #fef7e6;
+  --app-warn-border: #fde68a;
+  --app-danger: #be123c;
+  --app-danger-bg: #fff0f3;
+  --app-danger-border: #fecdd3;
+}
+
+/* Chế độ Đêm sao ARIES (Dark Cosmic Mode) */
+html.dark-theme {
+  color-scheme: dark;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$rose-palette,
+        tertiary: mat.$magenta-palette,
+        theme-type: dark,
+      ),
+      density: -1,
+    )
+  );
+
+  --shell-frame-bg: #08040f;
+  --app-bg: #11091d;
+  --app-surface: #180e29;
+  --app-surface-2: #211438;
+  --app-surface-3: #2b1a48;
+  --app-hover: #281843;
+  --app-text: #f7effa;
+  --app-muted: #b09dc2;
+  --app-border: rgba(255, 133, 184, 0.14);
+  --app-border-strong: rgba(255, 61, 139, 0.32);
+  --app-highlight: rgba(255, 61, 139, 0.18);
+
+  --app-shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --app-shadow-md: 0 14px 34px -6px rgba(0, 0, 0, 0.55);
+  --app-shadow-glow: 0 0 28px rgba(255, 61, 139, 0.35);
+
+  --app-success: #4ade80;
+  --app-success-bg: rgba(21, 128, 61, 0.22);
+  --app-success-border: rgba(74, 222, 128, 0.3);
+  --app-info: #38bdf8;
+  --app-info-bg: rgba(3, 105, 161, 0.24);
+  --app-info-border: rgba(56, 189, 248, 0.3);
+  --app-warn: #fbbf24;
+  --app-warn-bg: rgba(180, 83, 9, 0.24);
+  --app-warn-border: rgba(251, 191, 36, 0.3);
+  --app-danger: #fb7185;
+  --app-danger-bg: rgba(190, 18, 60, 0.24);
+  --app-danger-border: rgba(251, 113, 133, 0.35);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html,
 body {
   margin: 0;
+  min-height: 100vh;
   font-family:
     Inter,
     system-ui,
@@ -71,26 +146,158 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
-  background: var(--app-bg);
+  background-color: var(--app-bg);
   color: var(--app-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1 {
   font-size: 1.5rem;
-  margin: 0 0 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
 }
 
-/* Icon SVG Material Symbols nhận màu chữ hiện tại */
-.mat-icon svg {
-  fill: currentColor;
+h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+code {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  background: var(--app-surface-2);
+  color: var(--app-text);
+  padding: 0.14rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--app-border);
+}
+
+.mat-mdc-card {
+  background: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
+  border-radius: var(--app-radius-lg) !important;
+  box-shadow: var(--app-shadow-sm) !important;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+/* Segmented Capsule Pill Tabs kiểu Flowly cho mat-tab-group */
+.mat-mdc-tab-header {
+  background: var(--app-surface-2);
+  padding: 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--app-border) !important;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 1rem;
+
+  .mat-mdc-tab-label-container {
+    border-bottom: none !important;
+  }
+
+  .mdc-tab {
+    height: 36px !important;
+    border-radius: 999px !important;
+    padding: 0 1.1rem !important;
+    min-width: auto !important;
+    transition: background 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .mdc-tab--active {
+    background: var(--app-surface) !important;
+    box-shadow: var(--app-shadow-sm);
+  }
+
+  .mdc-tab-indicator {
+    display: none !important;
+  }
+}
+
+.mat-mdc-table {
+  background: var(--app-surface) !important;
+
+  .mat-mdc-header-row {
+    background: var(--app-surface-2);
+  }
+
+  .mat-mdc-header-cell {
+    font-weight: 600;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--app-muted);
+    border-bottom-color: var(--app-border);
+  }
+
+  .mat-mdc-cell {
+    border-bottom-color: var(--app-border);
+    font-size: 0.88rem;
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+  }
+
+  .mat-mdc-row:hover {
+    background: var(--app-hover);
+  }
+}
+
+mat-icon,
+.mat-icon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  flex-shrink: 0;
+
+  svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    fill: currentColor;
+  }
 }
 
 mat-icon.sm {
-  width: 18px;
-  height: 18px;
+  width: 18px !important;
+  height: 18px !important;
+  font-size: 18px;
 }
 
-/* Form dùng chung: mat-form-field chiếm hết chiều ngang */
+.mdc-tab__text-label {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.42rem;
+  white-space: nowrap;
+  font-size: 0.86rem;
+
+  mat-icon {
+    color: var(--app-primary);
+  }
+}
+
+.sec-title,
+.th-label,
+.dt-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+
+  mat-icon {
+    color: var(--app-primary);
+  }
+}
+
 .full {
   width: 100%;
 }
@@ -101,4 +308,263 @@ mat-icon.sm {
 
 .small {
   font-size: 0.8rem;
+}
+
+.btn-aries {
+  background: var(--aries-gradient) !important;
+  color: #fff !important;
+  border-radius: 999px !important;
+  box-shadow: 0 4px 14px rgba(255, 61, 139, 0.32);
+}
+
+.icon-badge,
+.head-icon,
+.agent-badge,
+.agent-icon,
+.agent-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--app-highlight);
+  border: 1px solid rgba(255, 61, 139, 0.25);
+  color: var(--app-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &.accent {
+    background: var(--aries-gradient);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(255, 61, 139, 0.3);
+  }
+}
+
+.spacer {
+  flex: 1;
+}
+
+.ok {
+  color: var(--app-success);
+}
+
+.err {
+  color: var(--app-danger);
+}
+
+.success {
+  --mat-button-filled-container-color: var(--app-success);
+  --mat-button-filled-label-text-color: #fff;
+}
+
+.msg {
+  max-width: 82%;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+
+  .msg-meta,
+  .msg-author {
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: var(--app-muted);
+    padding: 0 0.2rem;
+  }
+
+  &.user {
+    align-self: flex-end;
+
+    .msg-meta,
+    .msg-author {
+      text-align: right;
+    }
+
+    .bubble {
+      background: var(--aries-gradient);
+      color: #fff;
+      border-color: transparent;
+      border-bottom-right-radius: 4px;
+    }
+  }
+
+  &.error .bubble {
+    background: var(--app-danger-bg);
+    color: var(--app-danger);
+    border-color: var(--app-danger-border);
+  }
+}
+
+.bubble {
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  padding: 0.65rem 0.95rem;
+  border-radius: var(--app-radius-lg);
+  border-bottom-left-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.empty-avatar,
+.empty-badge {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 0.85rem;
+  border-radius: 50%;
+  box-shadow:
+    0 12px 26px -4px rgba(0, 0, 0, 0.7),
+    0 0 24px rgba(255, 61, 139, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 50%;
+  }
+}
+
+/* Các khối chuẩn phong cách Flowly dùng chung giữa các trang */
+.flow-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.15rem;
+  border-radius: var(--app-radius-xl);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-md);
+}
+
+.flow-info-strip {
+  padding: 0.6rem 0.95rem;
+  margin-bottom: 1.15rem;
+  border-radius: var(--app-radius-md);
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  color: var(--app-muted);
+  font-size: 0.83rem;
+}
+
+/* Thẻ duyệt thao tác (HITL) và thẻ Master giao việc dùng chung */
+.approvals,
+.delegations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+}
+
+.approval-card,
+.delegation {
+  width: 100%;
+  border: 1px solid var(--app-border);
+  border-left: 4px solid var(--app-primary);
+  border-radius: var(--app-radius-md);
+  padding: 0.6rem 0.8rem;
+  background: var(--app-surface);
+}
+
+.approval-card {
+  border-left-color: #d97706;
+  &[data-status='approved'] {
+    border-left-color: #16a34a;
+  }
+  &[data-status='denied'],
+  &[data-status='expired'] {
+    border-left-color: var(--app-muted);
+    opacity: 0.85;
+  }
+  .approval-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+  p {
+    margin: 0.3rem 0;
+  }
+  .args {
+    margin: 0.3rem 0;
+    padding: 0.45rem;
+    max-height: 11rem;
+    overflow: auto;
+    font-size: 0.78rem;
+    background: var(--app-surface-2);
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .approval-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+}
+
+.delegation {
+  &[data-status='completed'] {
+    border-left-color: #16a34a;
+  }
+  &[data-status='awaiting_approval'] {
+    border-left-color: #d97706;
+  }
+  &[data-status='failed'] {
+    border-left-color: var(--app-muted);
+  }
+  .delegation-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .task {
+    margin: 0.25rem 0 0;
+    color: var(--app-muted);
+    white-space: pre-wrap;
+  }
+  .delegation-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+    font-size: 0.78rem;
+  }
+}
+
+.flow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 7px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.76rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+
+  &.chip-read {
+    background: var(--app-info-bg);
+    color: var(--app-info);
+    border-color: var(--app-info-border);
+  }
+  &.chip-write {
+    background: var(--app-highlight);
+    color: var(--app-primary);
+    border-color: rgba(255, 61, 139, 0.25);
+  }
+  &.chip-warn {
+    background: var(--app-warn-bg);
+    color: var(--app-warn);
+    border-color: var(--app-warn-border);
+  }
+  &.chip-danger {
+    background: var(--app-danger-bg);
+    color: var(--app-danger);
+    border-color: var(--app-danger-border);
+  }
 }

@@ -74,6 +74,15 @@ export class ChatStreamService {
     );
   }
 
+  /** Tiếp tục run đã dừng chờ duyệt (sau khi mọi yêu cầu có quyết định). */
+  resume(threadId: string, signal?: AbortSignal): AsyncGenerator<RunEventMessage> {
+    return this.stream(
+      `/v1/threads/${encodeURIComponent(threadId)}/resume`,
+      {},
+      signal,
+    );
+  }
+
   /** POST JSON tới `path` (tương đối apiBaseUrl) và đọc SSE trả về. */
   async *stream(
     path: string,

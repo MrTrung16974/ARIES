@@ -26,6 +26,7 @@ from aiagent.modules.builder.domain import (
     BuilderSessionRepositoryPort,
     CapabilityPlan,
     Catalog,
+    ConnectionChoice,
     EvalCase,
     EvalCaseResult,
     EvalReport,
@@ -52,7 +53,7 @@ EVAL_CONCURRENCY = 3
 
 
 class CatalogProviderPort(Protocol):
-    def catalog_for(self, principal: Principal) -> Catalog: ...
+    async def catalog_for(self, principal: Principal) -> Catalog: ...
 
 
 def provider_of(model: str) -> str:
@@ -73,14 +74,33 @@ def permissions_of(spec: AgentSpec, catalog: Catalog) -> list[dict[str, Any]]:
                 continue
             status = "needs_approval" if tool.risk in needs else "active"
             out.append({"skill": skill.id, "tool": tool.name, "risk": tool.risk, "status": status})
+    conns = {c.id: c for c in catalog.connections}
+    for cb in spec.connections:
+        conn = conns.get(str(cb.connection_id))
+        if conn is None:
+            continue
+        for tool in conn.tools:
+            if cb.allowed_tools and tool.name not in cb.allowed_tools:
+                continue
+            status = "needs_approval" if tool.risk in needs else "active"
+            out.append(
+                {
+                    "skill": conn.connector_id,
+                    "connection": conn.name,
+                    "tool": tool.name,
+                    "risk": tool.risk,
+                    "status": status,
+                }
+            )
     return out
 
 
 def summarize(spec: AgentSpec) -> str:
     skills = ", ".join(s.skill_id for s in spec.skills) or "không có"
+    conns = f" · {len(spec.connections)} kết nối" if spec.connections else ""
     return (
         f"{spec.name} — {spec.description or 'chưa có mô tả'}\n"
-        f"Model: {spec.model.model} (effort {spec.model.effort.value}) · Skill: {skills} · "
+        f"Model: {spec.model.model} (effort {spec.model.effort.value}) · Skill: {skills}{conns} · "
         f"{len(spec.rules)} quy tắc · dữ liệu {spec.data_classification.value}"
     )
 
@@ -145,7 +165,7 @@ class ArchitectService:
         await self.owned(principal, session_id)
         return await self._sessions.messages(principal.tenant_id, session_id)
 
-    def view(self, principal: Principal, session: BuilderSession) -> dict[str, Any]:
+    async def view(self, principal: Principal, session: BuilderSession) -> dict[str, Any]:
         """Trạng thái hiển thị cho UI (preview bên phải)."""
         data: dict[str, Any] = {
             "id": str(session.id),
@@ -165,7 +185,7 @@ class ArchitectService:
         if session.draft_spec:
             spec = AgentSpec.model_validate(session.draft_spec)
             data["summary"] = summarize(spec)
-            data["permissions"] = permissions_of(spec, self._catalog.catalog_for(principal))
+            data["permissions"] = permissions_of(spec, (await self._catalog.catalog_for(principal)))
         return data
 
     # ================================================================== main loop
@@ -201,7 +221,7 @@ class ArchitectService:
                 async for ev in self._edit(principal, session, text, meter):
                     yield ev
             elif intent is Intent.EXPLAIN:
-                yield self._explain(principal, session)
+                yield await self._explain(principal, session)
             elif intent is Intent.TEST:
                 async for ev in self._test(principal, session, test_message or text):
                     yield ev
@@ -297,7 +317,7 @@ class ArchitectService:
             return
         session.questions = []
 
-        catalog = self._catalog.catalog_for(principal)
+        catalog = await self._catalog.catalog_for(principal)
         if not catalog.models:
             raise ValidationError("Chưa có model nào khả dụng (cấu hình ANTHROPIC_API_KEY).")
         yield BuilderEvent("status", {"text": "Đang chọn năng lực cho agent…"})
@@ -351,6 +371,15 @@ class ArchitectService:
             if choice.skill_id not in {k.skill_id for k in kept}:
                 kept.append(choice)
         plan.skills = kept
+        tools_by_conn = {c.id: {t.name for t in c.tools} for c in catalog.connections}
+        kept_conns: list[ConnectionChoice] = []
+        for cc in plan.connections:
+            if cc.connection_id not in tools_by_conn:
+                continue
+            cc.allowed_tools = [t for t in cc.allowed_tools if t in tools_by_conn[cc.connection_id]]
+            if cc.connection_id not in {k.connection_id for k in kept_conns}:
+                kept_conns.append(cc)
+        plan.connections = kept_conns
         if plan.model not in catalog.models:
             plan.model = catalog.models[0]
         return plan
@@ -383,9 +412,14 @@ class ArchitectService:
             "output_format": {"language": brief.language[:16] or "vi", "style": draft.style[:500]},
             "opening_statement": draft.opening_statement[:1000],
             "starter_prompts": [s[:500] for s in draft.starter_prompts][:6],
+            "when_to_use": draft.when_to_use.strip()[:300],
             "skills": [
                 {"skill_id": s.skill_id, "allowed_tools": s.allowed_tools, "config": {}}
                 for s in plan.skills
+            ],
+            "connections": [
+                {"connection_id": c.connection_id, "allowed_tools": c.allowed_tools}
+                for c in plan.connections
             ],
         }
         try:
@@ -403,7 +437,7 @@ class ArchitectService:
     ) -> AsyncIterator[BuilderEvent]:
         if session.draft_spec is None:
             raise ValidationError("Chưa có bản nháp để sửa.")
-        catalog = self._catalog.catalog_for(principal)
+        catalog = await self._catalog.catalog_for(principal)
         yield BuilderEvent("status", {"text": "Đang tính thay đổi…"})
         proposal = await self._brain.edit(session.draft_spec, instruction, catalog, meter)
         try:
@@ -530,11 +564,11 @@ class ArchitectService:
             },
         )
 
-    def _explain(self, principal: Principal, session: BuilderSession) -> BuilderEvent:
+    async def _explain(self, principal: Principal, session: BuilderSession) -> BuilderEvent:
         if session.draft_spec is None:
             return BuilderEvent("message", {"text": "Chưa có bản nháp."})
         spec = AgentSpec.model_validate(session.draft_spec)
-        perms = permissions_of(spec, self._catalog.catalog_for(principal))
+        perms = permissions_of(spec, (await self._catalog.catalog_for(principal)))
         lines = (
             [summarize(spec), "Quyền:"]
             + [

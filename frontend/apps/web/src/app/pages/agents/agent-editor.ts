@@ -13,7 +13,12 @@ import {
   AgentDetail,
   AgentSpec,
   AgentsApi,
+  AgentSummary,
+  ConnectionInfo,
+  ConnectionsApi,
+  ConnectorInfo,
   defaultSpec,
+  defaultTeam,
   ModelInfo,
   RiskLevel,
   SkillInfo,
@@ -75,6 +80,7 @@ export class AgentEditor implements OnInit {
   readonly id = input<string>();
 
   private readonly api = inject(AgentsApi);
+  private readonly connectionsApi = inject(ConnectionsApi);
   private readonly router = inject(Router);
 
   protected spec: AgentSpec = defaultSpec();
@@ -85,6 +91,13 @@ export class AgentEditor implements OnInit {
 
   protected readonly agent = signal<AgentDetail | null>(null);
   protected readonly skills = signal<SkillInfo[]>([]);
+  protected readonly connections = signal<ConnectionInfo[]>([]);
+  protected readonly agents = signal<AgentSummary[]>([]);
+  /** Thành viên có thể chọn: agent đã publish, trừ chính nó. */
+  protected readonly memberChoices = computed(() =>
+    this.agents().filter((a) => a.published_version !== null && a.id !== this.id()),
+  );
+  protected readonly connectors = signal<ConnectorInfo[]>([]);
   protected readonly models = signal<ModelInfo[]>([]);
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -124,6 +137,9 @@ export class AgentEditor implements OnInit {
 
   ngOnInit(): void {
     this.api.skills().subscribe((s) => this.skills.set(s));
+    this.connectionsApi.list().subscribe((c) => this.connections.set(c));
+    this.api.list().subscribe((a) => this.agents.set(a));
+    this.connectionsApi.connectors().subscribe((c) => this.connectors.set(c));
     this.api.models().subscribe((m) => this.models.set(m));
     if (!this.isNew()) {
       this.api.get(this.id() as string).subscribe({
@@ -158,6 +174,67 @@ export class AgentEditor implements OnInit {
           { skill_id: id, allowed_tools: [], config: {} },
         ]
       : this.spec.skills.filter((s) => s.skill_id !== id);
+  }
+
+  // ---------------------------------------------------------------- team (Master)
+  protected setSupervisor(on: boolean): void {
+    this.spec.graph_type = on ? 'supervisor' : 'react';
+    this.spec.team = on ? (this.spec.team ?? defaultTeam()) : null;
+    if (on) {
+      this.spec.skills = [];
+      this.spec.connections = [];
+    }
+  }
+
+  protected isMember(id: string): boolean {
+    return !!this.spec.team?.members.some((m) => m.agent_id === id);
+  }
+
+  protected toggleMember(id: string, on: boolean): void {
+    const team = this.spec.team;
+    if (!team) return;
+    const others = team.members.filter((m) => m.agent_id !== id);
+    team.members = on ? [...others, { agent_id: id, when_to_use: '' }] : others;
+  }
+
+  // ---------------------------------------------------------------- connections
+  protected connectorOf(c: ConnectionInfo): ConnectorInfo | undefined {
+    return this.connectors().find((x) => x.id === c.connector_id);
+  }
+
+  /** Kết nối hiển thị: được dùng, hoặc đã gắn sẵn trong spec (vẫn giữ được). */
+  protected readonly connectionChoices = computed(() => this.connections());
+
+  protected hasConnection(id: string): boolean {
+    return this.spec.connections.some((c) => c.connection_id === id);
+  }
+
+  protected toggleConnection(c: ConnectionInfo, on: boolean): void {
+    const others = this.spec.connections.filter((x) => x.connection_id !== c.id);
+    if (!on) {
+      this.spec.connections = others;
+      return;
+    }
+    // Mặc định chỉ tool đọc; tool ghi/phá hủy phải chủ động bật (và vẫn cần duyệt).
+    const read = (this.connectorOf(c)?.tools ?? [])
+      .filter((t) => t.risk === 'read')
+      .map((t) => t.name);
+    this.spec.connections = [...others, { connection_id: c.id, allowed_tools: read }];
+  }
+
+  protected connToolAllowed(connectionId: string, tool: string): boolean {
+    const b = this.spec.connections.find((x) => x.connection_id === connectionId);
+    return !!b && (b.allowed_tools.length === 0 || b.allowed_tools.includes(tool));
+  }
+
+  protected toggleConnTool(c: ConnectionInfo, tool: string, on: boolean): void {
+    const b = this.spec.connections.find((x) => x.connection_id === c.id);
+    if (!b) return;
+    const all = (this.connectorOf(c)?.tools ?? []).map((t) => t.name);
+    const current = b.allowed_tools.length ? b.allowed_tools : all;
+    const next = on ? [...new Set([...current, tool])] : current.filter((t) => t !== tool);
+    b.allowed_tools = next.length === all.length ? [] : next;
+    if (!next.length) this.toggleConnection(c, false);
   }
 
   protected needsApproval(risk: RiskLevel): boolean {
@@ -242,6 +319,8 @@ export class AgentEditor implements OnInit {
   private load(a: AgentDetail): void {
     this.agent.set(a);
     this.spec = structuredClone(a.current.spec);
+    this.spec.connections ??= [];
+    this.spec.when_to_use ??= '';
     this.syncText();
   }
 

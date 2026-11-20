@@ -5,10 +5,11 @@ ENV NX_DAEMON=false NX_NO_CLOUD=true CI=true
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY . .
-RUN npx nx build web --configuration=production
+RUN npx nx build web --configuration=production --skip-nx-cache
 
 # nginx không chạy bằng root, nghe cổng 8080
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx-security-headers.conf /etc/nginx/aries-security-headers.conf
 COPY --from=build /src/dist/apps/web/browser /usr/share/nginx/html
 EXPOSE 8080

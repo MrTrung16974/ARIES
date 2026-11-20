@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from aiagent.api.deps import ContainerDep, get_principal
+from aiagent.modules.conversations.domain import Approval, ApprovalStatus
 from aiagent.modules.identity.domain import Principal
 from aiagent.modules.runtime.application import PreparedRun
 
@@ -92,3 +93,120 @@ async def list_messages(thread_id: UUID, p: AnyUser, c: ContainerDep) -> list[Me
         MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
         for m in messages
     ]
+
+
+@router.post(
+    "/threads/{thread_id}/resume",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+async def resume(thread_id: UUID, p: AnyUser, c: ContainerDep) -> StreamingResponse:
+    """Tiếp tục run đã dừng chờ duyệt (sau khi mọi yêu cầu có quyết định). SSE như /chat."""
+    prepared = await c.runs.prepare_resume(p, thread_id)
+    return StreamingResponse(
+        _sse(c.runs.stream(prepared), prepared),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+class ApprovalOut(BaseModel):
+    id: UUID
+    thread_id: UUID
+    run_id: UUID
+    agent_id: UUID
+    requester_id: str
+    tool_use_id: str
+    tool: str
+    risk: str
+    reason: str
+    arguments: dict[str, Any]
+    approver_roles: list[str]
+    connection_id: str | None
+    status: ApprovalStatus
+    decided_by: str | None
+    decision_note: str | None
+    created_at: datetime
+    decided_at: datetime | None
+    can_decide: bool
+
+
+class DecisionIn(BaseModel):
+    approve: bool
+    note: str | None = Field(default=None, max_length=500)
+
+
+def _approval_out(c: Any, p: Principal, a: Approval) -> ApprovalOut:
+    return ApprovalOut(
+        id=a.id,
+        thread_id=a.thread_id,
+        run_id=a.run_id,
+        agent_id=a.agent_id,
+        requester_id=a.requester_id,
+        tool_use_id=a.tool_use_id,
+        tool=a.tool,
+        risk=a.risk,
+        reason=a.reason,
+        arguments=a.arguments,
+        approver_roles=a.approver_roles,
+        connection_id=a.connection_id,
+        status=a.status,
+        decided_by=a.decided_by,
+        decision_note=a.decision_note,
+        created_at=a.created_at,
+        decided_at=a.decided_at,
+        can_decide=a.status is ApprovalStatus.PENDING and c.approvals.can_decide(p, a),
+    )
+
+
+@router.get("/approvals", response_model=list[ApprovalOut])
+async def list_approvals(
+    p: AnyUser,
+    c: ContainerDep,
+    status: Annotated[ApprovalStatus | None, Query()] = None,
+    thread_id: Annotated[UUID | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> list[ApprovalOut]:
+    items = await c.approvals.list(p, status=status, thread_id=thread_id, limit=limit)
+    return [_approval_out(c, p, a) for a in items]
+
+
+@router.post("/approvals/{approval_id}/decision", response_model=ApprovalOut)
+async def decide_approval(
+    approval_id: UUID, body: DecisionIn, p: AnyUser, c: ContainerDep
+) -> ApprovalOut:
+    decided = await c.approvals.decide(p, approval_id, approve=body.approve, note=body.note)
+    return _approval_out(c, p, decided)
+
+
+class PendingOut(BaseModel):
+    waiting: bool
+    can_resume: bool
+    approvals: list[ApprovalOut]
+
+
+@router.get("/threads/{thread_id}/pending", response_model=PendingOut)
+async def thread_pending(thread_id: UUID, p: AnyUser, c: ContainerDep) -> PendingOut:
+    """Hội thoại có đang chờ duyệt không (gồm cả yêu cầu của agent con khi chat với Master)."""
+    state = await c.runs.pending_state(p, thread_id)
+    return PendingOut(
+        waiting=state.waiting,
+        can_resume=state.can_resume,
+        approvals=[_approval_out(c, p, a) for a in state.approvals],
+    )
+
+
+class MasterOut(BaseModel):
+    agent_id: UUID
+    name: str
+    members: int
+
+
+@router.get("/master", response_model=MasterOut)
+async def master(p: AnyUser, c: ContainerDep) -> MasterOut:
+    """ARIES Master của tổ chức (tự tạo lần đầu) — đầu mối giao việc cho các agent khác."""
+    providers = set(c.model_router.providers)
+    model = ("anthropic", "claude-opus-5-5") if "anthropic" in providers else ("fake", "fake-echo")
+    agent = await c.agents.ensure_master(p, provider=model[0], model=model[1])
+    count = len([a for a in await c.agents.list_agents(p) if a.id != agent.id])
+    return MasterOut(agent_id=agent.id, name=agent.name, members=count)

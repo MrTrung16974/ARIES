@@ -41,6 +41,14 @@ const SUGGESTIONS = [
   template: `
     <ng-template #tpl>
       <div class="cmd">
+        <div class="cmd-header">
+          <div class="cmd-brand">
+            <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+            <span>ARIES Command Bar</span>
+          </div>
+          <span class="cmd-shortcut">Enter để chạy · Esc để đóng</span>
+        </div>
+
         <mat-form-field
           appearance="outline"
           class="full"
@@ -52,16 +60,23 @@ const SUGGESTIONS = [
             id="cmd-input"
             [(ngModel)]="text"
             (keydown.enter)="run()"
-            placeholder="Mô tả agent cần tạo, hoặc /agent …  (Esc để đóng)"
+            placeholder="Mô tả agent cần tạo, hoặc gõ /agent …"
             aria-label="Lệnh"
             autocomplete="off"
           />
         </mat-form-field>
-        <div class="hints">
-          @for (s of suggestions; track s) {
-            <button type="button" (click)="use(s)">{{ s.trim() }}</button>
-          }
+
+        <div class="hints-wrap">
+          <span class="hints-label">Gợi ý lệnh nhanh:</span>
+          <div class="hints">
+            @for (s of suggestions; track s) {
+              <button type="button" (click)="use(s)">
+                <code>{{ s.trim() }}</code>
+              </button>
+            }
+          </div>
         </div>
+
         @if (output()) {
           <pre class="out" [class.err]="isError()">{{ output() }}</pre>
         }
@@ -70,30 +85,81 @@ const SUGGESTIONS = [
   `,
   styles: `
     .cmd {
-      padding: 1rem;
+      padding: 1.15rem 1.25rem 1.25rem;
+      background: var(--app-surface);
+    }
+    .cmd-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      gap: 0.5rem;
+    }
+    .cmd-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-weight: 700;
+      font-size: 0.88rem;
+      color: var(--app-primary);
+    }
+    .cmd-shortcut {
+      font-size: 0.76rem;
+      color: var(--app-muted);
+    }
+    .hints-wrap {
+      margin-top: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .hints-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--app-muted);
     }
     .hints {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.35rem;
-      margin-top: 0.6rem;
+      gap: 0.4rem;
       button {
         border: 1px solid var(--app-border);
-        background: none;
+        background: var(--app-surface-2);
         border-radius: 999px;
-        padding: 0.2rem 0.7rem;
+        padding: 0.25rem 0.7rem;
         font: inherit;
         font-size: 0.8rem;
         cursor: pointer;
-        color: inherit;
+        color: var(--app-text);
+        transition:
+          border-color 0.15s ease,
+          background 0.15s ease;
+        code {
+          background: transparent;
+          border: none;
+          padding: 0;
+          font-size: 0.8rem;
+        }
+        &:hover {
+          border-color: var(--app-primary);
+          background: var(--app-highlight);
+        }
       }
     }
     .out {
       white-space: pre-wrap;
-      margin: 0.75rem 0 0;
-      font-size: 0.85rem;
+      margin: 0.9rem 0 0;
+      padding: 0.75rem 0.9rem;
+      border-radius: var(--app-radius-md);
+      background: var(--app-surface-2);
+      border: 1px solid var(--app-border);
+      font-size: 0.84rem;
       &.err {
         color: var(--app-danger);
+        background: var(--app-danger-bg);
+        border-color: var(--app-danger-border);
       }
     }
   `,
@@ -127,7 +193,7 @@ export class CommandBar {
     }
     this.output.set(null);
     this.ref = this.dialog.open(this.tpl(), {
-      width: '40rem',
+      width: '42rem',
       maxWidth: '95vw',
       autoFocus: '#cmd-input',
       position: { top: '12vh' },

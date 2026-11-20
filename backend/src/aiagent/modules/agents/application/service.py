@@ -8,11 +8,15 @@ from aiagent.modules.agents.domain import (
     AgentSpec,
     AgentStatus,
     AgentVersion,
+    ConnectionCatalogPort,
     CreatedVia,
     SkillCatalogPort,
 )
 from aiagent.modules.identity.domain import Principal, Role
 from aiagent.shared_kernel.errors import ForbiddenError, NotFoundError, ValidationError
+
+SYSTEM_OWNER = "system"
+MASTER_NAME = "ARIES Master"
 
 # Model được phép chọn. Mở rộng khi có model tự host (ADR-0012).
 ALLOWED_MODELS: dict[str, frozenset[str]] = {
@@ -27,10 +31,12 @@ class AgentService:
         repo: AgentRepositoryPort,
         catalog: SkillCatalogPort,
         allowed_models: dict[str, frozenset[str]] = ALLOWED_MODELS,
+        connections: ConnectionCatalogPort | None = None,
     ) -> None:
         self._repo = repo
         self._catalog = catalog
         self._allowed_models = allowed_models
+        self._connections = connections
 
     # ----------------------------------------------------------- validation
     def validate(self, spec: AgentSpec) -> None:
@@ -52,6 +58,73 @@ class AgentService:
             errors.append("Knowledge base chưa được hỗ trợ (Phase 4)")
         if errors:
             raise ValidationError("; ".join(errors))
+
+    async def check_connections(
+        self, principal: Principal, spec: AgentSpec, *, already: frozenset[str] = frozenset()
+    ) -> None:
+        """Người lưu spec phải được dùng mọi connection MỚI gắn vào (ADR-0016).
+
+        Connection đã có trong version trước (`already`) được giữ nguyên — quyền dùng thực tế
+        còn được kiểm lại lúc chạy theo người chạy.
+        """
+        errors: list[str] = []
+        for binding in spec.connections:
+            cid = str(binding.connection_id)
+            if cid in already:
+                continue
+            tools = (
+                await self._connections.tools_for(principal, cid)
+                if self._connections is not None
+                else None
+            )
+            if tools is None:
+                errors.append(f"Kết nối {cid} không tồn tại hoặc bạn không được dùng")
+                continue
+            unknown = sorted(set(binding.allowed_tools) - {t.name for t in tools})
+            if unknown:
+                errors.append(f"Kết nối {cid} không có tool: {', '.join(unknown)}")
+        if errors:
+            raise ValidationError("; ".join(errors))
+
+    async def check_team(self, principal: Principal, spec: AgentSpec) -> None:
+        """Thành viên team fixed phải tồn tại, không phải supervisor (độ sâu 1)."""
+        if spec.graph_type != "supervisor" or spec.team is None:
+            return
+        errors: list[str] = []
+        for m in spec.team.members:
+            agent = await self._repo.get(principal.tenant_id, m.agent_id)
+            if agent is None or not self._visible(principal, agent):
+                errors.append(f"Agent thành viên {m.agent_id} không tồn tại")
+                continue
+            number = agent.published_version or agent.latest_version
+            version = await self._repo.get_version(principal.tenant_id, agent.id, number)
+            if version is not None and version.spec.graph_type == "supervisor":
+                errors.append(f"“{agent.name}” là agent điều phối — không thể làm thành viên")
+        if errors:
+            raise ValidationError("; ".join(errors))
+
+    async def ensure_master(self, principal: Principal, *, provider: str, model: str) -> Agent:
+        """ARIES Master của tenant (ADR-0017): tạo + publish lần đầu, chủ sở hữu là hệ thống."""
+        for agent in await self._repo.list_all(principal.tenant_id):
+            if agent.owner_id == SYSTEM_OWNER and agent.name == MASTER_NAME:
+                return agent
+        spec = AgentSpec.model_validate(
+            {
+                "name": MASTER_NAME,
+                "description": "Đầu mối chung: hiểu yêu cầu và giao việc cho agent phù hợp.",
+                "graph_type": "supervisor",
+                "model": {"provider": provider, "model": model, "effort": "medium"},
+                "persona": "Bạn là ARIES Master — trợ lý điều phối của tổ chức. Bạn nhận yêu cầu "
+                "của người dùng, chia nhỏ khi cần và giao cho các agent chuyên trách.",
+                "opening_statement": "Chào bạn! Cứ nói việc cần làm, mình sẽ giao cho agent phù hợp.",
+                "team": {"mode": "auto"},
+                "data_classification": "internal",
+            }
+        )
+        agent, version = await self._repo.create(
+            principal.tenant_id, SYSTEM_OWNER, spec, CreatedVia.API, "Tạo tự động"
+        )
+        return await self._repo.set_published(principal.tenant_id, agent.id, version.version)
 
     # ----------------------------------------------------------- permissions
     @staticmethod
@@ -82,6 +155,8 @@ class AgentService:
     ) -> tuple[Agent, AgentVersion]:
         self._require_builder(principal)
         self.validate(spec)
+        await self.check_connections(principal, spec)
+        await self.check_team(principal, spec)
         return await self._repo.create(principal.tenant_id, principal.subject, spec, via, note)
 
     async def update(
@@ -94,8 +169,14 @@ class AgentService:
         via: CreatedVia = CreatedVia.API,
         note: str = "",
     ) -> AgentVersion:
-        await self._editable(principal, agent_id)
+        agent = await self._editable(principal, agent_id)
         self.validate(spec)
+        latest = await self._repo.get_version(principal.tenant_id, agent_id, agent.latest_version)
+        already = frozenset(
+            str(c.connection_id) for c in (latest.spec.connections if latest else [])
+        )
+        await self.check_connections(principal, spec, already=already)
+        await self.check_team(principal, spec)
         return await self._repo.add_version(
             principal.tenant_id, agent_id, spec, principal.subject, via, note, expected_version
         )

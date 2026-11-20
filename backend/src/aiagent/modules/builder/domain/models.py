@@ -70,6 +70,12 @@ class SkillChoice(_Out):
     reason: str
 
 
+class ConnectionChoice(_Out):
+    connection_id: str
+    allowed_tools: list[str] = Field(description="Rỗng = mọi tool; ưu tiên tool chỉ đọc")
+    reason: str
+
+
 class MissingItem(_Out):
     kind: Literal["connection", "knowledge_base", "skill", "other"]
     description: str
@@ -77,6 +83,9 @@ class MissingItem(_Out):
 
 class CapabilityPlan(_Out):
     skills: list[SkillChoice]
+    connections: list[ConnectionChoice] = Field(
+        default_factory=list, description="Kết nối dữ liệu cần dùng (chỉ chọn trong catalog)"
+    )
     model: str
     effort: Literal["low", "medium", "high"]
     missing: list[MissingItem] = Field(description="Thứ cần nhưng chưa có trong catalog")
@@ -91,6 +100,9 @@ class PromptDraft(_Out):
     style: str
     opening_statement: str
     starter_prompts: list[str] = Field(description="3-4 câu gợi ý cho người dùng")
+    when_to_use: str = Field(
+        default="", description="Một câu: khi nào agent điều phối nên giao việc cho agent này"
+    )
 
 
 class PatchOp(_Out):

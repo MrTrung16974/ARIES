@@ -26,14 +26,29 @@ class PluginContext:
 
 
 @dataclass(frozen=True)
+class ConnectionContext:
+    """Kết nối đã được Credential Broker giải mã cho MỘT lần gọi tool của connector.
+
+    `secrets` không xuất hiện trong repr/log. Plugin không được ghi log hay trả secret về model.
+    """
+
+    id: str
+    name: str
+    connector_id: str
+    config: dict[str, Any]
+    secrets: dict[str, str] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
 class ToolContext:
-    """Ngữ cảnh của một lần gọi tool. Không chứa secret (Credential Broker gắn ở adapter)."""
+    """Ngữ cảnh của một lần gọi tool. Secret chỉ có trong `connection` (nếu là tool connector)."""
 
     tenant_id: str
     user_id: str
     agent_id: str
     run_id: str
     config: dict[str, Any] = field(default_factory=dict)
+    connection: ConnectionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +80,10 @@ class Plugin(ABC):
 
     async def health_check(self) -> HealthStatus:
         return HealthStatus(healthy=True)
+
+    async def test_connection(self, connection: ConnectionContext) -> HealthStatus:
+        """Connector: kiểm tra kết nối với cấu hình + secret (khi tạo/sửa connection)."""
+        return HealthStatus(healthy=True, detail="Connector không hỗ trợ kiểm tra")
 
     async def on_unload(self) -> None:  # noqa: B027 - hook tùy chọn
         """Gọi khi core tắt."""

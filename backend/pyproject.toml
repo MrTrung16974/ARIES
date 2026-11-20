@@ -20,6 +20,7 @@ dependencies = [
   "anthropic>=1.0",
   "langgraph>=1.0",
   "jsonschema>=4.23",
+  "sqlglot>=27",
 ]
 
 [dependency-groups]
@@ -40,6 +41,10 @@ dev = [
 [project.entry-points."aiagent.skills"]
 echo = "aiagent_plugins.skill_echo:EchoSkill"
 clock = "aiagent_plugins.skill_clock:ClockSkill"
+web = "aiagent_plugins.skill_web:WebSkill"
+
+[project.entry-points."aiagent.connectors"]
+postgres = "aiagent_plugins.connector_postgres:PostgresConnector"
 
 [project.scripts]
 aiagent-worker = "aiagent.workers.main:run"
@@ -78,7 +83,7 @@ packages = ["aiagent", "aiagent_plugins"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["arq.*"]
+module = ["arq.*", "asyncpg.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- pytest
@@ -125,6 +130,7 @@ source_modules = [
   "aiagent.modules.conversations.domain",
   "aiagent.modules.runtime.domain",
   "aiagent.modules.builder.domain",
+  "aiagent.modules.connections.domain",
 ]
 forbidden_modules = [
   "fastapi", "sqlalchemy", "httpx", "redis", "arq", "langgraph", "anthropic",
@@ -162,6 +168,7 @@ source_modules = [
   "aiagent.shared_kernel", "aiagent.plugin_sdk", "aiagent.api",
   "aiagent.modules.identity", "aiagent.modules.audit", "aiagent.modules.agents",
   "aiagent.modules.conversations", "aiagent.modules.builder",
+  "aiagent.modules.connections",
   "aiagent.modules.runtime.domain", "aiagent.modules.runtime.application",
   "aiagent.modules.runtime.api",
 ]
@@ -201,4 +208,13 @@ layers = [
   "aiagent.modules.builder.api",
   "aiagent.modules.builder.application | aiagent.modules.builder.infrastructure",
   "aiagent.modules.builder.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module connections"
+type = "layers"
+layers = [
+  "aiagent.modules.connections.api",
+  "aiagent.modules.connections.application | aiagent.modules.connections.infrastructure",
+  "aiagent.modules.connections.domain",
 ]

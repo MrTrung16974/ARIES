@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 
 from aiagent.modules.runtime.domain import (
     ChatMessage,
+    Effect,
     LoopInput,
     RunEvent,
     RunEventType,
@@ -154,7 +155,50 @@ class LangGraphReactLoop:
         async def run_tools(state: _State) -> dict[str, Any]:
             last = state["messages"][-1]
             tool_uses = executable_tool_uses(last["content"])
+            decisions = [loop.tools.decide(t) for t in tool_uses]
+            pending = [
+                (t, d)
+                for t, d in zip(tool_uses, decisions, strict=True)
+                if d.effect is Effect.APPROVE
+            ]
+            if pending:
+                # HITL: dừng cả lượt (kể cả tool được phép) — chạy tiếp khi có quyết định (ADR-0016).
+                _emit(
+                    RunEvent(
+                        RunEventType.APPROVAL_REQUIRED,
+                        {
+                            "requests": [
+                                {
+                                    "tool_use_id": t.get("id"),
+                                    "api_name": t.get("name"),
+                                    "tool": d.tool_name,
+                                    "risk": d.risk,
+                                    "reason": d.reason,
+                                    "approver_roles": list(d.approver_roles),
+                                    "connection_id": d.connection_id,
+                                    "arguments": d.arguments,
+                                }
+                                for t, d in pending
+                            ]
+                        },
+                    )
+                )
+                return {"next": "end", "status": "awaiting_approval", "error": None}
             outcomes = await asyncio.gather(*(loop.tools.execute(t) for t in tool_uses))
+            # Run con (Master giao việc) dừng chờ duyệt → Master dừng theo (ADR-0017). Kết quả
+            # của các việc đã xong được lưu ở bản ghi delegation, dùng lại khi tiếp tục.
+            waiting = [info for _, info in outcomes if info.get("awaiting_approval")]
+            if waiting:
+                for tool_use, (_, info) in zip(tool_uses, outcomes, strict=True):
+                    if not info.get("awaiting_approval"):
+                        _emit(RunEvent(RunEventType.TOOL_END, {"id": tool_use.get("id"), **info}))
+                requests: list[object] = []
+                for info in waiting:
+                    raw = info.get("requests")
+                    if isinstance(raw, list):
+                        requests += raw
+                _emit(RunEvent(RunEventType.APPROVAL_REQUIRED, {"requests": requests}))
+                return {"next": "end", "status": "awaiting_approval", "error": None}
             results = []
             for tool_use, (result, info) in zip(tool_uses, outcomes, strict=True):
                 results.append(result)
@@ -176,6 +220,8 @@ class LangGraphReactLoop:
             route,
             {_CONTINUE_TOOLS: "run_tools", _CONTINUE_MODEL: "call_model", "end": END},
         )
-        builder.add_edge("run_tools", "call_model")
+        builder.add_conditional_edges(
+            "run_tools", route, {_CONTINUE_MODEL: "call_model", "end": END}
+        )
         # Mỗi vòng model+tool tốn vài bước graph; chặn trên an toàn.
         return builder.compile().with_config({"recursion_limit": loop.max_iterations * 3 + 10})

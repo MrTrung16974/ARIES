@@ -4,9 +4,11 @@ import { copyFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ICONS = [
-  'add', 'arrow_back', 'bolt', 'check', 'close', 'dashboard', 'deployed_code', 'edit',
-  'forum', 'home', 'lock', 'logout', 'refresh', 'robot_2', 'save', 'send', 'shield',
-  'stop', 'verified',
+  'add', 'arrow_back', 'bolt', 'check', 'close', 'code', 'dark_mode', 'dashboard',
+  'deployed_code', 'dns', 'edit', 'forum', 'home', 'light_mode', 'lock', 'logout',
+  'person', 'refresh', 'robot_2', 'save', 'search', 'send', 'shield', 'stop', 'tune',
+  'verified', 'cable', 'cancel', 'check_circle', 'database', 'delete', 'gavel', 'key',
+  'play_arrow', 'travel_explore', 'warning',
 ];
 const src = 'node_modules/@material-symbols/svg-400/outlined';
 const out = 'apps/web/public/assets/icons';

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +35,8 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:4200"])
     plugins_disabled: list[str] = Field(default_factory=list)
+    # Cấu hình KHÔNG bí mật theo plugin, ví dụ {"web": {"searxng_url": "http://searxng:8080"}}.
+    plugin_config: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
     # LLM (ADR-0012). Key nằm ngoài source; Phase 3 chuyển sang OpenBao.
     anthropic_api_key: SecretStr | None = None
@@ -42,6 +44,12 @@ class Settings(BaseSettings):
     # Model giả "fake-echo" cho dev/demo không cần key. Không bật ở prod.
     llm_fake_enabled: bool = False
     tool_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+
+    # Kho bí mật OpenBao (KV v2) cho secret của connection (ADR-0016). Dev: root token;
+    # Phase 3b: AppRole.
+    openbao_addr: str = "http://localhost:8200"
+    openbao_token: SecretStr | None = None
+    openbao_kv_mount: str = "secret"
 
     # Agent Architect (docs/agent-architect.md). auto: Claude nếu có key, heuristic nếu bật model giả.
     architect_brain: Literal["auto", "llm", "heuristic"] = "auto"

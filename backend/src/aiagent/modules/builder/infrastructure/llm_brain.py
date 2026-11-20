@@ -44,12 +44,16 @@ def _catalog_text(catalog: Catalog) -> str:
         lines.append(f"- skill `{s.id}` ({s.name}): {s.description}")
         for t in s.tools:
             lines.append(f"    - tool `{t.name}` [risk={t.risk}]: {t.description}")
+    if not catalog.skills:
+        lines.append("Không có skill nào.")
+    for c in catalog.connections:
+        lines.append(f'- kết nối `{c.id}` "{c.name}" ({c.connector_name})')
+        for t in c.tools:
+            lines.append(f"    - tool `{t.name}` [risk={t.risk}]: {t.description}")
+    if not catalog.connections:
+        lines.append("Không có kết nối dữ liệu nào (người dùng có thể tạo ở trang Kết nối).")
     lines.append("Model khả dụng: " + ", ".join(catalog.models))
-    return (
-        "\n".join(lines)
-        if catalog.skills
-        else "Không có skill nào.\nModel: " + ", ".join(catalog.models)
-    )
+    return "\n".join(lines)
 
 
 def _with_enums(schema: dict[str, Any], defs_path: str, field: str, values: list[str]) -> None:
@@ -149,10 +153,17 @@ class LlmArchitectBrain:
         if catalog.skills:
             _with_enums(schema, "SkillChoice", "skill_id", catalog.skill_ids())
             _with_enums(schema, "SkillChoice", "allowed_tools", catalog.tool_names())
+        if catalog.connections:
+            _with_enums(schema, "ConnectionChoice", "connection_id", catalog.connection_ids())
+            _with_enums(
+                schema, "ConnectionChoice", "allowed_tools", catalog.connection_tool_names()
+            )
         prompt = (
             f"Yêu cầu:\n{brief.model_dump_json(indent=2)}\n\nCatalog:\n{_catalog_text(catalog)}\n\n"
             "Chọn skill thật sự cần (có thể rỗng), giới hạn allowed_tools ở mức tối thiểu "
-            "(rỗng = mọi tool). Chọn model đầu tiên trong danh sách trừ khi yêu cầu rất đơn giản "
+            "(rỗng = mọi tool). Nếu cần dữ liệu từ hệ thống có trong danh sách kết nối, chọn "
+            "connection tương ứng, ưu tiên tool chỉ đọc; nếu cần nhưng chưa có thì ghi vào missing "
+            "(kind connection). Chọn model đầu tiên trong danh sách trừ khi yêu cầu rất đơn giản "
             "(khi đó có thể chọn model nhỏ hơn). effort: low cho hỏi đáp đơn giản, medium mặc định."
         )
         plan = await self._call(
@@ -161,7 +172,7 @@ class LlmArchitectBrain:
             meter,
             model=self._architect,
             effort="medium",
-            schema=schema if catalog.skills else None,
+            schema=schema if catalog.skills or catalog.connections else None,
         )
         if plan.model not in catalog.models:
             plan.model = catalog.models[0]
@@ -186,6 +197,8 @@ class LlmArchitectBrain:
             "- rules: ràng buộc cứng, gồm NGUYÊN VĂN ràng buộc của người dùng\n"
             "- style: độ dài, định dạng trả lời\n- opening_statement: lời chào 1 câu\n"
             "- starter_prompts: 3-4 câu hỏi mẫu người dùng hay hỏi\n"
+            "- when_to_use: MỘT câu nói khi nào agent điều phối (ARIES Master) nên giao việc "
+            "cho agent này\n"
             "- name ≤ 60 ký tự, description ≤ 200 ký tự" + fix
         )
         return await self._call(PromptDraft, prompt, meter, model=self._architect, effort="medium")
@@ -200,7 +213,8 @@ class LlmArchitectBrain:
             "giá trị JSON đã mã hóa thành chuỗi). Chỉ đổi đúng phần được yêu cầu. 'scope' liệt kê "
             "các path gốc bị đổi (ví dụ /rules, /output_format, /skills). KHÔNG sửa /approval, "
             "/schema_version, /graph_type. Skill phải có trong catalog; skill mới thêm dạng "
-            '{"skill_id": "...", "allowed_tools": [], "config": {}}.'
+            '{"skill_id": "...", "allowed_tools": [], "config": {}}; kết nối mới thêm dạng '
+            '{"connection_id": "<id trong catalog>", "allowed_tools": []} (scope /connections).'
         )
         return await self._call(EditProposal, prompt, meter, model=self._architect, effort="medium")
 

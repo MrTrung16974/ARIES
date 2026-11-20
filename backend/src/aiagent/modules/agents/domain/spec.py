@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -54,6 +55,30 @@ class SkillBinding(_Strict):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+class ConnectionBinding(_Strict):
+    """Gắn một connection (Postgres…) — quyền dùng kiểm cả lúc lưu và lúc chạy (ADR-0016)."""
+
+    connection_id: UUID
+    allowed_tools: list[str] = Field(default_factory=list, max_length=50)
+
+
+class TeamMember(_Strict):
+    agent_id: UUID
+    # Ghi đè when_to_use của agent thành viên (rỗng = dùng của agent).
+    when_to_use: str = Field(default="", max_length=300)
+
+
+class Team(_Strict):
+    """Thành viên của agent supervisor (Master) — ADR-0017."""
+
+    # auto: mọi agent đã publish mà người chat được dùng; fixed: chỉ `members`.
+    mode: Literal["auto", "fixed"] = "auto"
+    members: list[TeamMember] = Field(default_factory=list, max_length=30)
+    exclude: list[UUID] = Field(default_factory=list, max_length=100)
+    max_delegations_per_run: int = Field(default=8, ge=1, le=30)
+    max_parallel: int = Field(default=3, ge=1, le=6)
+
+
 class OutputFormat(_Strict):
     language: str = Field(default="vi", max_length=16)
     style: str = Field(default="", max_length=500)
@@ -78,7 +103,9 @@ class AgentSpec(_Strict):
     schema_version: Literal[2] = 2  # = SPEC_SCHEMA_VERSION
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=1000)
-    graph_type: Literal["react"] = "react"
+    graph_type: Literal["react", "supervisor"] = "react"
+    # Một câu: khi nào Master nên giao việc cho agent này (ADR-0017).
+    when_to_use: str = Field(default="", max_length=300)
     model: ModelSettings = Field(default_factory=ModelSettings)
 
     persona: str = Field(default="", max_length=2000)
@@ -89,7 +116,9 @@ class AgentSpec(_Strict):
     starter_prompts: list[str] = Field(default_factory=list, max_length=6)
 
     skills: list[SkillBinding] = Field(default_factory=list, max_length=30)
+    connections: list[ConnectionBinding] = Field(default_factory=list, max_length=20)
     knowledge_bases: list[str] = Field(default_factory=list, max_length=20)  # Phase 4
+    team: Team | None = None  # chỉ cho graph_type supervisor
 
     limits: Limits = Field(default_factory=Limits)
     approval: Approval = Field(default_factory=Approval)
@@ -108,4 +137,20 @@ class AgentSpec(_Strict):
         ids = [s.skill_id for s in self.skills]
         if len(ids) != len(set(ids)):
             raise ValueError("skill_id bị trùng")
+        conns = [c.connection_id for c in self.connections]
+        if len(conns) != len(set(conns)):
+            raise ValueError("connection_id bị trùng")
+        if self.graph_type == "supervisor":
+            # Master chỉ giao việc; tool/kết nối nằm ở agent thành viên (quyền rõ ràng, độ sâu 1).
+            if self.skills or self.connections:
+                raise ValueError("agent supervisor không gắn skill/kết nối trực tiếp")
+            if self.team is None:
+                self.team = Team()
+            member_ids = [m.agent_id for m in self.team.members]
+            if len(member_ids) != len(set(member_ids)):
+                raise ValueError("thành viên team bị trùng")
+            if self.team.mode == "fixed" and not member_ids:
+                raise ValueError("team fixed cần ít nhất một thành viên")
+        elif self.team is not None:
+            raise ValueError("chỉ agent supervisor mới có team")
         return self

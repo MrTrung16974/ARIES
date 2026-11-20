@@ -1,12 +1,19 @@
 from aiagent.modules.agents.domain.models import Agent, AgentStatus, AgentVersion, CreatedVia
-from aiagent.modules.agents.domain.ports import AgentRepositoryPort, SkillCatalogPort
+from aiagent.modules.agents.domain.ports import (
+    AgentRepositoryPort,
+    ConnectionCatalogPort,
+    SkillCatalogPort,
+)
 from aiagent.modules.agents.domain.prompt import render_system_prompt
 from aiagent.modules.agents.domain.spec import (
     MANDATORY_APPROVAL,
     AgentSpec,
+    ConnectionBinding,
     DataClassification,
     Effort,
     SkillBinding,
+    Team,
+    TeamMember,
 )
 
 __all__ = [
@@ -16,10 +23,14 @@ __all__ = [
     "AgentSpec",
     "AgentStatus",
     "AgentVersion",
+    "ConnectionBinding",
+    "ConnectionCatalogPort",
     "CreatedVia",
     "DataClassification",
     "Effort",
     "SkillBinding",
     "SkillCatalogPort",
+    "Team",
+    "TeamMember",
     "render_system_prompt",
 ]

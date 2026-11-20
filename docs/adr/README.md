@@ -17,5 +17,7 @@
 | [0013](0013-no-workflow-canvas-nl-builder.md) | Không workflow canvas — tạo agent bằng ngôn ngữ tự nhiên |
 | [0014](0014-runtime-langgraph-anthropic-sdk.md) | Runtime: LangGraph + Anthropic SDK |
 | [0015](0015-angular-material-ui.md) | Angular Material thay PrimeNG |
+| [0016](0016-hitl-policy-connections.md) | HITL, Policy, Connection (Phase 3a) |
+| [0017](0017-master-agent-delegation.md) | Master agent giao việc cho các agent khác (Phase 3c) |
 
 Mẫu ADR mới: Bối cảnh → Quyết định → Phương án khác → Hệ quả.

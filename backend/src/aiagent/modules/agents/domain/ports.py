@@ -5,6 +5,7 @@ from uuid import UUID
 
 from aiagent.modules.agents.domain.models import Agent, AgentVersion, CreatedVia
 from aiagent.modules.agents.domain.spec import AgentSpec
+from aiagent.modules.identity.domain import Principal
 from aiagent.plugin_sdk import ToolSpec
 
 
@@ -44,4 +45,10 @@ class AgentRepositoryPort(Protocol):
 class SkillCatalogPort(Protocol):
     def tools_of(self, skill_id: str) -> list[ToolSpec] | None:
         """Danh sách tool của skill đang hoạt động; None nếu skill không tồn tại/bị tắt."""
+        ...
+
+
+class ConnectionCatalogPort(Protocol):
+    async def tools_for(self, principal: Principal, connection_id: str) -> list[ToolSpec] | None:
+        """Tool của connection nếu người này được dùng nó; None nếu không tồn tại/không có quyền."""
         ...

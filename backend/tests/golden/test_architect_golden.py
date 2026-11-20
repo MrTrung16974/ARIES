@@ -39,10 +39,8 @@ def brain_and_catalog() -> tuple[LlmArchitectBrain, Any]:
     model = AnthropicChatModel(key)
     plugins = PluginRegistry()
     plugins.load_all()
-    catalog = PluginCatalogProvider(plugins, ModelRouter({"anthropic": model})).catalog_for(
-        principal("golden", "builder")
-    )
-    return LlmArchitectBrain(model), catalog
+    provider = PluginCatalogProvider(plugins, ModelRouter({"anthropic": model}))
+    return LlmArchitectBrain(model), provider
 
 
 async def _run_case(
@@ -91,7 +89,8 @@ async def _run_case(
 
 
 async def test_architect_golden(brain_and_catalog: tuple[LlmArchitectBrain, Any]) -> None:
-    brain, catalog = brain_and_catalog
+    brain, provider = brain_and_catalog
+    catalog = await provider.catalog_for(principal("golden", "builder"))
     meter = UsageMeter()
     semaphore = asyncio.Semaphore(4)
 
