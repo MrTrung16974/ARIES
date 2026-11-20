@@ -27,3 +27,9 @@
 - Chi phí API theo lượng dùng → cần quota, prompt caching, đo `usage` từ Phase 1.
 - Tác vụ dính dữ liệu `restricted` tạm thời không dùng được agent cho tới khi có GPU.
 - Phụ thuộc kết nối internet tới `api.anthropic.com` (qua egress proxy).
+
+## Bổ sung 2026-11-21
+- Thêm `OpenAICompatChatModel` (mục 4) dùng cho **Gemini, Groq, OpenRouter** (cloud, có free tier)
+  và **Ollama** (tự host). `ollama` nằm trong `LOCAL_PROVIDERS` → được dùng cho dữ liệu `restricted`.
+- Provider free tier cloud chỉ nên dùng cho dữ liệu `public`/`internal` (điều khoản có thể cho phép
+  dùng dữ liệu để huấn luyện). Chi tiết: [llm-providers.md](../llm-providers.md).

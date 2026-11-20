@@ -1,5 +1,6 @@
 from aiagent.modules.runtime.application.approvals import ApprovalService
-from aiagent.modules.runtime.application.router import ModelRouter
+from aiagent.modules.runtime.application.model_catalog import ModelCatalog, ModelEntry
+from aiagent.modules.runtime.application.router import LOCAL_PROVIDERS, ModelRouter
 from aiagent.modules.runtime.application.run_agent import (
     EphemeralResult,
     PendingState,
@@ -17,12 +18,15 @@ from aiagent.modules.runtime.application.tool_gateway import (
 )
 
 __all__ = [
+    "LOCAL_PROVIDERS",
     "ApprovalService",
     "BoundTools",
     "ConnectionAccessPort",
     "ConnectionRef",
     "EphemeralResult",
     "McpAccessPort",
+    "ModelCatalog",
+    "ModelEntry",
     "ModelRouter",
     "PendingState",
     "PluginLookupPort",

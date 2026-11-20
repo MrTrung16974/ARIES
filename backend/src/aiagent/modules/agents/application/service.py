@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from uuid import UUID
 
 from aiagent.modules.agents.domain import (
@@ -18,8 +19,9 @@ from aiagent.shared_kernel.errors import ForbiddenError, NotFoundError, Validati
 SYSTEM_OWNER = "system"
 MASTER_NAME = "ARIES Master"
 
-# Model được phép chọn. Mở rộng khi có model tự host (ADR-0012).
-ALLOWED_MODELS: dict[str, frozenset[str]] = {
+# Model được phép chọn mặc định. Container bổ sung provider khác theo cấu hình (ADR-0012);
+# giá trị None = provider tự liệt kê model (Ollama, Gemini…) — chấp nhận mọi id hợp lệ.
+ALLOWED_MODELS: dict[str, frozenset[str] | None] = {
     "anthropic": frozenset({"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"}),
     "fake": frozenset({"fake-echo"}),
 }
@@ -30,7 +32,7 @@ class AgentService:
         self,
         repo: AgentRepositoryPort,
         catalog: SkillCatalogPort,
-        allowed_models: dict[str, frozenset[str]] = ALLOWED_MODELS,
+        allowed_models: Mapping[str, frozenset[str] | None] = ALLOWED_MODELS,
         connections: ConnectionCatalogPort | None = None,
         mcp: ConnectionCatalogPort | None = None,  # cùng hình dạng: tools_for(principal, id)
     ) -> None:
@@ -44,8 +46,11 @@ class AgentService:
     def validate(self, spec: AgentSpec) -> None:
         """Kiểm tham chiếu ngoài schema: model được phép, skill/tool tồn tại, tính năng chưa có."""
         errors: list[str] = []
-        allowed = self._allowed_models.get(spec.model.provider, frozenset())
-        if spec.model.model not in allowed:
+        provider = spec.model.provider
+        allowed = self._allowed_models.get(provider, frozenset())
+        if provider not in self._allowed_models:
+            errors.append(f"Provider '{provider}' chưa được cấu hình")
+        elif allowed is not None and spec.model.model not in allowed:
             errors.append(f"Model '{spec.model.model}' không được phép cho '{spec.model.provider}'")
         for binding in spec.skills:
             tools = self._catalog.tools_of(binding.skill_id)

@@ -3,3 +3,6 @@
 .anthropic.com
 accounts.google.com
 .googleapis.com
+# LLM tương thích OpenAI (Gemini đi qua .googleapis.com ở trên)
+.groq.com
+openrouter.ai

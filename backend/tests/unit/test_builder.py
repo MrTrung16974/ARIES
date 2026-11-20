@@ -6,7 +6,7 @@ import pytest
 
 from aiagent.bootstrap.container import PluginCatalogProvider, PluginSkillCatalog
 from aiagent.bootstrap.plugins import PluginRegistry
-from aiagent.modules.agents.application import AgentService
+from aiagent.modules.agents.application import ALLOWED_MODELS, AgentService
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.builder.application import ArchitectService, BuilderEvent, CommandService
 from aiagent.modules.builder.domain import (
@@ -26,7 +26,12 @@ from aiagent.modules.builder.domain import (
 from aiagent.modules.builder.infrastructure.heuristic_brain import HeuristicArchitectBrain
 from aiagent.modules.builder.infrastructure.llm_brain import LlmArchitectBrain
 from aiagent.modules.conversations.application import ConversationService
-from aiagent.modules.runtime.application import ModelRouter, RunAgentService, ToolGateway
+from aiagent.modules.runtime.application import (
+    ModelCatalog,
+    ModelRouter,
+    RunAgentService,
+    ToolGateway,
+)
 from aiagent.modules.runtime.domain import StructuredRequest, StructuredResult, strict_schema
 from aiagent.modules.runtime.infrastructure.fake_model import FakeChatModel
 from aiagent.modules.runtime.infrastructure.react_graph import LangGraphReactLoop
@@ -218,7 +223,7 @@ def env() -> dict[str, Any]:
         HeuristicArchitectBrain(),
         agents,
         runs,
-        PluginCatalogProvider(plugins, router),
+        PluginCatalogProvider(plugins, ModelCatalog(ALLOWED_MODELS, {"fake": FakeChatModel()})),
         audit,
     )
     return {

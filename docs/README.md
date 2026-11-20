@@ -12,6 +12,7 @@ Nền tảng xây dựng và vận hành nhiều AI agent (LangGraph) có RAG, S
 | [deployment.md](deployment.md) | Hạ tầng on-premise, các service, mạng, backup |
 | [roadmap.md](roadmap.md) | Các phase triển khai và tiêu chí hoàn thành |
 | [agent-architect.md](agent-architect.md) | Tạo agent bằng ngôn ngữ tự nhiên (Agent Architect) |
+| [llm-providers.md](llm-providers.md) | Provider LLM: Claude, Gemini, Groq, OpenRouter, Ollama (local) |
 | [adr/](adr/) | Architecture Decision Records |
 
 ## Quyết định đã chốt
@@ -36,7 +37,7 @@ Nền tảng xây dựng và vận hành nhiều AI agent (LangGraph) có RAG, S
 
 | Chủ đề | Mặc định | Ghi chú |
 |---|---|---|
-| Model tự host | Chưa chọn — khi có GPU, đánh giá model mở hỗ trợ tool calling tốt qua vLLM | Adapter OpenAI-compatible làm sẵn từ Phase 1 |
+| Model tự host | **Ollama** (profile `ollama` trong compose); vLLM dùng chung adapter OpenAI-compatible | Xem [llm-providers.md](llm-providers.md) |
 | Multi-tenant | Một tổ chức, nhưng **có `tenant_id` + RLS ngay từ đầu** | Rẻ khi làm sớm, rất đắt khi thêm sau |
 | UI kit | **Angular Material 3** (MIT) + icon Material Symbols (Apache-2.0) tự host | Xem ADR-0015 — PrimeNG đã chuyển sang giấy phép thương mại |
 | Embedding | `bge-m3` self-host **trên CPU** (đa ngôn ngữ, tốt cho tiếng Việt) | Đủ cho < 50 người; ingest chậm hơn, chuyển GPU khi có |

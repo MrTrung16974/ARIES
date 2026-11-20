@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from aiagent.api.deps import ContainerDep, client_ip, get_principal, require_roles
 from aiagent.bootstrap.container import Container
-from aiagent.modules.agents.application import ALLOWED_MODELS
 from aiagent.modules.agents.domain import Agent, AgentSpec, AgentVersion, CreatedVia
 from aiagent.modules.audit.domain import Outcome
 from aiagent.modules.identity.domain import Principal, Role
@@ -152,12 +151,10 @@ class ModelOut(BaseModel):
 
 @router.get("/catalog/models", response_model=list[ModelOut])
 async def list_models(_: Builder, c: ContainerDep) -> list[ModelOut]:
-    configured = set(c.model_router.providers)
     return [
-        ModelOut(provider=provider, model=model, available=provider in configured)
-        for provider, models in sorted(ALLOWED_MODELS.items())
-        for model in sorted(models)
-        if provider in configured or provider != "fake"
+        ModelOut(provider=e.provider, model=e.model, available=e.available)
+        for e in await c.model_catalog.entries()
+        if e.available or e.provider != "fake"
     ]
 
 

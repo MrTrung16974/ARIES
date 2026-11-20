@@ -93,7 +93,7 @@ export interface AgentSpec {
   when_to_use: string;
   team?: TeamSettings | null;
   model: {
-    provider: 'anthropic' | 'fake';
+    provider: ModelProvider;
     model: string;
     effort: Effort;
     max_tokens: number;
@@ -152,8 +152,11 @@ export interface SkillInfo {
   ui_hints: Record<string, unknown>;
 }
 
+export type ModelProvider =
+  'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'ollama' | 'fake';
+
 export interface ModelInfo {
-  provider: 'anthropic' | 'fake';
+  provider: ModelProvider;
   model: string;
   available: boolean;
 }

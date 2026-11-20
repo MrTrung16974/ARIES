@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import cast
 
 import httpx
+from pydantic import SecretStr
 from redis.asyncio import Redis
 
 from aiagent.adapters.db import Database
@@ -59,6 +60,7 @@ from aiagent.modules.mcp.infrastructure.sql_mcp_repository import SqlMcpServerRe
 from aiagent.modules.runtime.application import (
     ApprovalService,
     ConnectionRef,
+    ModelCatalog,
     ModelRouter,
     RunAgentService,
     ToolGateway,
@@ -66,6 +68,10 @@ from aiagent.modules.runtime.application import (
 from aiagent.modules.runtime.domain import ChatModelPort, ModelUnavailableError
 from aiagent.modules.runtime.infrastructure.anthropic_model import AnthropicChatModel
 from aiagent.modules.runtime.infrastructure.fake_model import FakeChatModel
+from aiagent.modules.runtime.infrastructure.openai_compat_model import (
+    OpenAICompatChatModel,
+    OpenAICompatConfig,
+)
 from aiagent.modules.runtime.infrastructure.react_graph import LangGraphReactLoop
 from aiagent.plugin_sdk import ConnectionContext, Plugin, PluginKind, PluginManifest, ToolSpec
 from aiagent.shared_kernel.events import EventBusPort, InProcessEventBus
@@ -135,9 +141,6 @@ class ConnectionAccessAdapter:
         return await self._service.open(principal, connection_id)
 
 
-_MODEL_PREFERENCE = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "fake-echo")
-
-
 class PluginCatalogProvider:
     """Catalog cho Architect: skill đang hoạt động, model có provider đã cấu hình và các
     connection người tạo được dùng (ADR-0016). KB: Phase 4.
@@ -146,11 +149,11 @@ class PluginCatalogProvider:
     def __init__(
         self,
         plugins: PluginRegistry,
-        router: ModelRouter,
+        models: ModelCatalog,
         connections: ConnectionService | None = None,
     ) -> None:
         self._plugins = plugins
-        self._router = router
+        self._models = models
         self._connections = connections
 
     async def _connections_for(self, principal: Principal) -> list[CatalogConnection]:
@@ -177,12 +180,14 @@ class PluginCatalogProvider:
             for loaded in self._plugins.active()
             if (m := loaded.manifest) is not None and m.kind is PluginKind.SKILL
         ]
-        configured = set(self._router.providers)
-        allowed = {m for p, ms in ALLOWED_MODELS.items() if p in configured for m in ms}
-        models = [m for m in _MODEL_PREFERENCE if m in allowed]
+        entries = await self._models.available()
+        model_providers: dict[str, str] = {}
+        for e in entries:
+            model_providers.setdefault(e.model, e.provider)
         return Catalog(
             skills=sorted(skills, key=lambda s: s.id),
-            models=models,
+            models=list(model_providers),
+            model_providers=model_providers,
             connections=await self._connections_for(principal),
         )
 
@@ -190,21 +195,20 @@ class PluginCatalogProvider:
 class _UnavailableStructuredModel:
     async def generate_json(self, request: object) -> object:
         raise ModelUnavailableError(
-            "Agent Architect cần Claude API key (AIAGENT_ANTHROPIC_API_KEY)."
+            "Agent Architect chưa có model: cấu hình AIAGENT_ARCHITECT_PROVIDER và API key tương ứng."
         )
 
 
 def build_architect_brain(
     settings: Settings, providers: dict[str, ChatModelPort]
 ) -> ArchitectBrainPort:
-    anthropic = providers.get("anthropic")
+    chosen = providers.get(settings.architect_provider)
+    structured = isinstance(chosen, AnthropicChatModel | OpenAICompatChatModel)
     mode = settings.architect_brain
-    if mode == "heuristic" or (mode == "auto" and anthropic is None and settings.llm_fake_enabled):
+    if mode == "heuristic" or (mode == "auto" and not structured and settings.llm_fake_enabled):
         logger.warning("Agent Architect dùng bộ não heuristic (chỉ cho dev/demo)")
         return HeuristicArchitectBrain()
-    model = (
-        anthropic if isinstance(anthropic, AnthropicChatModel) else _UnavailableStructuredModel()
-    )
+    model = chosen if structured else _UnavailableStructuredModel()
     return LlmArchitectBrain(
         model,  # type: ignore[arg-type]
         architect_model=settings.architect_model,
@@ -229,6 +233,7 @@ class Container:
     mcp: McpService
     oauth: OAuthBroker
     model_router: ModelRouter
+    model_catalog: ModelCatalog
     architect: ArchitectService
     commands: CommandService
     health_checks: dict[str, HealthCheck] = field(default_factory=dict)
@@ -274,18 +279,76 @@ def build_oauth_providers(settings: Settings) -> dict[str, OAuthProvider]:
     }
 
 
+def _secret(value: SecretStr | None) -> str:
+    return value.get_secret_value() if value is not None else ""
+
+
+def openai_compat_configs(settings: Settings) -> list[tuple[OpenAICompatConfig, list[str]]]:
+    """Provider tương thích OpenAI đã cấu hình → (config, danh sách model tĩnh; rỗng = tự lấy)."""
+    out: list[tuple[OpenAICompatConfig, list[str]]] = []
+    if key := _secret(settings.gemini_api_key):
+        out.append(
+            (
+                OpenAICompatConfig(
+                    "gemini", settings.gemini_base_url, key, "Gemini", send_reasoning_effort=True
+                ),
+                settings.gemini_models,
+            )
+        )
+    if key := _secret(settings.groq_api_key):
+        out.append(
+            (OpenAICompatConfig("groq", settings.groq_base_url, key, "Groq"), settings.groq_models)
+        )
+    if key := _secret(settings.openrouter_api_key):
+        out.append(
+            (
+                OpenAICompatConfig(
+                    "openrouter",
+                    settings.openrouter_base_url,
+                    key,
+                    "OpenRouter",
+                    model_suffix=":free" if settings.openrouter_free_only else None,
+                    extra_headers={"X-Title": settings.app_name},
+                ),
+                settings.openrouter_models,
+            )
+        )
+    if settings.ollama_base_url:
+        base = settings.ollama_base_url.rstrip("/")
+        out.append(
+            (
+                OpenAICompatConfig(
+                    "ollama", base if base.endswith("/v1") else f"{base}/v1", None, "Ollama"
+                ),
+                settings.ollama_models,
+            )
+        )
+    return out
+
+
 def build_model_providers(settings: Settings) -> dict[str, ChatModelPort]:
     providers: dict[str, ChatModelPort] = {}
-    if settings.anthropic_api_key is not None and settings.anthropic_api_key.get_secret_value():
-        providers["anthropic"] = AnthropicChatModel(
-            settings.anthropic_api_key.get_secret_value(),
-            base_url=settings.anthropic_base_url,
+    if key := _secret(settings.anthropic_api_key):
+        providers["anthropic"] = AnthropicChatModel(key, base_url=settings.anthropic_base_url)
+    for cfg, _ in openai_compat_configs(settings):
+        providers[cfg.provider] = OpenAICompatChatModel(
+            cfg, timeout_s=settings.llm_request_timeout_seconds
         )
-    else:
-        logger.warning("Chưa cấu hình AIAGENT_ANTHROPIC_API_KEY — agent dùng Claude sẽ không chạy")
+    if not providers:
+        logger.warning(
+            "Chưa cấu hình provider LLM nào (Anthropic/Gemini/Groq/OpenRouter/Ollama) — "
+            "chỉ chạy được model giả nếu bật"
+        )
     if settings.llm_fake_enabled:
         providers["fake"] = FakeChatModel()
     return providers
+
+
+def build_allowed_models(settings: Settings) -> dict[str, frozenset[str] | None]:
+    allowed: dict[str, frozenset[str] | None] = dict(ALLOWED_MODELS)
+    for cfg, models in openai_compat_configs(settings):
+        allowed[cfg.provider] = frozenset(models) if models else None
+    return allowed
 
 
 def build_container(settings: Settings) -> Container:
@@ -346,14 +409,17 @@ def build_container(settings: Settings) -> Container:
         audit,
         settings.mcp_stdio_commands,
     )
+    allowed_models = build_allowed_models(settings)
     agents = AgentService(
         SqlAgentRepository(db),
         PluginSkillCatalog(plugins),
+        allowed_models=allowed_models,
         connections=ConnectionCatalogAdapter(connections, plugins),
         mcp=mcp,
     )
     providers = build_model_providers(settings)
     router = ModelRouter(providers)
+    model_catalog = ModelCatalog(allowed_models, providers)
     runs = RunAgentService(
         agents=agents,
         conversations=conversations,
@@ -373,7 +439,7 @@ def build_container(settings: Settings) -> Container:
         brain=build_architect_brain(settings, providers),
         agents=agents,
         runs=runs,
-        catalog=PluginCatalogProvider(plugins, router, connections),
+        catalog=PluginCatalogProvider(plugins, model_catalog, connections),
         audit=audit,
         cost_model=settings.architect_model,
     )
@@ -400,8 +466,15 @@ def build_container(settings: Settings) -> Container:
         mcp=mcp,
         oauth=oauth,
         model_router=router,
+        model_catalog=model_catalog,
         architect=architect,
         commands=CommandService(architect, agents, audit),
         health_checks=health_checks,
-        closers=[db.dispose, redis.aclose, http.aclose, egress_http.aclose],
+        closers=[
+            db.dispose,
+            redis.aclose,
+            http.aclose,
+            egress_http.aclose,
+            *(p.aclose for p in providers.values() if isinstance(p, OpenAICompatChatModel)),
+        ],
     )

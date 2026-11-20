@@ -41,8 +41,9 @@ class _Strict(BaseModel):
 
 
 class ModelSettings(_Strict):
-    provider: Literal["anthropic", "fake"] = "anthropic"
-    model: str = Field(default="claude-opus-5-5", pattern=r"^[a-z0-9][a-z0-9.\-]{1,63}$")
+    provider: Literal["anthropic", "gemini", "groq", "openrouter", "ollama", "fake"] = "anthropic"
+    # Cho phép id kiểu Ollama (qwen3:8b) và OpenRouter (meta-llama/llama-3.3-70b-instruct:free).
+    model: str = Field(default="claude-opus-5-5", pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/\-]{1,127}$")
     # Model Claude hiện tại không nhận temperature/top_p — điều chỉnh bằng effort (ADR-0012).
     effort: Effort = Effort.MEDIUM
     max_tokens: int = Field(default=16000, ge=1024, le=128000)

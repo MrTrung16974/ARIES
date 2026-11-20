@@ -78,6 +78,24 @@ class Settings(BaseSettings):
     # LLM (ADR-0012). Key nằm ngoài source; Phase 3 chuyển sang OpenBao.
     anthropic_api_key: SecretStr | None = None
     anthropic_base_url: str | None = None
+    # Provider tương thích OpenAI (ADR-0012 bổ sung): Gemini, Groq, OpenRouter (cloud, có gói
+    # free) và Ollama (tự host — được phép cho dữ liệu 'restricted'). Bỏ trống key = tắt provider.
+    # *_models rỗng = tự lấy danh sách từ endpoint /models của provider.
+    gemini_api_key: SecretStr | None = None
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    gemini_models: list[str] = Field(default_factory=list)
+    groq_api_key: SecretStr | None = None
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_models: list[str] = Field(default_factory=list)
+    openrouter_api_key: SecretStr | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Mặc định chỉ hiện model miễn phí (id kết thúc ":free") khi tự lấy danh sách.
+    openrouter_free_only: bool = True
+    openrouter_models: list[str] = Field(default_factory=list)
+    # Ollama: ví dụ http://ollama:11434 (compose) hoặc http://localhost:11434 (chạy trên máy).
+    ollama_base_url: str | None = None
+    ollama_models: list[str] = Field(default_factory=list)
+    llm_request_timeout_seconds: float = Field(default=600.0, gt=0, le=3600)
     # Model giả "fake-echo" cho dev/demo không cần key. Không bật ở prod.
     llm_fake_enabled: bool = False
     tool_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
@@ -93,6 +111,9 @@ class Settings(BaseSettings):
 
     # Agent Architect (docs/agent-architect.md). auto: Claude nếu có key, heuristic nếu bật model giả.
     architect_brain: Literal["auto", "llm", "heuristic"] = "auto"
+    # Provider cho Architect: anthropic | gemini | groq | openrouter | ollama. Đổi provider thì đổi
+    # luôn 3 model bên dưới cho khớp (ví dụ gemini → architect_model=gemini-…-flash).
+    architect_provider: str = "anthropic"
     architect_model: str = "claude-opus-5-5"
     architect_fast_model: str = "claude-haiku-5-5"
     architect_judge_model: str = "claude-sonnet-5-5"

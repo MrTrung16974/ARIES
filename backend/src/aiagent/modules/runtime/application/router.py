@@ -8,12 +8,15 @@ from aiagent.modules.agents.domain import AgentSpec, DataClassification
 from aiagent.modules.runtime.domain import ChatModelPort, ModelUnavailableError
 from aiagent.shared_kernel.errors import ForbiddenError
 
+# Provider chạy tại chỗ, dữ liệu không rời hạ tầng → được dùng cho dữ liệu 'restricted'.
+LOCAL_PROVIDERS = frozenset({"fake", "ollama"})
+
 
 class ModelRouter:
     def __init__(
         self,
         providers: Mapping[str, ChatModelPort],
-        local_providers: frozenset[str] = frozenset({"fake"}),
+        local_providers: frozenset[str] = LOCAL_PROVIDERS,
     ) -> None:
         self._providers = dict(providers)
         self._local = local_providers  # provider xử lý dữ liệu tại chỗ (không gửi ra ngoài)

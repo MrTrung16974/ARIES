@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -56,7 +56,9 @@ class CatalogProviderPort(Protocol):
     async def catalog_for(self, principal: Principal) -> Catalog: ...
 
 
-def provider_of(model: str) -> str:
+def provider_of(model: str, providers: Mapping[str, str] | None = None) -> str:
+    if providers and model in providers:
+        return providers[model]
     return "fake" if model.startswith("fake-") else "anthropic"
 
 
@@ -319,12 +321,15 @@ class ArchitectService:
 
         catalog = await self._catalog.catalog_for(principal)
         if not catalog.models:
-            raise ValidationError("Chưa có model nào khả dụng (cấu hình ANTHROPIC_API_KEY).")
+            raise ValidationError(
+                "Chưa có model nào khả dụng (cấu hình API key Claude/Gemini/Groq/OpenRouter "
+                "hoặc Ollama)."
+            )
         yield BuilderEvent("status", {"text": "Đang chọn năng lực cho agent…"})
         plan = self._sanitize_plan(await self._brain.plan(brief, catalog, meter), catalog)
 
         yield BuilderEvent("status", {"text": "Đang viết cấu hình agent…"})
-        spec = await self._compose_valid(brief, plan, meter)
+        spec = await self._compose_valid(brief, plan, meter, catalog.model_providers)
         before = session.draft_spec
         session.draft_spec = spec.model_dump(mode="json")
         session.status = SessionStatus.DRAFTING
@@ -385,24 +390,32 @@ class ArchitectService:
         return plan
 
     async def _compose_valid(
-        self, brief: RequirementBrief, plan: CapabilityPlan, meter: UsageMeter
+        self,
+        brief: RequirementBrief,
+        plan: CapabilityPlan,
+        meter: UsageMeter,
+        providers: Mapping[str, str] | None = None,
     ) -> AgentSpec:
         errors: list[str] = []
         for _ in range(MAX_COMPOSE_ATTEMPTS):
             draft = await self._brain.compose(brief, plan, errors, meter)
-            spec, errors = self._assemble(brief, plan, draft)
+            spec, errors = self._assemble(brief, plan, draft, providers)
             if spec is not None:
                 return spec
         raise ValidationError("Không dựng được cấu hình hợp lệ: " + "; ".join(errors))
 
     def _assemble(
-        self, brief: RequirementBrief, plan: CapabilityPlan, draft: PromptDraft
+        self,
+        brief: RequirementBrief,
+        plan: CapabilityPlan,
+        draft: PromptDraft,
+        providers: Mapping[str, str] | None = None,
     ) -> tuple[AgentSpec | None, list[str]]:
         raw = {
             "name": draft.name.strip()[:80] or brief.suggested_name[:80] or "Agent mới",
             "description": draft.description.strip()[:1000],
             "model": {
-                "provider": provider_of(plan.model),
+                "provider": provider_of(plan.model, providers),
                 "model": plan.model,
                 "effort": plan.effort,
             },

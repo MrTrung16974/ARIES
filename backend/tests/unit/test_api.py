@@ -18,7 +18,7 @@ from aiagent.bootstrap.container import (
 from aiagent.bootstrap.plugins import PluginRegistry
 from aiagent.bootstrap.settings import Settings
 from aiagent.main import create_app
-from aiagent.modules.agents.application import AgentService
+from aiagent.modules.agents.application import ALLOWED_MODELS, AgentService
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.builder.application import ArchitectService, CommandService
 from aiagent.modules.builder.infrastructure.heuristic_brain import HeuristicArchitectBrain
@@ -31,6 +31,7 @@ from aiagent.modules.mcp.application import McpService
 from aiagent.modules.mcp.infrastructure.sdk_client import SdkMcpClient
 from aiagent.modules.runtime.application import (
     ApprovalService,
+    ModelCatalog,
     ModelRouter,
     RunAgentService,
     ToolGateway,
@@ -122,7 +123,9 @@ async def client(
         plugins.load_all()
         audit = AuditService(audit_log)
         conversations = ConversationService(conv_repo)
-        router = ModelRouter({"fake": FakeChatModel()})
+        fake_providers = {"fake": FakeChatModel()}
+        router = ModelRouter(fake_providers)
+        model_catalog = ModelCatalog(ALLOWED_MODELS, fake_providers)
         connections = ConnectionService(
             InMemoryConnectionRepository(),
             vault,
@@ -157,7 +160,7 @@ async def client(
             HeuristicArchitectBrain(),
             agents,
             runs,
-            PluginCatalogProvider(plugins, router, connections),
+            PluginCatalogProvider(plugins, model_catalog, connections),
             audit,
         )
         return Container(
@@ -180,6 +183,7 @@ async def client(
             mcp=mcp,
             oauth=oauth,
             model_router=router,
+            model_catalog=model_catalog,
             architect=architect,
             commands=CommandService(architect, agents, audit),
             health_checks={"database": check_db, "redis": check_redis},

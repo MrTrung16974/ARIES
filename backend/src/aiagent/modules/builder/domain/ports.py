@@ -51,6 +51,8 @@ class Catalog:
     skills: list[CatalogSkill]
     models: list[str]  # model khả dụng, model đầu tiên là mặc định
     connections: list[CatalogConnection] = field(default_factory=list)
+    # model → provider (anthropic, gemini, ollama…). Thiếu → suy từ tên model.
+    model_providers: dict[str, str] = field(default_factory=dict)
 
     def skill_ids(self) -> list[str]:
         return [s.id for s in self.skills]

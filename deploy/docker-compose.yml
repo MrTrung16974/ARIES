@@ -15,6 +15,20 @@ x-backend-env: &backend-env
   # LLM (ADR-0012). Để trống ANTHROPIC_API_KEY thì chỉ dùng được model giả "fake-echo".
   AIAGENT_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   AIAGENT_LLM_FAKE_ENABLED: ${AIAGENT_LLM_FAKE_ENABLED:-true}
+  # Provider tương thích OpenAI (có gói free). Bỏ trống key = tắt. *_MODELS: JSON list, [] = tự lấy.
+  AIAGENT_GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  AIAGENT_GEMINI_MODELS: ${GEMINI_MODELS:-[]}
+  AIAGENT_GROQ_API_KEY: ${GROQ_API_KEY:-}
+  AIAGENT_GROQ_MODELS: ${GROQ_MODELS:-[]}
+  AIAGENT_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  AIAGENT_OPENROUTER_MODELS: ${OPENROUTER_MODELS:-[]}
+  # Ollama tự host (profile "ollama"): http://ollama:11434. Bỏ trống = tắt.
+  AIAGENT_OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+  AIAGENT_OLLAMA_MODELS: ${OLLAMA_MODELS_ALLOWED:-[]}
+  AIAGENT_ARCHITECT_PROVIDER: ${ARCHITECT_PROVIDER:-anthropic}
+  AIAGENT_ARCHITECT_MODEL: ${ARCHITECT_MODEL:-claude-opus-5-5}
+  AIAGENT_ARCHITECT_FAST_MODEL: ${ARCHITECT_FAST_MODEL:-claude-haiku-5-5}
+  AIAGENT_ARCHITECT_JUDGE_MODEL: ${ARCHITECT_JUDGE_MODEL:-claude-sonnet-5-5}
   # Kho bí mật cho secret của connection (ADR-0016). Dev: root token của OpenBao dev mode.
   AIAGENT_OPENBAO_ADDR: http://openbao:8200
   # API đăng nhập AppRole (file do openbao-init cấp) — không dùng root token (ADR-0018).
@@ -36,7 +50,7 @@ x-backend-env: &backend-env
   # Mọi lưu lượng ra Internet đi qua Squid (ADR-0018); dịch vụ nội bộ đi thẳng.
   HTTPS_PROXY: http://squid:3128
   HTTP_PROXY: http://squid:3128
-  NO_PROXY: localhost,127.0.0.1,keycloak,openbao,postgres,redis,searxng,squid,traefik,web,mcp-demo
+  NO_PROXY: localhost,127.0.0.1,keycloak,openbao,postgres,redis,searxng,squid,traefik,web,mcp-demo,ollama
 
 services:
   # ------------------------------------------------------------------ edge
@@ -138,6 +152,43 @@ services:
       - ./squid/allowed-domains.txt:/etc/squid/allowed-domains.txt:ro
     networks: [app, edge]
     restart: unless-stopped
+
+  # ------------------------------------------------------------------ LLM tự host (tùy chọn)
+  # Bật:  docker compose --profile ollama up -d ollama ollama-pull
+  # rồi đặt OLLAMA_BASE_URL=http://ollama:11434 trong .env và restart api/worker.
+  ollama:
+    profiles: [ollama]
+    image: ollama/ollama:0.40.16
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-16384}
+    volumes:
+      - ollamadata:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    # GPU NVIDIA (cần nvidia-container-toolkit) — bỏ comment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
+    # edge: để pull model từ registry.ollama.ai; API/worker gọi qua mạng app (không qua Squid).
+    networks: [app, edge]
+    restart: unless-stopped
+
+  ollama-pull:
+    profiles: [ollama]
+    image: ollama/ollama:0.40.16
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODELS_TO_PULL: ${OLLAMA_MODELS:-qwen3:8b}
+    entrypoint: ["/bin/sh", "-c", "for m in $$OLLAMA_MODELS_TO_PULL; do echo \"pull $$m\"; ollama pull \"$$m\" || exit 1; done"]
+    depends_on:
+      ollama: { condition: service_healthy }
+    networks: [app, edge]
+    restart: "no"
 
   # ------------------------------------------------------------------ identity
   keycloak:
@@ -315,6 +366,7 @@ networks:
     # Lưu ý: mạng internal không publish được port ra host — dùng `docker compose exec`.
 
 volumes:
+  ollamadata:
   pgdata:
   redisdata:
   baodata:

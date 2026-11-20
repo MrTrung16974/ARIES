@@ -36,6 +36,15 @@ import { Notice, Tag } from '@aiagent/ui';
 
 const TABS = ['overview', 'prompt', 'skills', 'limits', 'json'] as const;
 
+const PROVIDER_LABEL: Record<string, string> = {
+  anthropic: 'Claude',
+  gemini: 'Gemini',
+  groq: 'Groq',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama (local)',
+  fake: 'Giả lập',
+};
+
 const RISK_LABEL: Record<RiskLevel, string> = {
   read: 'đọc',
   write: 'ghi',
@@ -115,7 +124,9 @@ export class AgentEditor implements OnInit {
   protected readonly isNew = computed(() => !this.id() || this.id() === 'new');
   protected readonly modelOptions = computed(() =>
     this.models().map((m) => ({
-      label: `${m.model}${m.available ? '' : ' (chưa cấu hình)'}`,
+      label:
+        `${PROVIDER_LABEL[m.provider] ?? m.provider} · ${m.model}` +
+        (m.available ? '' : ' (chưa cấu hình)'),
       value: `${m.provider}:${m.model}`,
       disabled: !m.available,
     })),
@@ -162,9 +173,10 @@ export class AgentEditor implements OnInit {
   }
 
   protected set modelKey(value: string) {
-    const [provider, model] = value.split(':');
-    this.spec.model.provider = provider as AgentSpec['model']['provider'];
-    this.spec.model.model = model;
+    // Id model có thể chứa ':' (Ollama: qwen3:8b) — chỉ tách ở dấu ':' đầu tiên.
+    const i = value.indexOf(':');
+    this.spec.model.provider = value.slice(0, i) as AgentSpec['model']['provider'];
+    this.spec.model.model = value.slice(i + 1);
   }
 
   // ---------------------------------------------------------------- skills
