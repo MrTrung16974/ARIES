@@ -1,98 +1,115 @@
 import { DatePipe, JsonPipe } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIcon } from '@angular/material/icon';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatTableModule } from '@angular/material/table';
 import { ApiService, AuditEvent, ChainStatus } from '@aiagent/core';
-import { ButtonModule } from 'primeng/button';
-import { MessageModule } from 'primeng/message';
-import { TableModule } from 'primeng/table';
-import { TagModule } from 'primeng/tag';
+import { Notice, Tag } from '@aiagent/ui';
 
 @Component({
   selector: 'app-audit',
   imports: [
-    TableModule,
-    TagModule,
-    ButtonModule,
-    MessageModule,
     DatePipe,
     JsonPipe,
+    MatButtonModule,
+    MatIcon,
+    MatProgressBarModule,
+    MatTableModule,
+    Notice,
+    Tag,
   ],
   template: `
     <div class="head">
       <h1>Nhật ký audit</h1>
       <div class="actions">
-        <p-button
-          label="Tải lại"
-          icon="pi pi-refresh"
-          severity="secondary"
-          (onClick)="reload()"
-        />
-        <p-button
-          label="Kiểm tra toàn vẹn"
-          icon="pi pi-verified"
-          [loading]="verifying()"
-          (onClick)="verify()"
-        />
+        <button mat-stroked-button type="button" (click)="reload()">
+          <mat-icon svgIcon="refresh" /> Tải lại
+        </button>
+        <button
+          mat-flat-button
+          type="button"
+          [disabled]="verifying()"
+          (click)="verify()"
+        >
+          <mat-icon svgIcon="verified" /> Kiểm tra toàn vẹn
+        </button>
       </div>
     </div>
 
     @if (chain(); as c) {
       @if (c.intact) {
-        <p-message severity="success">
+        <ui-notice severity="success">
           Chuỗi hash nguyên vẹn ({{ c.records_checked }} bản ghi).
-        </p-message>
+        </ui-notice>
       } @else {
-        <p-message severity="error">
+        <ui-notice severity="error">
           Chuỗi bị đứt tại bản ghi #{{ c.broken_at_seq }} — có dấu hiệu sửa/xóa
           dữ liệu.
-        </p-message>
+        </ui-notice>
       }
     }
 
-    <p-table
-      [value]="events()"
-      [loading]="loading()"
-      dataKey="seq"
-      [tableStyle]="{ 'min-width': '60rem' }"
-    >
-      <ng-template #header>
-        <tr>
-          <th>#</th>
-          <th>Thời gian</th>
-          <th>Hành động</th>
-          <th>Kết quả</th>
-          <th>Người thực hiện</th>
-          <th>Tài nguyên</th>
-          <th>IP</th>
-          <th>Chi tiết</th>
-        </tr>
-      </ng-template>
-      <ng-template #body let-e>
-        <tr>
-          <td>{{ e.seq }}</td>
-          <td>{{ e.occurred_at | date: 'dd/MM/yyyy HH:mm:ss' }}</td>
-          <td>
+    <div class="table-wrap">
+      @if (loading()) {
+        <mat-progress-bar mode="indeterminate" />
+      }
+      <table mat-table [dataSource]="events()">
+        <ng-container matColumnDef="seq">
+          <th mat-header-cell *matHeaderCellDef>#</th>
+          <td mat-cell *matCellDef="let e">{{ e.seq }}</td>
+        </ng-container>
+        <ng-container matColumnDef="time">
+          <th mat-header-cell *matHeaderCellDef>Thời gian</th>
+          <td mat-cell *matCellDef="let e">
+            {{ e.occurred_at | date: 'dd/MM/yyyy HH:mm:ss' }}
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="action">
+          <th mat-header-cell *matHeaderCellDef>Hành động</th>
+          <td mat-cell *matCellDef="let e">
             <code>{{ e.action }}</code>
           </td>
-          <td>
-            <p-tag
+        </ng-container>
+        <ng-container matColumnDef="outcome">
+          <th mat-header-cell *matHeaderCellDef>Kết quả</th>
+          <td mat-cell *matCellDef="let e">
+            <ui-tag
               [value]="e.outcome"
               [severity]="e.outcome === 'success' ? 'success' : 'danger'"
             />
           </td>
-          <td>{{ e.actor_id ?? '—' }}</td>
-          <td>{{ e.resource_type }} {{ e.resource_id }}</td>
-          <td>{{ e.ip ?? '—' }}</td>
-          <td>
+        </ng-container>
+        <ng-container matColumnDef="actor">
+          <th mat-header-cell *matHeaderCellDef>Người thực hiện</th>
+          <td mat-cell *matCellDef="let e">{{ e.actor_id ?? '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="resource">
+          <th mat-header-cell *matHeaderCellDef>Tài nguyên</th>
+          <td mat-cell *matCellDef="let e">
+            {{ e.resource_type }} {{ e.resource_id }}
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="ip">
+          <th mat-header-cell *matHeaderCellDef>IP</th>
+          <td mat-cell *matCellDef="let e">{{ e.ip ?? '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="details">
+          <th mat-header-cell *matHeaderCellDef>Chi tiết</th>
+          <td mat-cell *matCellDef="let e">
             <code class="details">{{ e.details | json }}</code>
           </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="columns"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns"></tr>
+        <tr class="mat-mdc-row" *matNoDataRow>
+          <td class="mat-mdc-cell empty" [attr.colspan]="columns.length">
+            Chưa có bản ghi.
+          </td>
         </tr>
-      </ng-template>
-      <ng-template #emptymessage>
-        <tr>
-          <td colspan="8">Chưa có bản ghi.</td>
-        </tr>
-      </ng-template>
-    </p-table>
+      </table>
+    </div>
   `,
   styles: `
     .head {
@@ -106,20 +123,37 @@ import { TagModule } from 'primeng/tag';
       display: flex;
       gap: 0.5rem;
     }
-    p-message {
-      display: block;
-      margin-bottom: 1rem;
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-lg);
+    }
+    table {
+      min-width: 60rem;
     }
     .details {
       font-size: 0.8rem;
       white-space: pre-wrap;
       word-break: break-all;
     }
+    .empty {
+      padding: 1rem;
+    }
   `,
 })
 export class Audit implements OnInit {
   private readonly api = inject(ApiService);
 
+  protected readonly columns = [
+    'seq',
+    'time',
+    'action',
+    'outcome',
+    'actor',
+    'resource',
+    'ip',
+    'details',
+  ];
   protected readonly events = signal<AuditEvent[]>([]);
   protected readonly loading = signal(false);
   protected readonly verifying = signal(false);

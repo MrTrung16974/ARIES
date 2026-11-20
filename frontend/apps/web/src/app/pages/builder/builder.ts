@@ -8,6 +8,7 @@ import {
   OnDestroy,
   OnInit,
   signal,
+  TemplateRef,
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -20,14 +21,20 @@ import {
   EvalReport,
   Permission,
 } from '@aiagent/core';
-import { ButtonModule } from 'primeng/button';
-import { CheckboxModule } from 'primeng/checkbox';
-import { DialogModule } from 'primeng/dialog';
-import { MessageModule } from 'primeng/message';
-import { ProgressBarModule } from 'primeng/progressbar';
-import { TabsModule } from 'primeng/tabs';
-import { TagModule } from 'primeng/tag';
-import { TextareaModule } from 'primeng/textarea';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import {
+  MatDialog,
+  MatDialogModule,
+  MatDialogRef,
+} from '@angular/material/dialog';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIcon } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTabsModule } from '@angular/material/tabs';
+import { Notice, Tag } from '@aiagent/ui';
 
 export interface BuilderItem {
   role: 'user' | 'architect';
@@ -54,14 +61,17 @@ const RISK_LABEL: Record<string, string> = {
   imports: [
     FormsModule,
     RouterLink,
-    ButtonModule,
-    CheckboxModule,
-    DialogModule,
-    MessageModule,
-    ProgressBarModule,
-    TabsModule,
-    TagModule,
-    TextareaModule,
+    MatButtonModule,
+    MatCheckboxModule,
+    MatDialogModule,
+    MatFormFieldModule,
+    MatIcon,
+    MatInputModule,
+    MatProgressBarModule,
+    MatProgressSpinnerModule,
+    MatTabsModule,
+    Notice,
+    Tag,
   ],
   templateUrl: './builder.html',
   styleUrl: './builder.scss',
@@ -75,6 +85,10 @@ export class Builder implements OnInit, OnDestroy {
   private readonly api = inject(BuilderApi);
   private readonly router = inject(Router);
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
+  private readonly dialog = inject(MatDialog);
+  private readonly confirmTpl =
+    viewChild.required<TemplateRef<unknown>>('confirmTpl');
+  private confirmRef: MatDialogRef<unknown> | null = null;
 
   protected readonly view = signal<BuilderSessionView | null>(null);
   protected readonly items = signal<BuilderItem[]>([]);
@@ -100,7 +114,7 @@ export class Builder implements OnInit, OnDestroy {
   protected input = '';
   protected answers: Record<string, string> = {};
   protected override = false;
-  protected tab = 'overview';
+  protected tabIndex = 0;
 
   protected readonly spec = computed(() => this.view()?.spec ?? null);
   protected readonly evalReport = computed<EvalReport | null>(
@@ -186,8 +200,21 @@ export class Builder implements OnInit, OnDestroy {
   }
 
   protected openConfirm(): void {
+    if (this.confirmRef) return;
     this.override = false;
     this.confirmOpen.set(true);
+    this.confirmRef = this.dialog.open(this.confirmTpl(), {
+      width: '30rem',
+      maxWidth: '95vw',
+    });
+    this.confirmRef.afterClosed().subscribe(() => {
+      this.confirmRef = null;
+      this.confirmOpen.set(false);
+    });
+  }
+
+  protected closeConfirm(): void {
+    this.confirmRef?.close();
   }
 
   protected publish(): void {
@@ -197,7 +224,7 @@ export class Builder implements OnInit, OnDestroy {
     this.api.confirmPublish(s.id, this.override).subscribe({
       next: (r) => {
         this.publishing.set(false);
-        this.confirmOpen.set(false);
+        this.closeConfirm();
         this.published.set(r);
         this.view.update((v) =>
           v ? { ...v, status: 'published', agent_id: r.agent_id } : v,

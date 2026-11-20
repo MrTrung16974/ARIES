@@ -1,0 +1,34 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+:host(.sev-primary) {
+  background: var(--app-highlight);
+  color: var(--app-primary);
+}
+:host(.sev-success) {
+  background: var(--app-success-bg);
+  color: var(--app-success);
+}
+:host(.sev-info) {
+  background: var(--app-info-bg);
+  color: var(--app-info);
+}
+:host(.sev-warn) {
+  background: var(--app-warn-bg);
+  color: var(--app-warn);
+}
+:host(.sev-danger) {
+  background: var(--app-danger-bg);
+  color: var(--app-danger);
+}
+:host(.sev-secondary) {
+  background: var(--app-surface-2);
+  color: var(--app-muted);
+}

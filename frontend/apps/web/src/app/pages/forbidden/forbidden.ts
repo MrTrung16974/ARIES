@@ -1,19 +1,22 @@
 import { Component } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIcon } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
-import { ButtonModule } from 'primeng/button';
 
 @Component({
   selector: 'app-forbidden',
-  imports: [RouterLink, ButtonModule],
+  imports: [RouterLink, MatButtonModule, MatIcon],
   template: `
     <div class="box">
-      <i class="pi pi-lock" aria-hidden="true"></i>
+      <mat-icon svgIcon="lock" class="big" aria-hidden="true" />
       <h1>Không có quyền truy cập</h1>
       <p>
         Tài khoản của bạn không có vai trò cần thiết cho trang này. Hãy liên hệ
         quản trị viên.
       </p>
-      <a routerLink="/"><p-button label="Về trang chủ" icon="pi pi-home" /></a>
+      <a mat-flat-button routerLink="/"
+        ><mat-icon svgIcon="home" /> Về trang chủ</a
+      >
     </div>
   `,
   styles: `
@@ -21,9 +24,10 @@ import { ButtonModule } from 'primeng/button';
       text-align: center;
       padding: 3rem 1rem;
     }
-    .pi-lock {
-      font-size: 3rem;
-      color: var(--p-text-muted-color);
+    .big {
+      width: 48px;
+      height: 48px;
+      color: var(--app-muted);
     }
   `,
 })

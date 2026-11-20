@@ -1,17 +1,23 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
-  ElementRef,
   HostListener,
   inject,
   signal,
+  TemplateRef,
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import {
+  MatDialog,
+  MatDialogModule,
+  MatDialogRef,
+} from '@angular/material/dialog';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIcon } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
 import { Router } from '@angular/router';
 import { BuilderApi, SessionService } from '@aiagent/core';
-import { DialogModule } from 'primeng/dialog';
-import { InputTextModule } from 'primeng/inputtext';
 
 const SUGGESTIONS = [
   '/agent new ',
@@ -25,47 +31,46 @@ const SUGGESTIONS = [
 /** Command bar (Ctrl+K): slash command xác định, gõ không có "/" = tạo agent bằng mô tả. */
 @Component({
   selector: 'app-command-bar',
-  imports: [DialogModule, FormsModule, InputTextModule],
+  imports: [
+    FormsModule,
+    MatDialogModule,
+    MatFormFieldModule,
+    MatIcon,
+    MatInputModule,
+  ],
   template: `
-    <p-dialog
-      [modal]="true"
-      [visible]="open()"
-      (visibleChange)="open.set($event)"
-      [showHeader]="false"
-      [dismissableMask]="true"
-      [style]="{ width: '40rem', maxWidth: '95vw' }"
-      (onShow)="focus()"
-    >
-      <div class="bar">
-        <i class="pi pi-bolt" aria-hidden="true"></i>
-        <input
-          #box
-          pInputText
-          [(ngModel)]="text"
-          (keydown.enter)="run()"
-          placeholder="Mô tả agent cần tạo, hoặc /agent …  (Esc để đóng)"
-          aria-label="Lệnh"
-        />
-      </div>
-      <div class="hints">
-        @for (s of suggestions; track s) {
-          <button type="button" (click)="use(s)">{{ s.trim() }}</button>
+    <ng-template #tpl>
+      <div class="cmd">
+        <mat-form-field
+          appearance="outline"
+          class="full"
+          subscriptSizing="dynamic"
+        >
+          <mat-icon matPrefix svgIcon="bolt" />
+          <input
+            matInput
+            id="cmd-input"
+            [(ngModel)]="text"
+            (keydown.enter)="run()"
+            placeholder="Mô tả agent cần tạo, hoặc /agent …  (Esc để đóng)"
+            aria-label="Lệnh"
+            autocomplete="off"
+          />
+        </mat-form-field>
+        <div class="hints">
+          @for (s of suggestions; track s) {
+            <button type="button" (click)="use(s)">{{ s.trim() }}</button>
+          }
+        </div>
+        @if (output()) {
+          <pre class="out" [class.err]="isError()">{{ output() }}</pre>
         }
       </div>
-      @if (output()) {
-        <pre class="out" [class.err]="isError()">{{ output() }}</pre>
-      }
-    </p-dialog>
+    </ng-template>
   `,
   styles: `
-    .bar {
-      display: flex;
-      gap: 0.5rem;
-      align-items: center;
-      padding-top: 1rem;
-      input {
-        flex: 1;
-      }
+    .cmd {
+      padding: 1rem;
     }
     .hints {
       display: flex;
@@ -73,7 +78,7 @@ const SUGGESTIONS = [
       gap: 0.35rem;
       margin-top: 0.6rem;
       button {
-        border: 1px solid var(--p-content-border-color);
+        border: 1px solid var(--app-border);
         background: none;
         border-radius: 999px;
         padding: 0.2rem 0.7rem;
@@ -88,7 +93,7 @@ const SUGGESTIONS = [
       margin: 0.75rem 0 0;
       font-size: 0.85rem;
       &.err {
-        color: var(--p-red-600, #dc2626);
+        color: var(--app-danger);
       }
     }
   `,
@@ -97,9 +102,10 @@ export class CommandBar {
   private readonly api = inject(BuilderApi);
   private readonly router = inject(Router);
   private readonly sessionSvc = inject(SessionService);
-  private readonly box = viewChild<ElementRef<HTMLInputElement>>('box');
+  private readonly dialog = inject(MatDialog);
+  private readonly tpl = viewChild.required<TemplateRef<unknown>>('tpl');
+  private ref: MatDialogRef<unknown> | null = null;
 
-  protected readonly open = signal(false);
   protected readonly output = signal<string | null>(null);
   protected readonly isError = signal(false);
   protected readonly suggestions = SUGGESTIONS;
@@ -115,17 +121,23 @@ export class CommandBar {
 
   toggle(): void {
     if (!this.sessionSvc.hasAnyRole('builder', 'admin')) return;
+    if (this.ref) {
+      this.ref.close();
+      return;
+    }
     this.output.set(null);
-    this.open.update((v) => !v);
-  }
-
-  protected focus(): void {
-    queueMicrotask(() => this.box()?.nativeElement.focus());
+    this.ref = this.dialog.open(this.tpl(), {
+      width: '40rem',
+      maxWidth: '95vw',
+      autoFocus: '#cmd-input',
+      position: { top: '12vh' },
+    });
+    this.ref.afterClosed().subscribe(() => (this.ref = null));
   }
 
   protected use(s: string): void {
     this.text = s;
-    this.focus();
+    queueMicrotask(() => document.getElementById('cmd-input')?.focus());
   }
 
   protected run(): void {
@@ -160,6 +172,6 @@ export class CommandBar {
 
   private close(): void {
     this.text = '';
-    this.open.set(false);
+    this.ref?.close();
   }
 }

@@ -10,20 +10,13 @@
     "importHelpers": true,
     "target": "es2022",
     "module": "esnext",
-    "lib": [
-      "es2022",
-      "dom"
-    ],
+    "lib": ["es2022", "dom"],
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "paths": {
-      "@aiagent/core": [
-        "./packages/core/src/index.ts"
-      ]
+      "@aiagent/core": ["./packages/core/src/index.ts"],
+      "@aiagent/ui": ["./packages/ui/src/index.ts"]
     }
   },
-  "exclude": [
-    "node_modules",
-    "tmp"
-  ]
+  "exclude": ["node_modules", "tmp"]
 }

@@ -20,10 +20,12 @@ import {
   StoredMessage,
   ThreadInfo,
 } from '@aiagent/core';
-import { ButtonModule } from 'primeng/button';
-import { MessageModule } from 'primeng/message';
-import { TagModule } from 'primeng/tag';
-import { TextareaModule } from 'primeng/textarea';
+import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIcon } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { Notice, Tag } from '@aiagent/ui';
 
 interface ToolStep {
   id: string;
@@ -97,10 +99,13 @@ export function toChatItems(messages: StoredMessage[]): ChatItem[] {
   imports: [
     FormsModule,
     RouterLink,
-    ButtonModule,
-    MessageModule,
-    TagModule,
-    TextareaModule,
+    MatButtonModule,
+    MatFormFieldModule,
+    MatIcon,
+    MatInputModule,
+    MatProgressSpinnerModule,
+    Notice,
+    Tag,
     DecimalPipe,
   ],
   templateUrl: './agent-chat.html',

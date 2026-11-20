@@ -16,5 +16,6 @@
 | [0012](0012-llm-hybrid-by-data-classification.md) | LLM hybrid theo phân loại dữ liệu |
 | [0013](0013-no-workflow-canvas-nl-builder.md) | Không workflow canvas — tạo agent bằng ngôn ngữ tự nhiên |
 | [0014](0014-runtime-langgraph-anthropic-sdk.md) | Runtime: LangGraph + Anthropic SDK |
+| [0015](0015-angular-material-ui.md) | Angular Material thay PrimeNG |
 
 Mẫu ADR mới: Bối cảnh → Quyết định → Phương án khác → Hệ quả.

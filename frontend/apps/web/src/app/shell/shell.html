@@ -11,7 +11,7 @@
         routerLinkActive="active"
         [routerLinkActiveOptions]="{ exact: item.link === '/' }"
       >
-        <i [class]="item.icon" aria-hidden="true"></i>
+        <mat-icon class="sm" [svgIcon]="item.icon" aria-hidden="true" />
         {{ item.label }}
       </a>
       }
@@ -23,22 +23,19 @@
       (click)="bar.toggle()"
       title="Command bar"
     >
-      <i class="pi pi-bolt" aria-hidden="true"></i> Ctrl K
+      <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" /> Ctrl K
     </button>
     }
     <div class="user">
       @if (session.me(); as me) {
       <span class="name">{{ session.displayName() }}</span>
       @for (role of me.roles; track role) {
-      <p-tag [value]="role" severity="secondary" />
+      <ui-tag [value]="role" severity="secondary" />
       } }
-      <p-button
-        icon="pi pi-sign-out"
-        label="Đăng xuất"
-        severity="secondary"
-        [text]="true"
-        (onClick)="logout()"
-      />
+      <button mat-button class="logout" type="button" (click)="logout()">
+        <mat-icon svgIcon="logout" />
+        Đăng xuất
+      </button>
     </div>
   </header>
   <main class="content">

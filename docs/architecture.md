@@ -220,6 +220,7 @@ AIAgent/
 ## 10. Frontend
 
 - Nx module boundaries: feature chỉ phụ thuộc `core`, `ui`, `api-client`, `dynamic-form`, `run-stream`.
+- UI kit: Angular Material 3 (MIT) + Material Symbols SVG tự host; component dùng chung trong `packages/ui` (ADR-0015).
 - `api-client` sinh từ OpenAPI — không sửa tay.
 - Đăng nhập: OIDC Authorization Code + PKCE với Keycloak (`angular-auth-oidc-client`).
 - Extension point: `ToolCallRendererRegistry` (skill tự render kết quả), `WidgetRegistry` (field form đặc biệt).

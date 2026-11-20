@@ -1,76 +1,97 @@
 import { Component, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { MatTableModule } from '@angular/material/table';
 import { ApiService, PluginInfo } from '@aiagent/core';
-import { TableModule } from 'primeng/table';
-import { TagModule } from 'primeng/tag';
+import { Severity, Tag } from '@aiagent/ui';
 import { catchError, of } from 'rxjs';
-
-type Severity = 'success' | 'warn' | 'danger' | 'info' | 'secondary';
 
 @Component({
   selector: 'app-plugins',
-  imports: [TableModule, TagModule],
+  imports: [MatTableModule, Tag],
   template: `
     <h1>Plugin</h1>
     <p class="muted">
       Plugin được nạp qua entry points. Plugin lỗi bị vô hiệu, không làm sập hệ
       thống.
     </p>
-    <p-table
-      [value]="plugins() ?? []"
-      dataKey="entry_point"
-      [tableStyle]="{ 'min-width': '50rem' }"
-    >
-      <ng-template #header>
-        <tr>
-          <th>ID</th>
-          <th>Loại</th>
-          <th>Phiên bản</th>
-          <th>Trạng thái</th>
-          <th>Tool</th>
-          <th>Ghi chú</th>
-        </tr>
-      </ng-template>
-      <ng-template #body let-p>
-        <tr>
-          <td>
+    <div class="table-wrap">
+      <table mat-table [dataSource]="plugins() ?? []">
+        <ng-container matColumnDef="id">
+          <th mat-header-cell *matHeaderCellDef>ID</th>
+          <td mat-cell *matCellDef="let p">
             <strong>{{ p.name ?? p.entry_point }}</strong>
             <div class="muted">{{ p.id }}</div>
           </td>
-          <td>{{ p.kind ?? '—' }}</td>
-          <td>{{ p.version ?? '—' }}</td>
-          <td><p-tag [value]="p.status" [severity]="statusSeverity(p)" /></td>
-          <td>
+        </ng-container>
+        <ng-container matColumnDef="kind">
+          <th mat-header-cell *matHeaderCellDef>Loại</th>
+          <td mat-cell *matCellDef="let p">{{ p.kind ?? '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="version">
+          <th mat-header-cell *matHeaderCellDef>Phiên bản</th>
+          <td mat-cell *matCellDef="let p">{{ p.version ?? '—' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Trạng thái</th>
+          <td mat-cell *matCellDef="let p">
+            <ui-tag [value]="p.status" [severity]="statusSeverity(p)" />
+          </td>
+        </ng-container>
+        <ng-container matColumnDef="tools">
+          <th mat-header-cell *matHeaderCellDef>Tool</th>
+          <td mat-cell *matCellDef="let p">
             @for (t of p.tools; track t.name) {
-              <div>
+              <div class="tool">
                 <code>{{ t.name }}</code>
-                <p-tag [value]="t.risk" [severity]="riskSeverity(t.risk)" />
+                <ui-tag [value]="t.risk" [severity]="riskSeverity(t.risk)" />
               </div>
             }
           </td>
-          <td>{{ p.reason }}</td>
+        </ng-container>
+        <ng-container matColumnDef="reason">
+          <th mat-header-cell *matHeaderCellDef>Ghi chú</th>
+          <td mat-cell *matCellDef="let p">{{ p.reason }}</td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="columns"></tr>
+        <tr mat-row *matRowDef="let row; columns: columns"></tr>
+        <tr class="mat-mdc-row" *matNoDataRow>
+          <td class="mat-mdc-cell empty" [attr.colspan]="columns.length">
+            Không có plugin nào.
+          </td>
         </tr>
-      </ng-template>
-      <ng-template #emptymessage>
-        <tr>
-          <td colspan="6">Không có plugin nào.</td>
-        </tr>
-      </ng-template>
-    </p-table>
+      </table>
+    </div>
   `,
   styles: `
-    .muted {
-      color: var(--p-text-muted-color);
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-lg);
     }
-    td div {
+    table {
+      min-width: 50rem;
+    }
+    .tool {
       display: flex;
       gap: 0.5rem;
       align-items: center;
-      margin-bottom: 0.25rem;
+      margin: 0.25rem 0;
+    }
+    .empty {
+      padding: 1rem;
     }
   `,
 })
 export class Plugins {
+  protected readonly columns = [
+    'id',
+    'kind',
+    'version',
+    'status',
+    'tools',
+    'reason',
+  ];
   protected readonly plugins = toSignal(
     inject(ApiService)
       .plugins()

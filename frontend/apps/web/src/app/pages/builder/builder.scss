@@ -14,9 +14,9 @@
 
 .chat,
 .preview {
-  background: var(--p-content-background);
-  border: 1px solid var(--p-content-border-color);
-  border-radius: var(--p-border-radius-lg);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
   min-height: 0;
 }
 
@@ -29,18 +29,21 @@
     gap: 0.5rem;
     align-items: center;
     padding: 0.6rem 1rem;
-    border-bottom: 1px solid var(--p-content-border-color);
+    border-bottom: 1px solid var(--app-border);
   }
 
   footer {
     display: flex;
     gap: 0.5rem;
     padding: 0.75rem;
-    border-top: 1px solid var(--p-content-border-color);
-    align-items: flex-end;
+    border-top: 1px solid var(--app-border);
+    align-items: center;
+
+    .input {
+      flex: 1;
+    }
 
     textarea {
-      flex: 1;
       resize: none;
     }
   }
@@ -73,21 +76,21 @@
     align-self: flex-end;
 
     .bubble {
-      background: var(--p-primary-color);
-      color: var(--p-primary-contrast-color);
+      background: var(--app-primary);
+      color: var(--app-on-primary);
     }
   }
 
   &.error .bubble {
-    background: var(--p-red-50, #fef2f2);
-    color: var(--p-red-700, #b91c1c);
+    background: var(--app-danger-bg);
+    color: var(--app-danger);
   }
 }
 
 .bubble {
-  background: var(--p-surface-100, #f1f5f9);
+  background: var(--app-surface-2);
   padding: 0.6rem 0.9rem;
-  border-radius: var(--p-border-radius-lg);
+  border-radius: var(--app-radius-lg);
   white-space: pre-wrap; /* văn bản thuần, không render HTML */
   word-break: break-word;
 }
@@ -100,15 +103,15 @@
 
 .test {
   margin-top: 0.35rem;
-  border-left: 3px solid var(--p-primary-color);
+  border-left: 3px solid var(--app-primary);
   padding-left: 0.6rem;
   display: grid;
   gap: 0.25rem;
 }
 
 .clarify {
-  border: 1px dashed var(--p-primary-color);
-  border-radius: var(--p-border-radius-lg);
+  border: 1px dashed var(--app-primary);
+  border-radius: var(--app-radius-lg);
   padding: 0.75rem;
   display: grid;
   gap: 0.5rem;
@@ -125,8 +128,8 @@
   gap: 0.4rem;
 
   button {
-    border: 1px solid var(--p-content-border-color);
-    background: var(--p-content-background);
+    border: 1px solid var(--app-border);
+    background: var(--app-surface);
     border-radius: 999px;
     padding: 0.35rem 0.85rem;
     cursor: pointer;
@@ -134,9 +137,9 @@
     color: inherit;
 
     &.selected {
-      border-color: var(--p-primary-color);
-      background: var(--p-highlight-background);
-      color: var(--p-primary-color);
+      border-color: var(--app-primary);
+      background: var(--app-highlight);
+      color: var(--app-primary);
     }
   }
 }
@@ -144,7 +147,7 @@
 .status {
   display: grid;
   gap: 0.35rem;
-  color: var(--p-text-muted-color);
+  color: var(--app-muted);
   font-size: 0.9rem;
 }
 
@@ -170,7 +173,7 @@
   }
 
   dt {
-    color: var(--p-text-muted-color);
+    color: var(--app-muted);
   }
 
   dd {
@@ -195,13 +198,13 @@
 .eval {
   margin: 0.75rem 0;
   padding: 0.6rem 0.8rem;
-  border-radius: var(--p-border-radius-md);
-  background: var(--p-green-50, #f0fdf4);
+  border-radius: var(--app-radius-md);
+  background: var(--app-success-bg);
   display: grid;
   gap: 0.25rem;
 
   &.fail {
-    background: var(--p-orange-50, #fff7ed);
+    background: var(--app-warn-bg);
   }
 
   summary {
@@ -232,7 +235,7 @@
 }
 
 .missing li {
-  color: var(--p-orange-600, #ea580c);
+  color: var(--app-warn);
 }
 
 .pre {
@@ -250,23 +253,38 @@
   height: 100%;
   display: grid;
   place-content: center;
+  justify-items: center;
   text-align: center;
 
-  .pi {
-    font-size: 2rem;
+  .big {
+    width: 40px;
+    height: 40px;
   }
 }
 
-.override {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-}
-
 .muted {
-  color: var(--p-text-muted-color);
+  color: var(--app-muted);
 }
 
 .small {
   font-size: 0.8rem;
+}
+
+.status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tab-body {
+  padding: 0.5rem 0;
+}
+
+.success {
+  --mat-button-filled-container-color: var(--app-success);
+  --mat-button-filled-label-text-color: #fff;
+}
+
+.err {
+  color: var(--app-danger);
 }

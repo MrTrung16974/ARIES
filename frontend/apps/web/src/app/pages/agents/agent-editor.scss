@@ -7,7 +7,10 @@
 }
 
 .back {
-  color: var(--p-text-muted-color);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--app-muted);
   text-decoration: none;
   font-size: 0.9rem;
 }
@@ -18,43 +21,29 @@
   flex-wrap: wrap;
 }
 
-.muted {
-  color: var(--p-text-muted-color);
+.success {
+  --mat-button-filled-container-color: var(--app-success);
+  --mat-button-filled-label-text-color: #fff;
 }
 
-.small {
-  font-size: 0.85rem;
-}
-
-p-message {
-  display: block;
-  margin-bottom: 0.75rem;
+.form,
+.panel {
+  padding: 1rem 0;
+  max-width: 900px;
 }
 
 .form {
   display: grid;
-  grid-template-columns: minmax(10rem, 14rem) 1fr;
-  gap: 0.75rem 1rem;
-  align-items: center;
-  max-width: 900px;
-
-  label {
-    font-weight: 500;
-  }
-
-  textarea,
-  input,
-  p-select,
-  p-inputnumber {
-    width: 100%;
-  }
+  gap: 0.25rem;
 }
 
 .skill {
-  display: flex;
-  gap: 0.75rem;
   padding: 0.75rem 0;
-  border-bottom: 1px solid var(--p-content-border-color);
+  border-bottom: 1px solid var(--app-border);
+}
+
+.skill-body {
+  padding-left: 2.5rem;
 
   p {
     margin: 0.25rem 0;
@@ -70,15 +59,17 @@ p-message {
 }
 
 .json {
-  width: 100%;
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;
-  margin-bottom: 0.5rem;
 }
 
 .note {
   margin-top: 1rem;
-  display: grid;
-  gap: 0.25rem;
+  width: 100%;
   max-width: 600px;
+}
+
+.skill mat-checkbox code {
+  margin-left: 0.4rem;
+  color: var(--app-muted);
 }

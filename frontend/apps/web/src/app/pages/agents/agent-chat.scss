@@ -23,13 +23,13 @@
     margin: 0.75rem 0 0;
   }
 
-  button {
+  ul button {
     width: 100%;
     text-align: left;
     background: none;
     border: none;
     padding: 0.5rem;
-    border-radius: var(--p-border-radius-md);
+    border-radius: var(--app-radius-md);
     cursor: pointer;
     color: inherit;
     display: flex;
@@ -38,11 +38,11 @@
     font: inherit;
 
     &:hover {
-      background: var(--p-content-hover-background);
+      background: var(--app-hover);
     }
 
     &.active {
-      background: var(--p-highlight-background);
+      background: var(--app-highlight);
     }
   }
 }
@@ -51,9 +51,9 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--p-content-background);
-  border: 1px solid var(--p-content-border-color);
-  border-radius: var(--p-border-radius-lg);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
 }
 
 header {
@@ -61,7 +61,7 @@ header {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--p-content-border-color);
+  border-bottom: 1px solid var(--app-border);
 
   .spacer {
     flex: 1;
@@ -69,7 +69,7 @@ header {
 }
 
 .back {
-  color: var(--p-text-muted-color);
+  color: var(--app-muted);
 }
 
 .messages {
@@ -94,8 +94,8 @@ header {
   justify-content: center;
 
   button {
-    border: 1px solid var(--p-content-border-color);
-    background: var(--p-content-background);
+    border: 1px solid var(--app-border);
+    background: var(--app-surface);
     border-radius: 999px;
     padding: 0.4rem 0.9rem;
     cursor: pointer;
@@ -115,31 +115,31 @@ header {
     align-self: flex-end;
 
     .bubble {
-      background: var(--p-primary-color);
-      color: var(--p-primary-contrast-color);
+      background: var(--app-primary);
+      color: var(--app-on-primary);
     }
   }
 }
 
 .bubble {
-  background: var(--p-surface-100, #f1f5f9);
+  background: var(--app-surface-2);
   padding: 0.6rem 0.9rem;
-  border-radius: var(--p-border-radius-lg);
+  border-radius: var(--app-radius-lg);
   white-space: pre-wrap; /* văn bản thuần — không render HTML từ model */
   word-break: break-word;
 }
 
 .thinking {
   font-style: italic;
-  color: var(--p-text-muted-color);
+  color: var(--app-muted);
   margin: 0;
   font-size: 0.85rem;
 }
 
 .tools details {
   font-size: 0.85rem;
-  border: 1px solid var(--p-content-border-color);
-  border-radius: var(--p-border-radius-md);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
   padding: 0.25rem 0.5rem;
   margin-bottom: 0.25rem;
 
@@ -162,13 +162,28 @@ footer {
   display: flex;
   gap: 0.5rem;
   padding: 0.75rem;
-  border-top: 1px solid var(--p-content-border-color);
-  align-items: flex-end;
+  border-top: 1px solid var(--app-border);
+  align-items: center;
+
+  .input {
+    flex: 1;
+  }
 
   textarea {
-    flex: 1;
     resize: none;
   }
+}
+
+.err {
+  color: var(--app-danger);
+}
+
+summary mat-spinner {
+  display: inline-block;
+}
+
+.threads ul {
+  margin-top: 0.75rem;
 }
 
 .usage {
@@ -176,7 +191,7 @@ footer {
 }
 
 .muted {
-  color: var(--p-text-muted-color);
+  color: var(--app-muted);
 }
 
 .small {

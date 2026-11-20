@@ -1,7 +1,64 @@
-@import 'primeicons/primeicons.css';
+@use '@angular/material' as mat;
 
-:root {
+/* Theme ARIES — Angular Material 3 (MIT). Màu chủ đạo hồng (rose) theo logo. */
+html {
   color-scheme: light;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$rose-palette,
+        tertiary: mat.$magenta-palette,
+        theme-type: light,
+      ),
+      typography: (
+        plain-family: (
+          Inter,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif,
+        ),
+        brand-family: (
+          Inter,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif,
+        ),
+      ),
+      density: -1,
+    )
+  );
+
+  /* Design token của ứng dụng — component chỉ dùng các biến này, không dùng màu cứng. */
+  --app-bg: var(--mat-sys-surface-container-low);
+  --app-surface: var(--mat-sys-surface-container-lowest);
+  --app-surface-2: var(--mat-sys-surface-container);
+  --app-hover: var(--mat-sys-surface-container-high);
+  --app-text: var(--mat-sys-on-surface);
+  --app-muted: var(--mat-sys-on-surface-variant);
+  --app-border: var(--mat-sys-outline-variant);
+  --app-primary: var(--mat-sys-primary);
+  --app-on-primary: var(--mat-sys-on-primary);
+  --app-highlight: var(--mat-sys-primary-container);
+  --app-radius-md: 8px;
+  --app-radius-lg: 12px;
+  --app-radius-xl: 16px;
+
+  --app-success: #15803d;
+  --app-success-bg: #f0fdf4;
+  --app-info: #0369a1;
+  --app-info-bg: #f0f9ff;
+  --app-warn: #b45309;
+  --app-warn-bg: #fffbeb;
+  --app-danger: #b91c1c;
+  --app-danger-bg: #fef2f2;
+
+  /* Thương hiệu ARIES */
+  --aries-night: #0b0614;
+  --aries-glow: #ff3d8b;
 }
 
 html,
@@ -14,11 +71,34 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
-  background: var(--p-surface-50, #f8fafc);
-  color: var(--p-text-color, #0f172a);
+  background: var(--app-bg);
+  color: var(--app-text);
 }
 
 h1 {
   font-size: 1.5rem;
   margin: 0 0 1rem;
+}
+
+/* Icon SVG Material Symbols nhận màu chữ hiện tại */
+.mat-icon svg {
+  fill: currentColor;
+}
+
+mat-icon.sm {
+  width: 18px;
+  height: 18px;
+}
+
+/* Form dùng chung: mat-form-field chiếm hết chiều ngang */
+.full {
+  width: 100%;
+}
+
+.muted {
+  color: var(--app-muted);
+}
+
+.small {
+  font-size: 0.8rem;
 }

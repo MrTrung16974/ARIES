@@ -1,12 +1,8 @@
 <div class="chat-layout">
   <aside class="threads">
-    <p-button
-      label="Hội thoại mới"
-      icon="pi pi-plus"
-      size="small"
-      [fluid]="true"
-      (onClick)="newThread()"
-    />
+    <button mat-flat-button type="button" class="full" (click)="newThread()">
+      <mat-icon svgIcon="add" /> Hội thoại mới
+    </button>
     <ul>
       @for (t of threads(); track t.id) {
       <li>
@@ -27,27 +23,26 @@
 
   <section class="main">
     <header>
-      <a routerLink="/agents" class="back"
-        ><i class="pi pi-arrow-left" aria-hidden="true"></i
-      ></a>
+      <a
+        mat-icon-button
+        routerLink="/agents"
+        class="back"
+        aria-label="Quay lại danh sách agent"
+      >
+        <mat-icon svgIcon="arrow_back" />
+      </a>
       <strong>{{ agent()?.name }}</strong>
       @if (versionLabel()) {
-      <p-tag
+      <ui-tag
         [value]="versionLabel()"
         [severity]="isDraft() ? 'warn' : 'success'"
       />
       }
       <span class="spacer"></span>
       @if (agent()?.can_edit) {
-      <a [routerLink]="['/agents', id(), 'edit']">
-        <p-button
-          label="Sửa"
-          icon="pi pi-pencil"
-          size="small"
-          severity="secondary"
-          [text]="true"
-        />
-      </a>
+      <a mat-button [routerLink]="['/agents', id(), 'edit']"
+        ><mat-icon svgIcon="edit" /> Sửa</a
+      >
       }
     </header>
 
@@ -72,10 +67,15 @@
           @for (t of m.tools; track t.id) {
           <details>
             <summary>
-              <i
-                [class]="t.status === 'running' ? 'pi pi-spin pi-spinner' : t.status === 'ok' ? 'pi pi-check' : 'pi pi-times'"
-                aria-hidden="true"
-              ></i>
+              @if (t.status === 'running') {
+              <mat-spinner diameter="14" />
+              } @else {
+              <mat-icon
+                class="sm"
+                [svgIcon]="t.status === 'ok' ? 'check' : 'close'"
+                [class.err]="t.status === 'error'"
+              />
+              }
               <code>{{ t.name }}</code>
               @if (t.durationMs !== undefined) {
               <span class="muted small">{{ t.durationMs }} ms</span>
@@ -90,43 +90,47 @@
         } @if (m.text) {
         <div class="bubble">{{ m.text }}</div>
         } @else if (m.streaming && !m.tools.length) {
-        <div class="bubble muted">
-          <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
-        </div>
+        <div class="bubble"><mat-spinner diameter="16" /></div>
         } @if (m.error) {
-        <p-message severity="error" size="small">{{ m.error }}</p-message>
+        <ui-notice severity="error" [compact]="true">{{ m.error }}</ui-notice>
         }
       </div>
       }
     </div>
 
     @if (error()) {
-    <p-message severity="error">{{ error()! }}</p-message>
+    <ui-notice severity="error">{{ error() }}</ui-notice>
     }
 
     <footer>
-      <textarea
-        pTextarea
-        rows="2"
-        [(ngModel)]="input"
-        (keydown)="onKey($event)"
-        placeholder="Nhập tin nhắn… (Enter để gửi, Shift+Enter xuống dòng)"
-        [disabled]="!agent()"
-      ></textarea>
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="input"
+      >
+        <textarea
+          matInput
+          rows="2"
+          [(ngModel)]="input"
+          (keydown)="onKey($event)"
+          placeholder="Nhập tin nhắn… (Enter để gửi, Shift+Enter xuống dòng)"
+          [disabled]="!agent()"
+        ></textarea>
+      </mat-form-field>
       @if (busy()) {
-      <p-button
-        icon="pi pi-stop"
-        severity="secondary"
-        aria-label="Dừng"
-        (onClick)="stop()"
-      />
+      <button mat-icon-button type="button" aria-label="Dừng" (click)="stop()">
+        <mat-icon svgIcon="stop" />
+      </button>
       } @else {
-      <p-button
-        icon="pi pi-send"
+      <button
+        mat-flat-button
+        type="button"
         aria-label="Gửi"
         [disabled]="!input.trim()"
-        (onClick)="send()"
-      />
+        (click)="send()"
+      >
+        <mat-icon svgIcon="send" /> Gửi
+      </button>
       }
     </footer>
     @if (usage(); as u) {

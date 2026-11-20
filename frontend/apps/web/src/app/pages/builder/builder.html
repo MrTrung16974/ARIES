@@ -1,10 +1,10 @@
 <div class="builder">
   <section class="chat">
     <header>
-      <i class="pi pi-sparkles" aria-hidden="true"></i>
+      <mat-icon svgIcon="bolt" class="sm" aria-hidden="true" />
       <strong>Agent Architect</strong>
       @if (view()?.brain === 'heuristic') {
-      <p-tag value="chế độ dev (không LLM)" severity="warn" />
+      <ui-tag value="chế độ dev (không LLM)" severity="warn" />
       }
       <span class="spacer"></span>
       @if (cost() !== null && cost()! > 0) {
@@ -61,22 +61,28 @@
           </div>
         </div>
         }
-        <p-button
-          label="Gửi trả lời"
-          icon="pi pi-check"
-          size="small"
-          [disabled]="!canAnswer() || busy()"
-          (onClick)="sendAnswers()"
-        />
+        <div>
+          <button
+            mat-flat-button
+            type="button"
+            [disabled]="!canAnswer() || busy()"
+            (click)="sendAnswers()"
+          >
+            <mat-icon svgIcon="check" /> Gửi trả lời
+          </button>
+        </div>
       </div>
       } @if (busy()) {
       <div class="status">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
-        {{ status() ?? 'Đang xử lý…' }} @if (progress(); as p) {
+        <span class="status-line">
+          <mat-spinner diameter="16" />
+          {{ status() ?? 'Đang xử lý…' }}
+        </span>
+        @if (progress(); as p) {
         <span>Eval {{ p.done }}/{{ p.total }}</span>
-        <p-progressbar
+        <mat-progress-bar
+          mode="determinate"
           [value]="p.total ? (p.done * 100) / p.total : 0"
-          [showValue]="false"
         />
         }
       </div>
@@ -84,32 +90,37 @@
     </div>
 
     @if (error()) {
-    <p-message severity="error">{{ error() }}</p-message>
+    <ui-notice severity="error">{{ error() }}</ui-notice>
     }
 
     <footer>
-      <textarea
-        pTextarea
-        rows="2"
-        [(ngModel)]="input"
-        (keydown)="onKey($event)"
-        [placeholder]="spec() ? 'Yêu cầu sửa, “thử: <câu hỏi>”, hoặc “publish”…' : 'Mô tả agent…'"
-        [disabled]="!view()"
-      ></textarea>
+      <mat-form-field
+        appearance="outline"
+        subscriptSizing="dynamic"
+        class="input"
+      >
+        <textarea
+          matInput
+          rows="2"
+          [(ngModel)]="input"
+          (keydown)="onKey($event)"
+          [placeholder]="spec() ? 'Yêu cầu sửa, “thử: <câu hỏi>”, hoặc “publish”…' : 'Mô tả agent…'"
+          [disabled]="!view()"
+        ></textarea>
+      </mat-form-field>
       @if (busy()) {
-      <p-button
-        icon="pi pi-stop"
-        severity="secondary"
-        aria-label="Dừng"
-        (onClick)="stop()"
-      />
+      <button mat-icon-button type="button" aria-label="Dừng" (click)="stop()">
+        <mat-icon svgIcon="stop" />
+      </button>
       } @else {
-      <p-button
-        icon="pi pi-send"
-        aria-label="Gửi"
+      <button
+        mat-flat-button
+        type="button"
         [disabled]="!input.trim()"
-        (onClick)="send()"
-      />
+        (click)="send()"
+      >
+        <mat-icon svgIcon="send" /> Gửi
+      </button>
       }
     </footer>
   </section>
@@ -123,32 +134,23 @@
       </div>
       <div class="actions">
         @if (view()?.agent_id; as agentId) {
-        <a [routerLink]="['/agents', agentId, 'edit']">
-          <p-button
-            label="Sửa tay"
-            icon="pi pi-pencil"
-            size="small"
-            severity="secondary"
-          />
+        <a mat-stroked-button [routerLink]="['/agents', agentId, 'edit']">
+          <mat-icon svgIcon="edit" /> Sửa tay
         </a>
         @if (view()?.status === 'published') {
-        <a [routerLink]="['/agents', agentId, 'chat']">
-          <p-button
-            label="Chat"
-            icon="pi pi-comments"
-            size="small"
-            severity="secondary"
-          />
+        <a mat-stroked-button [routerLink]="['/agents', agentId, 'chat']">
+          <mat-icon svgIcon="forum" /> Chat
         </a>
         } }
-        <p-button
-          label="Publish"
-          icon="pi pi-send"
-          size="small"
-          severity="success"
+        <button
+          mat-flat-button
+          class="success"
+          type="button"
           [disabled]="busy()"
-          (onClick)="openConfirm()"
-        />
+          (click)="openConfirm()"
+        >
+          <mat-icon svgIcon="send" /> Publish
+        </button>
       </div>
     </div>
 
@@ -163,11 +165,12 @@
         <summary>Xem {{ r.results.length }} tình huống</summary>
         @for (c of r.results; track c.case.id) {
         <div class="case">
-          <i
-            [class]="c.passed ? 'pi pi-check' : 'pi pi-times'"
-            aria-hidden="true"
-          ></i>
-          <p-tag [value]="c.case.kind" severity="secondary" />
+          <mat-icon
+            class="sm"
+            [svgIcon]="c.passed ? 'check' : 'close'"
+            [class.err]="!c.passed"
+          />
+          <ui-tag [value]="c.case.kind" severity="secondary" />
           <span>{{ c.case.input }}</span>
           <div class="muted small">{{ c.reason }}</div>
         </div>
@@ -176,14 +179,13 @@
     </div>
     }
 
-    <p-tabs [(value)]="tab">
-      <p-tablist>
-        <p-tab value="overview">Tổng quan</p-tab>
-        <p-tab value="prompt">Prompt</p-tab>
-        <p-tab value="json">JSON</p-tab>
-      </p-tablist>
-      <p-tabpanels>
-        <p-tabpanel value="overview">
+    <mat-tab-group
+      [(selectedIndex)]="tabIndex"
+      animationDuration="0ms"
+      mat-stretch-tabs="false"
+    >
+      <mat-tab label="Tổng quan">
+        <div class="tab-body">
           <dl>
             <dt>Model</dt>
             <dd>{{ s.model.model }} · effort {{ s.model.effort }}</dd>
@@ -194,7 +196,7 @@
           @for (p of permissions(); track p.tool) {
           <div class="perm">
             <code>{{ p.tool }}</code>
-            <p-tag
+            <ui-tag
               [value]="riskLabel[p.risk] ?? p.risk"
               [severity]="p.status === 'active' ? 'info' : 'warn'"
             />
@@ -228,8 +230,10 @@
             }
           </ul>
           }
-        </p-tabpanel>
-        <p-tabpanel value="prompt">
+        </div>
+      </mat-tab>
+      <mat-tab label="Prompt">
+        <div class="tab-body">
           <h3>Vai trò</h3>
           <p class="pre">{{ s.persona }}</p>
           <h3>Hướng dẫn</h3>
@@ -242,65 +246,55 @@
             <li>{{ p }}</li>
             }
           </ul>
-        </p-tabpanel>
-        <p-tabpanel value="json">
-          <pre class="json">{{ specJson() }}</pre>
-        </p-tabpanel>
-      </p-tabpanels>
-    </p-tabs>
+        </div>
+      </mat-tab>
+      <mat-tab label="JSON">
+        <pre class="json tab-body">{{ specJson() }}</pre>
+      </mat-tab>
+    </mat-tab-group>
     } @else {
     <div class="placeholder muted">
-      <i class="pi pi-objects-column" aria-hidden="true"></i>
+      <mat-icon svgIcon="dashboard" class="big" aria-hidden="true" />
       <p>Bản xem trước agent sẽ hiện ở đây.</p>
     </div>
     }
   </aside>
 </div>
 
-<p-dialog
-  header="Publish agent"
-  [modal]="true"
-  [visible]="confirmOpen()"
-  (visibleChange)="confirmOpen.set($event)"
-  [style]="{ width: '30rem' }"
->
-  @if (evalReport(); as r) {
-  <p>
-    Eval: <strong>{{ (r.score * 100).toFixed(0) }}%</strong> — {{ r.passed ?
-    'đạt ngưỡng.' : 'CHƯA đạt ngưỡng.' }}
-  </p>
-  @if (!r.passed) {
-  <div class="override">
-    <p-checkbox inputId="override" [binary]="true" [(ngModel)]="override" />
-    <label for="override"
-      >Tôi hiểu eval chưa đạt và vẫn muốn publish (sẽ ghi audit).</label
+<ng-template #confirmTpl>
+  <h2 mat-dialog-title>Publish agent</h2>
+  <mat-dialog-content>
+    @if (evalReport(); as r) {
+    <p>
+      Eval: <strong>{{ (r.score * 100).toFixed(0) }}%</strong> — {{ r.passed ?
+      'đạt ngưỡng.' : 'CHƯA đạt ngưỡng.' }}
+    </p>
+    @if (!r.passed) {
+    <mat-checkbox [(ngModel)]="override">
+      Tôi hiểu eval chưa đạt và vẫn muốn publish (sẽ ghi audit).
+    </mat-checkbox>
+    } } @else {
+    <p>Chưa có kết quả eval.</p>
+    <mat-checkbox [(ngModel)]="override">
+      Vẫn publish khi chưa có eval (sẽ ghi audit).
+    </mat-checkbox>
+    }
+    <p class="muted small">
+      {{ view()?.agent_id ? 'Tạo version mới cho agent hiện có và publish.' :
+      'Tạo agent mới (v1) và publish.' }}
+    </p>
+  </mat-dialog-content>
+  <mat-dialog-actions align="end">
+    <button mat-button type="button" (click)="closeConfirm()">Hủy</button>
+    <button
+      mat-flat-button
+      class="success"
+      type="button"
+      [disabled]="publishing() || !(evalReport()?.passed || override)"
+      (click)="publish()"
     >
-  </div>
-  } } @else {
-  <p>Chưa có kết quả eval.</p>
-  <div class="override">
-    <p-checkbox inputId="override2" [binary]="true" [(ngModel)]="override" />
-    <label for="override2">Vẫn publish khi chưa có eval (sẽ ghi audit).</label>
-  </div>
-  }
-  <p class="muted small">
-    {{ view()?.agent_id ? 'Tạo version mới cho agent hiện có và publish.' : 'Tạo
-    agent mới (v1) và publish.' }}
-  </p>
-  <ng-template #footer>
-    <p-button
-      label="Hủy"
-      severity="secondary"
-      [text]="true"
-      (onClick)="confirmOpen.set(false)"
-    />
-    <p-button
-      label="Xác nhận publish"
-      icon="pi pi-send"
-      severity="success"
-      [loading]="publishing()"
-      [disabled]="!(evalReport()?.passed || override)"
-      (onClick)="publish()"
-    />
-  </ng-template>
-</p-dialog>
+      <mat-icon svgIcon="send" /> {{ publishing() ? 'Đang publish…' : 'Xác nhận
+      publish' }}
+    </button>
+  </mat-dialog-actions>
+</ng-template>

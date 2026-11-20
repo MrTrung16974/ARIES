@@ -1,0 +1,36 @@
+:host {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--app-radius-md);
+  border-left: 4px solid currentColor;
+  margin-bottom: 0.75rem;
+  white-space: pre-wrap;
+}
+:host(.compact) {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  margin-bottom: 0;
+}
+mat-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+:host(.sev-success) {
+  background: var(--app-success-bg);
+  color: var(--app-success);
+}
+:host(.sev-info) {
+  background: var(--app-info-bg);
+  color: var(--app-info);
+}
+:host(.sev-warn) {
+  background: var(--app-warn-bg);
+  color: var(--app-warn);
+}
+:host(.sev-error) {
+  background: var(--app-danger-bg);
+  color: var(--app-danger);
+}

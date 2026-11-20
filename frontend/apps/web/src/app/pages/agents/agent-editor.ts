@@ -18,15 +18,16 @@ import {
   RiskLevel,
   SkillInfo,
 } from '@aiagent/core';
-import { ButtonModule } from 'primeng/button';
-import { CheckboxModule } from 'primeng/checkbox';
-import { InputNumberModule } from 'primeng/inputnumber';
-import { InputTextModule } from 'primeng/inputtext';
-import { MessageModule } from 'primeng/message';
-import { SelectModule } from 'primeng/select';
-import { TabsModule } from 'primeng/tabs';
-import { TagModule } from 'primeng/tag';
-import { TextareaModule } from 'primeng/textarea';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIcon } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatTabsModule } from '@angular/material/tabs';
+import { Notice, Tag } from '@aiagent/ui';
+
+const TABS = ['overview', 'prompt', 'skills', 'limits', 'json'] as const;
 
 const RISK_LABEL: Record<RiskLevel, string> = {
   read: 'đọc',
@@ -57,15 +58,15 @@ function errorMessage(err: unknown): string {
   imports: [
     FormsModule,
     RouterLink,
-    ButtonModule,
-    CheckboxModule,
-    InputNumberModule,
-    InputTextModule,
-    MessageModule,
-    SelectModule,
-    TabsModule,
-    TagModule,
-    TextareaModule,
+    MatButtonModule,
+    MatCheckboxModule,
+    MatFormFieldModule,
+    MatIcon,
+    MatInputModule,
+    MatSelectModule,
+    MatTabsModule,
+    Notice,
+    Tag,
   ],
   templateUrl: './agent-editor.html',
   styleUrl: './agent-editor.scss',
@@ -89,6 +90,10 @@ export class AgentEditor implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly info = signal<string | null>(null);
   protected readonly tab = signal<string>('overview');
+
+  protected readonly tabIndex = computed(() =>
+    Math.max(0, TABS.indexOf(this.tab() as (typeof TABS)[number])),
+  );
 
   protected readonly isNew = computed(() => !this.id() || this.id() === 'new');
   protected readonly modelOptions = computed(() =>
@@ -160,8 +165,8 @@ export class AgentEditor implements OnInit {
   }
 
   // ---------------------------------------------------------------- json
-  protected onTab(value: string | number | undefined): void {
-    const next = String(value ?? 'overview');
+  protected onTab(index: number): void {
+    const next = TABS[index] ?? 'overview';
     if (next === 'json') {
       this.applyText();
       this.jsonText = JSON.stringify(this.spec, null, 2);

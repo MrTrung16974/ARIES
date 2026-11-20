@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { MatIconTestingModule } from '@angular/material/icon/testing';
 import { provideRouter } from '@angular/router';
 import { APP_CONFIG, BuilderApi, BuilderSessionView } from '@aiagent/core';
 import { OidcSecurityService } from 'angular-auth-oidc-client';
@@ -29,7 +30,7 @@ const view: BuilderSessionView = {
 describe('Builder', () => {
   it('khôi phục phiên đang chờ trả lời và hiện câu hỏi làm rõ', async () => {
     await TestBed.configureTestingModule({
-      imports: [Builder],
+      imports: [Builder, MatIconTestingModule],
       providers: [
         provideRouter([]),
         { provide: APP_CONFIG, useValue: { apiBaseUrl: '/api', oidc: {} } },
