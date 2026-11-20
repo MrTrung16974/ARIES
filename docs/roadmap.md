@@ -21,7 +21,7 @@ Mỗi phase kết thúc bằng bản chạy được trên môi trường on-pre
 
 **Xong khi:** tạo agent bằng form/API và chat stream được, có tool call và usage.
 
-## Phase 2 — Agent Architect (tạo agent bằng ngôn ngữ tự nhiên)
+## Phase 2 — Agent Architect ✅ (2026-11-19, kiểm bằng bộ não heuristic — golden dataset với Claude chưa chạy vì chưa có API key)
 - Catalog lọc theo quyền; pipeline classify → understand → clarify → map → compose → validate → eval → present.
 - Sửa bằng lời (JSON Patch + diff), eval tự sinh + judge, publish/rollback có xác nhận.
 - Command bar (Ctrl+K) + slash command; golden dataset 40 mô tả chạy trong CI.

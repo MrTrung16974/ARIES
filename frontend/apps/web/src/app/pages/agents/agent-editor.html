@@ -13,6 +13,9 @@
   </div>
   <div class="actions">
     @if (agent(); as a) {
+    <a routerLink="/builder" [queryParams]="{ agent: a.id }">
+      <p-button label="Sửa bằng lời" icon="pi pi-bolt" severity="secondary" />
+    </a>
     <a [routerLink]="['/agents', a.id, 'chat']" [queryParams]="{ draft: 1 }">
       <p-button
         label="Thử chat (nháp)"

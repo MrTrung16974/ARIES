@@ -3,6 +3,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SessionService } from '@aiagent/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
+import { CommandBar } from './command-bar';
 
 interface NavItem {
   label: string;
@@ -19,6 +20,7 @@ interface NavItem {
     RouterLinkActive,
     ButtonModule,
     TagModule,
+    CommandBar,
   ],
   templateUrl: './shell.html',
   styleUrl: './shell.scss',
@@ -35,6 +37,12 @@ export class Shell implements OnInit {
         icon: 'pi pi-sparkles',
         link: '/agents',
         visible: true,
+      },
+      {
+        label: 'Architect',
+        icon: 'pi pi-bolt',
+        link: '/builder',
+        visible: this.session.hasAnyRole('builder', 'admin'),
       },
       {
         label: 'Plugin',

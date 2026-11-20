@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 from aiagent.modules.agents.domain import Agent, AgentSpec, AgentStatus, AgentVersion, CreatedVia
 from aiagent.modules.audit.domain import GENESIS_HASH, AuditEvent, AuditRecord, compute_hash
+from aiagent.modules.builder.domain import BuilderSession, SessionStatus
 from aiagent.modules.conversations.domain import Message, Run, RunStatus, Thread
 from aiagent.modules.identity.domain import Principal, Role, UserProfile
 from aiagent.shared_kernel.clock import utcnow
@@ -205,3 +206,62 @@ class InMemoryConversationRepository:
         error: str | None,
     ) -> None:
         self.runs[run_id] = {"status": status, "usage": usage, "cost": cost_usd, "error": error}
+
+
+class InMemoryBuilderSessionRepository:
+    def __init__(self) -> None:
+        self.sessions: dict[UUID, Any] = {}
+        self.history: dict[UUID, list[dict[str, Any]]] = {}
+
+    async def create(
+        self,
+        tenant_id: str,
+        user_id: str,
+        agent_id: UUID | None,
+        base_version: int | None,
+        draft_spec: dict[str, Any] | None,
+    ) -> Any:
+        now = utcnow()
+        session = BuilderSession(
+            uuid4(),
+            tenant_id,
+            user_id,
+            agent_id,
+            base_version,
+            SessionStatus.DRAFTING,
+            None,
+            draft_spec,
+            [],
+            0,
+            None,
+            now,
+            now,
+        )
+        self.sessions[session.id] = session
+        self.history[session.id] = []
+        return session
+
+    async def get(self, tenant_id: str, session_id: UUID) -> Any:
+        s = self.sessions.get(session_id)
+        return replace(s) if s and s.tenant_id == tenant_id else None
+
+    async def list_for_user(self, tenant_id: str, user_id: str, limit: int) -> list[Any]:
+        return [s for s in self.sessions.values() if s.user_id == user_id][:limit]
+
+    async def save(self, session: Any) -> None:
+        self.sessions[session.id] = replace(session)
+
+    async def add_message(
+        self,
+        tenant_id: str,
+        session_id: UUID,
+        role: str,
+        content: str,
+        events: list[dict[str, Any]],
+    ) -> None:
+        self.history[session_id].append(
+            {"role": role, "content": content, "events": events, "created_at": utcnow()}
+        )
+
+    async def messages(self, tenant_id: str, session_id: UUID) -> list[dict[str, Any]]:
+        return list(self.history.get(session_id, []))

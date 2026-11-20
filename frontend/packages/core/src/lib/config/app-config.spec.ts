@@ -3,14 +3,12 @@ import { loadAppConfig } from './app-config';
 function mockFetch(body: unknown, status = 200): void {
   vi.stubGlobal(
     'fetch',
-    vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify(body), {
-          status,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ),
   );
 }
 

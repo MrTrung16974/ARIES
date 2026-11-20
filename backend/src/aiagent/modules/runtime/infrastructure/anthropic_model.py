@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
@@ -22,10 +23,13 @@ from aiagent.modules.runtime.domain import (
     ModelRequest,
     ModelTurn,
     ModelUnavailableError,
+    StructuredRequest,
+    StructuredResult,
     TextDelta,
     ThinkingDelta,
     ToolCallStarted,
     TurnCompleted,
+    sanitize_for_echo,
 )
 from aiagent.shared_kernel.usage import Usage
 
@@ -163,4 +167,64 @@ class AnthropicChatModel:
                 ),
                 model=final.model,
             )
+        )
+
+    # ------------------------------------------------------------------ structured outputs
+    async def generate_json(self, request: StructuredRequest) -> StructuredResult:
+        """JSON theo schema qua `output_config.format` (không ép tool_choice)."""
+        features = _FEATURES.get(request.model, frozenset())
+        params: dict[str, Any] = {
+            "model": request.model,
+            "max_tokens": request.max_tokens,
+            "system": [
+                {"type": "text", "text": request.system, "cache_control": {"type": "ephemeral"}}
+            ],
+            "messages": [{"role": "user", "content": request.prompt}],
+            "output_config": {
+                "effort": request.effort,
+                "format": {"type": "json_schema", "schema": request.schema},
+            },
+        }
+        if "fallback" in features:
+            params["fallbacks"] = "default"
+            params["betas"] = [BETA_FALLBACK]
+        try:
+            message: Any = await self._client.beta.messages.create(**params)
+        except anthropic.RateLimitError as exc:
+            raise ModelRateLimitedError() from exc
+        except anthropic.AuthenticationError as exc:
+            raise ModelUnavailableError("API key của Claude không hợp lệ.") from exc
+        except anthropic.APIStatusError as exc:
+            logger.error("Claude lỗi %s: %s", exc.status_code, exc.message)
+            raise ModelUnavailableError() from exc
+        except anthropic.APIConnectionError as exc:
+            raise ModelUnavailableError("Không kết nối được tới Claude API.") from exc
+
+        if message.stop_reason == "refusal":
+            raise ModelUnavailableError("Mô hình từ chối yêu cầu này.")
+        if message.stop_reason == "max_tokens":
+            raise ModelUnavailableError("Kết quả bị cắt (max_tokens).")
+        blocks = sanitize_for_echo(
+            [b.model_dump(mode="json", by_alias=True, exclude_none=True) for b in message.content]
+        )
+        # Chỉ lấy phần sau block fallback cuối (nếu có) — phần trước là của model đã từ chối.
+        boundary = max((i for i, b in enumerate(blocks) if b.get("type") == "fallback"), default=-1)
+        text = "".join(
+            str(b.get("text", "")) for b in blocks[boundary + 1 :] if b.get("type") == "text"
+        )
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ModelUnavailableError("Model trả về JSON không hợp lệ.") from exc
+        if not isinstance(data, dict):
+            raise ModelUnavailableError("Model trả về JSON không phải object.")
+        usage = message.usage
+        return StructuredResult(
+            data=data,
+            usage=Usage(
+                input_tokens=usage.input_tokens or 0,
+                output_tokens=usage.output_tokens or 0,
+                cache_read_input_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+                cache_creation_input_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+            ),
         )

@@ -1,0 +1,306 @@
+<div class="builder">
+  <section class="chat">
+    <header>
+      <i class="pi pi-sparkles" aria-hidden="true"></i>
+      <strong>Agent Architect</strong>
+      @if (view()?.brain === 'heuristic') {
+      <p-tag value="chế độ dev (không LLM)" severity="warn" />
+      }
+      <span class="spacer"></span>
+      @if (cost() !== null && cost()! > 0) {
+      <span class="muted small">≈ {{ cost()!.toFixed(4) }} USD</span>
+      }
+    </header>
+
+    <div class="messages" #scroller>
+      @if (items().length === 0 && !busy()) {
+      <div class="empty">
+        <p><strong>Mô tả agent bạn muốn tạo</strong></p>
+        <p class="muted">
+          Ví dụ: “Trợ lý CSKH trả lời về đơn hàng và chính sách đổi trả, không
+          bao giờ hứa hoàn tiền”. Mình sẽ hỏi lại nếu thiếu thông tin quan
+          trọng, dựng bản nháp và tự chạy thử.
+        </p>
+      </div>
+      } @for (m of items(); track $index) {
+      <div class="msg" [class.user]="m.role === 'user'" [class.error]="m.error">
+        <div class="bubble">{{ m.text }}</div>
+        @if (m.changes?.length) {
+        <ul class="changes">
+          @for (c of m.changes; track $index) {
+          <li><code>{{ c }}</code></li>
+          }
+        </ul>
+        } @if (m.test; as t) {
+        <div class="test">
+          <div class="muted small">Hỏi: {{ t.input }}</div>
+          @if (t.tools.length) {
+          <div class="muted small">Tool: {{ t.tools.join(', ') }}</div>
+          }
+          <div class="bubble">
+            {{ t.answer || t.error || '(không có câu trả lời)' }}
+          </div>
+        </div>
+        }
+      </div>
+      } @if (questions().length) {
+      <div class="clarify">
+        @for (q of questions(); track q.id) {
+        <div class="question">
+          <p>{{ q.question }}</p>
+          <div class="options">
+            @for (o of q.options; track o.value) {
+            <button
+              type="button"
+              [class.selected]="answers[q.id] === o.value"
+              (click)="pick(q, o.value)"
+            >
+              {{ o.label }}
+            </button>
+            }
+          </div>
+        </div>
+        }
+        <p-button
+          label="Gửi trả lời"
+          icon="pi pi-check"
+          size="small"
+          [disabled]="!canAnswer() || busy()"
+          (onClick)="sendAnswers()"
+        />
+      </div>
+      } @if (busy()) {
+      <div class="status">
+        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+        {{ status() ?? 'Đang xử lý…' }} @if (progress(); as p) {
+        <span>Eval {{ p.done }}/{{ p.total }}</span>
+        <p-progressbar
+          [value]="p.total ? (p.done * 100) / p.total : 0"
+          [showValue]="false"
+        />
+        }
+      </div>
+      }
+    </div>
+
+    @if (error()) {
+    <p-message severity="error">{{ error() }}</p-message>
+    }
+
+    <footer>
+      <textarea
+        pTextarea
+        rows="2"
+        [(ngModel)]="input"
+        (keydown)="onKey($event)"
+        [placeholder]="spec() ? 'Yêu cầu sửa, “thử: <câu hỏi>”, hoặc “publish”…' : 'Mô tả agent…'"
+        [disabled]="!view()"
+      ></textarea>
+      @if (busy()) {
+      <p-button
+        icon="pi pi-stop"
+        severity="secondary"
+        aria-label="Dừng"
+        (onClick)="stop()"
+      />
+      } @else {
+      <p-button
+        icon="pi pi-send"
+        aria-label="Gửi"
+        [disabled]="!input.trim()"
+        (onClick)="send()"
+      />
+      }
+    </footer>
+  </section>
+
+  <aside class="preview">
+    @if (spec(); as s) {
+    <div class="preview-head">
+      <div>
+        <h2>{{ s.name }}</h2>
+        <p class="muted small">{{ s.description }}</p>
+      </div>
+      <div class="actions">
+        @if (view()?.agent_id; as agentId) {
+        <a [routerLink]="['/agents', agentId, 'edit']">
+          <p-button
+            label="Sửa tay"
+            icon="pi pi-pencil"
+            size="small"
+            severity="secondary"
+          />
+        </a>
+        @if (view()?.status === 'published') {
+        <a [routerLink]="['/agents', agentId, 'chat']">
+          <p-button
+            label="Chat"
+            icon="pi pi-comments"
+            size="small"
+            severity="secondary"
+          />
+        </a>
+        } }
+        <p-button
+          label="Publish"
+          icon="pi pi-send"
+          size="small"
+          severity="success"
+          [disabled]="busy()"
+          (onClick)="openConfirm()"
+        />
+      </div>
+    </div>
+
+    @if (evalReport(); as r) {
+    <div class="eval" [class.fail]="!r.passed">
+      <strong>Eval: {{ (r.score * 100).toFixed(0) }}%</strong>
+      <span
+        >{{ r.passed ? 'đạt' : 'chưa đạt' }} (ngưỡng {{ r.threshold * 100
+        }}%)</span
+      >
+      <details>
+        <summary>Xem {{ r.results.length }} tình huống</summary>
+        @for (c of r.results; track c.case.id) {
+        <div class="case">
+          <i
+            [class]="c.passed ? 'pi pi-check' : 'pi pi-times'"
+            aria-hidden="true"
+          ></i>
+          <p-tag [value]="c.case.kind" severity="secondary" />
+          <span>{{ c.case.input }}</span>
+          <div class="muted small">{{ c.reason }}</div>
+        </div>
+        }
+      </details>
+    </div>
+    }
+
+    <p-tabs [(value)]="tab">
+      <p-tablist>
+        <p-tab value="overview">Tổng quan</p-tab>
+        <p-tab value="prompt">Prompt</p-tab>
+        <p-tab value="json">JSON</p-tab>
+      </p-tablist>
+      <p-tabpanels>
+        <p-tabpanel value="overview">
+          <dl>
+            <dt>Model</dt>
+            <dd>{{ s.model.model }} · effort {{ s.model.effort }}</dd>
+            <dt>Dữ liệu</dt>
+            <dd>{{ s.data_classification }}</dd>
+          </dl>
+          <h3>Quyền</h3>
+          @for (p of permissions(); track p.tool) {
+          <div class="perm">
+            <code>{{ p.tool }}</code>
+            <p-tag
+              [value]="riskLabel[p.risk] ?? p.risk"
+              [severity]="p.status === 'active' ? 'info' : 'warn'"
+            />
+            @if (p.status !== 'active') {
+            <span class="muted small">cần duyệt — đang ẩn</span>
+            }
+          </div>
+          } @empty {
+          <p class="muted small">
+            Không dùng tool — chỉ trả lời bằng kiến thức của model.
+          </p>
+          } @if (s.rules.length) {
+          <h3>Quy tắc</h3>
+          <ul>
+            @for (r of s.rules; track $index) {
+            <li>{{ r }}</li>
+            }
+          </ul>
+          } @if (assumptions().length) {
+          <h3>Giả định</h3>
+          <ul class="muted">
+            @for (a of assumptions(); track $index) {
+            <li>{{ a }}</li>
+            }
+          </ul>
+          } @if (missing().length) {
+          <h3>Còn thiếu</h3>
+          <ul class="missing">
+            @for (m of missing(); track $index) {
+            <li>{{ m.description }}</li>
+            }
+          </ul>
+          }
+        </p-tabpanel>
+        <p-tabpanel value="prompt">
+          <h3>Vai trò</h3>
+          <p class="pre">{{ s.persona }}</p>
+          <h3>Hướng dẫn</h3>
+          <p class="pre">{{ s.instructions }}</p>
+          <h3>Phong cách</h3>
+          <p class="pre">{{ s.output_format.style }}</p>
+          <h3>Câu gợi ý</h3>
+          <ul>
+            @for (p of s.starter_prompts; track $index) {
+            <li>{{ p }}</li>
+            }
+          </ul>
+        </p-tabpanel>
+        <p-tabpanel value="json">
+          <pre class="json">{{ specJson() }}</pre>
+        </p-tabpanel>
+      </p-tabpanels>
+    </p-tabs>
+    } @else {
+    <div class="placeholder muted">
+      <i class="pi pi-objects-column" aria-hidden="true"></i>
+      <p>Bản xem trước agent sẽ hiện ở đây.</p>
+    </div>
+    }
+  </aside>
+</div>
+
+<p-dialog
+  header="Publish agent"
+  [modal]="true"
+  [visible]="confirmOpen()"
+  (visibleChange)="confirmOpen.set($event)"
+  [style]="{ width: '30rem' }"
+>
+  @if (evalReport(); as r) {
+  <p>
+    Eval: <strong>{{ (r.score * 100).toFixed(0) }}%</strong> — {{ r.passed ?
+    'đạt ngưỡng.' : 'CHƯA đạt ngưỡng.' }}
+  </p>
+  @if (!r.passed) {
+  <div class="override">
+    <p-checkbox inputId="override" [binary]="true" [(ngModel)]="override" />
+    <label for="override"
+      >Tôi hiểu eval chưa đạt và vẫn muốn publish (sẽ ghi audit).</label
+    >
+  </div>
+  } } @else {
+  <p>Chưa có kết quả eval.</p>
+  <div class="override">
+    <p-checkbox inputId="override2" [binary]="true" [(ngModel)]="override" />
+    <label for="override2">Vẫn publish khi chưa có eval (sẽ ghi audit).</label>
+  </div>
+  }
+  <p class="muted small">
+    {{ view()?.agent_id ? 'Tạo version mới cho agent hiện có và publish.' : 'Tạo
+    agent mới (v1) và publish.' }}
+  </p>
+  <ng-template #footer>
+    <p-button
+      label="Hủy"
+      severity="secondary"
+      [text]="true"
+      (onClick)="confirmOpen.set(false)"
+    />
+    <p-button
+      label="Xác nhận publish"
+      icon="pi pi-send"
+      severity="success"
+      [loading]="publishing()"
+      [disabled]="!(evalReport()?.passed || override)"
+      (onClick)="publish()"
+    />
+  </ng-template>
+</p-dialog>

@@ -6,12 +6,14 @@ import httpx
 import pytest
 from asgi_lifespan import LifespanManager
 
-from aiagent.bootstrap.container import Container, PluginSkillCatalog
+from aiagent.bootstrap.container import Container, PluginCatalogProvider, PluginSkillCatalog
 from aiagent.bootstrap.plugins import PluginRegistry
 from aiagent.bootstrap.settings import Settings
 from aiagent.main import create_app
 from aiagent.modules.agents.application import AgentService
 from aiagent.modules.audit.application import AuditService
+from aiagent.modules.builder.application import ArchitectService, CommandService
+from aiagent.modules.builder.infrastructure.heuristic_brain import HeuristicArchitectBrain
 from aiagent.modules.conversations.application import ConversationService
 from aiagent.modules.identity.application import IdentityService
 from aiagent.modules.identity.infrastructure.jwks_verifier import JwksTokenVerifier
@@ -24,6 +26,7 @@ from tests.fakes import (
     FakeUsers,
     InMemoryAgentRepository,
     InMemoryAuditLog,
+    InMemoryBuilderSessionRepository,
     InMemoryConversationRepository,
 )
 
@@ -64,6 +67,14 @@ async def client(jwks_transport, audit_log, ready, conv_repo) -> AsyncIterator[h
         runs = RunAgentService(
             agents, conversations, ToolGateway(plugins, audit), router, LangGraphReactLoop(), audit
         )
+        architect = ArchitectService(
+            InMemoryBuilderSessionRepository(),
+            HeuristicArchitectBrain(),
+            agents,
+            runs,
+            PluginCatalogProvider(plugins, router),
+            audit,
+        )
         return Container(
             settings=s,
             token_verifier=JwksTokenVerifier(
@@ -80,6 +91,8 @@ async def client(jwks_transport, audit_log, ready, conv_repo) -> AsyncIterator[h
             conversations=conversations,
             runs=runs,
             model_router=router,
+            architect=architect,
+            commands=CommandService(architect, agents, audit),
             health_checks={"database": check_db, "redis": check_redis},
         )
 
@@ -344,3 +357,45 @@ async def test_chat_unpublished_agent_and_missing_provider(
     )
     assert r.status_code == 503
     assert r.json()["error"]["code"] == "llm_unavailable"
+
+
+async def test_builder_api_sse_and_commands(client: httpx.AsyncClient, make_token) -> None:  # type: ignore[no-untyped-def]
+    builder = auth(make_token(sub="b1", roles=["builder"]))
+    assert (
+        await client.post("/api/v1/builder/sessions", json={}, headers=auth(make_token()))
+    ).status_code == 403
+
+    session = (await client.post("/api/v1/builder/sessions", json={}, headers=builder)).json()
+    r = await client.post(
+        f"/api/v1/builder/sessions/{session['id']}/messages",
+        headers=builder,
+        json={"message": "Tạo trợ lý nội bộ báo giờ"},
+    )
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+    names = [n for n, _ in parse_sse(r.text)]
+    assert {"spec_draft", "eval_result", "done"} <= set(names)
+
+    state = (await client.get(f"/api/v1/builder/sessions/{session['id']}", headers=builder)).json()
+    assert state["status"] == "ready" and state["spec"]["skills"][0]["skill_id"] == "clock"
+    assert [m["role"] for m in state["messages"]] == ["user", "architect"]
+
+    other = auth(make_token(sub="b2", roles=["builder"]))
+    assert (
+        await client.get(f"/api/v1/builder/sessions/{session['id']}", headers=other)
+    ).status_code == 404
+
+    r = await client.post(
+        f"/api/v1/builder/sessions/{session['id']}/confirm",
+        headers=builder,
+        json={"action": "publish", "override_eval": True},
+    )
+    assert r.status_code == 200 and r.json()["version"] == 1
+
+    r = await client.post("/api/v1/commands", headers=builder, json={"text": "/agent list"})
+    assert r.json()["kind"] == "result"
+    r = await client.post("/api/v1/commands", headers=builder, json={"text": "/nope"})
+    assert r.json()["kind"] == "error"
+    bad = await client.post(
+        f"/api/v1/builder/sessions/{session['id']}/messages", headers=builder, json={}
+    )
+    assert bad.status_code == 422

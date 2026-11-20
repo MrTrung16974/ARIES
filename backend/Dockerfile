@@ -23,7 +23,8 @@ FROM base AS build
 COPY pyproject.toml uv.lock* README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --no-dev --no-install-project
 COPY src ./src
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --no-dev --no-editable
+# --reinstall-package: không tái dùng wheel cache của chính project (version không đổi giữa các lần build)
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --no-dev --no-editable --reinstall-package aiagent
 
 # ---------------------------------------------------------------- runtime
 FROM python:3.12-slim AS runtime

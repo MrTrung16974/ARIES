@@ -1,8 +1,8 @@
 <div class="layout">
   <header class="topbar">
-    <a class="brand" routerLink="/">
-      <i class="pi pi-sparkles" aria-hidden="true"></i>
-      <span>AI Agent Platform</span>
+    <a class="brand" routerLink="/" aria-label="ARIES — trang chủ">
+      <img src="assets/brand/aries-mark-64.png" alt="" width="32" height="32" />
+      <span>ARIES</span>
     </a>
     <nav class="nav" aria-label="Điều hướng chính">
       @for (item of nav(); track item.link) {
@@ -16,6 +16,16 @@
       </a>
       }
     </nav>
+    @if (session.hasAnyRole('builder', 'admin')) {
+    <button
+      type="button"
+      class="kbd"
+      (click)="bar.toggle()"
+      title="Command bar"
+    >
+      <i class="pi pi-bolt" aria-hidden="true"></i> Ctrl K
+    </button>
+    }
     <div class="user">
       @if (session.me(); as me) {
       <span class="name">{{ session.displayName() }}</span>
@@ -35,3 +45,4 @@
     <router-outlet />
   </main>
 </div>
+<app-command-bar #bar />

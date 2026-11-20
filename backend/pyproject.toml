@@ -61,6 +61,10 @@ src = ["src", "tests"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "S", "ASYNC", "RUF", "SIM", "PTH", "T20"]
 ignore = ["RUF001", "RUF002", "RUF003"]  # cho phép tiếng Việt trong chuỗi/comment
 
+[tool.ruff.lint.pycodestyle]
+# Formatter giữ 100 cột; cho phép chuỗi hiển thị tiếng Việt dài hơn một chút.
+max-line-length = 110
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106"]
 "migrations/**" = ["S608"]
@@ -82,7 +86,10 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = ["integration: cần Postgres thật (đặt AIAGENT_TEST_DATABASE_URL)"]
+markers = [
+  "integration: cần Postgres thật (đặt AIAGENT_TEST_DATABASE_URL)",
+  "golden: gọi Claude thật để đo chất lượng Architect (đặt AIAGENT_GOLDEN=1)",
+]
 addopts = "-ra"
 
 # ---------------------------------------------------------------- bandit
@@ -117,6 +124,7 @@ source_modules = [
   "aiagent.modules.agents.domain",
   "aiagent.modules.conversations.domain",
   "aiagent.modules.runtime.domain",
+  "aiagent.modules.builder.domain",
 ]
 forbidden_modules = [
   "fastapi", "sqlalchemy", "httpx", "redis", "arq", "langgraph", "anthropic",
@@ -153,7 +161,7 @@ type = "forbidden"
 source_modules = [
   "aiagent.shared_kernel", "aiagent.plugin_sdk", "aiagent.api",
   "aiagent.modules.identity", "aiagent.modules.audit", "aiagent.modules.agents",
-  "aiagent.modules.conversations",
+  "aiagent.modules.conversations", "aiagent.modules.builder",
   "aiagent.modules.runtime.domain", "aiagent.modules.runtime.application",
   "aiagent.modules.runtime.api",
 ]
@@ -184,4 +192,13 @@ layers = [
   "aiagent.modules.runtime.api",
   "aiagent.modules.runtime.application | aiagent.modules.runtime.infrastructure",
   "aiagent.modules.runtime.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module builder"
+type = "layers"
+layers = [
+  "aiagent.modules.builder.api",
+  "aiagent.modules.builder.application | aiagent.modules.builder.infrastructure",
+  "aiagent.modules.builder.domain",
 ]

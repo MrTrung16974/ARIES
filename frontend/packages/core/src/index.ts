@@ -6,3 +6,4 @@ export * from './lib/api/models';
 export * from './lib/api/api.service';
 export * from './lib/api/agents-api.service';
 export * from './lib/api/chat-stream.service';
+export * from './lib/api/builder-api.service';

@@ -13,8 +13,16 @@ import { TagModule } from 'primeng/tag';
     <div class="head">
       <h1>Agent</h1>
       @if (canCreate()) {
+        <a routerLink="/builder"
+          ><p-button label="Tạo bằng mô tả" icon="pi pi-bolt"
+        /></a>
+      }
+      @if (canCreate()) {
         <a routerLink="/agents/new"
-          ><p-button label="Tạo agent" icon="pi pi-plus"
+          ><p-button
+            label="Tạo bằng form"
+            icon="pi pi-plus"
+            severity="secondary"
         /></a>
       }
     </div>
@@ -28,8 +36,7 @@ import { TagModule } from 'primeng/tag';
         </p>
         @if (canCreate()) {
           <p class="muted">
-            Tạo agent đầu tiên bằng form. Agent Architect (tạo bằng mô tả) sẽ có
-            ở Phase 2.
+            Tạo agent đầu tiên bằng mô tả (Agent Architect) hoặc bằng form.
           </p>
         }
       </p-card>

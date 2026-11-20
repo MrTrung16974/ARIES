@@ -4,12 +4,13 @@ import {
   provideBrowserGlobalErrorListeners,
   provideZonelessChangeDetection,
 } from '@angular/core';
-import { provideRouter, withComponentInputBinding } from '@angular/router';
+import { provideRouter, TitleStrategy, withComponentInputBinding } from '@angular/router';
 import { APP_CONFIG, AppConfig, provideAppAuth } from '@aiagent/core';
-import Aura from '@primeuix/themes/aura';
 import { authInterceptor } from 'angular-auth-oidc-client';
 import { providePrimeNG } from 'primeng/config';
 import { appRoutes } from './app.routes';
+import { AriesPreset } from './theme/aries-theme';
+import { AriesTitleStrategy } from './theme/title-strategy';
 
 export function buildAppConfig(config: AppConfig): ApplicationConfig {
   return {
@@ -20,8 +21,9 @@ export function buildAppConfig(config: AppConfig): ApplicationConfig {
       provideHttpClient(withInterceptors([authInterceptor()])),
       provideAppAuth(config),
       provideRouter(appRoutes, withComponentInputBinding()),
+      { provide: TitleStrategy, useClass: AriesTitleStrategy },
       providePrimeNG({
-        theme: { preset: Aura, options: { darkModeSelector: '.app-dark' } },
+        theme: { preset: AriesPreset, options: { darkModeSelector: '.app-dark' } },
         ripple: false,
       }),
     ],

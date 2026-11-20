@@ -23,6 +23,12 @@ from aiagent.modules.runtime.domain.model import (
     TurnCompleted,
 )
 from aiagent.modules.runtime.domain.pricing import PRICES, estimate_cost
+from aiagent.modules.runtime.domain.structured import (
+    StructuredModelPort,
+    StructuredRequest,
+    StructuredResult,
+    strict_schema,
+)
 
 __all__ = [
     "PRICES",
@@ -38,6 +44,9 @@ __all__ = [
     "ModelUnavailableError",
     "RunEvent",
     "RunEventType",
+    "StructuredModelPort",
+    "StructuredRequest",
+    "StructuredResult",
     "TextDelta",
     "ThinkingDelta",
     "ToolCallStarted",
@@ -49,5 +58,6 @@ __all__ = [
     "history_for_model",
     "pending_tool_uses",
     "sanitize_for_echo",
+    "strict_schema",
     "text_of",
 ]

@@ -170,7 +170,7 @@ export type RunEventName =
   | 'done';
 
 export interface RunEventMessage {
-  event: RunEventName;
+  event: RunEventName | (string & {});
   data: Record<string, unknown>;
 }
 
@@ -199,3 +199,73 @@ export function defaultSpec(): AgentSpec {
     data_classification: 'internal',
   };
 }
+
+// ---------------------------------------------------------------- Agent Architect
+export interface ClarifyQuestion {
+  id: string;
+  question: string;
+  options: { label: string; value: string }[];
+}
+
+export interface Permission {
+  skill: string;
+  tool: string;
+  risk: RiskLevel;
+  status: 'active' | 'needs_approval';
+}
+
+export interface EvalCaseResult {
+  case: {
+    id: string;
+    kind: 'happy' | 'edge' | 'rule';
+    input: string;
+    expectation: string;
+  };
+  answer: string;
+  tools_used: string[];
+  passed: boolean;
+  score: number;
+  reason: string;
+  error: string | null;
+}
+
+export interface EvalReport {
+  score: number;
+  passed: boolean;
+  threshold: number;
+  results: EvalCaseResult[];
+  summary?: string;
+}
+
+export interface BuilderSessionView {
+  id: string;
+  status: 'drafting' | 'awaiting_user' | 'ready' | 'published';
+  agent_id: string | null;
+  base_version: number | null;
+  brief: Record<string, unknown> | null;
+  questions: ClarifyQuestion[];
+  eval: EvalReport | null;
+  spec: AgentSpec | null;
+  summary: string | null;
+  permissions: Permission[];
+  brain: string;
+  messages?: {
+    role: 'user' | 'architect';
+    content: string;
+    created_at: string;
+  }[];
+}
+
+export interface BuilderSessionSummary {
+  id: string;
+  status: BuilderSessionView['status'];
+  name: string;
+  agent_id: string | null;
+  updated_at: string;
+}
+
+export type CommandResult =
+  | { kind: 'architect'; session_id: string; message: string }
+  | { kind: 'navigate'; url: string }
+  | { kind: 'result'; text: string }
+  | { kind: 'error'; text: string };

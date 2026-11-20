@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     llm_fake_enabled: bool = False
     tool_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
 
+    # Agent Architect (docs/agent-architect.md). auto: Claude nếu có key, heuristic nếu bật model giả.
+    architect_brain: Literal["auto", "llm", "heuristic"] = "auto"
+    architect_model: str = "claude-opus-5-5"
+    architect_fast_model: str = "claude-haiku-5-5"
+    architect_judge_model: str = "claude-sonnet-5-5"
+
     @property
     def jwks_url(self) -> str:
         return self.oidc_jwks_url or f"{self.oidc_issuer}/protocol/openid-connect/certs"
@@ -60,6 +66,8 @@ class Settings(BaseSettings):
                 raise ValueError("Không cho phép CORS '*' ở prod")
             if self.llm_fake_enabled:
                 raise ValueError("Không bật model giả ở prod")
+            if self.architect_brain == "heuristic":
+                raise ValueError("Không dùng Architect heuristic ở prod")
         return self
 
 

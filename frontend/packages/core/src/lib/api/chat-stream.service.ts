@@ -59,39 +59,49 @@ export class ChatStreamService {
   private readonly oidc = inject(OidcSecurityService);
   private readonly base = inject(APP_CONFIG).apiBaseUrl;
 
-  async *chat(
+  chat(
     req: ChatRequest,
     signal?: AbortSignal,
   ): AsyncGenerator<RunEventMessage> {
-    const token = await firstValueFrom(this.oidc.getAccessToken());
-    const response = await fetch(
-      `${this.base}/v1/agents/${encodeURIComponent(req.agentId)}/chat`,
+    return this.stream(
+      `/v1/agents/${encodeURIComponent(req.agentId)}/chat`,
       {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          message: req.message,
-          thread_id: req.threadId ?? null,
-          draft: req.draft ?? false,
-        }),
-        signal,
-        credentials: 'omit',
+        message: req.message,
+        thread_id: req.threadId ?? null,
+        draft: req.draft ?? false,
       },
+      signal,
     );
+  }
+
+  /** POST JSON tới `path` (tương đối apiBaseUrl) và đọc SSE trả về. */
+  async *stream(
+    path: string,
+    body: unknown,
+    signal?: AbortSignal,
+  ): AsyncGenerator<RunEventMessage> {
+    const token = await firstValueFrom(this.oidc.getAccessToken());
+    const response = await fetch(`${this.base}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+      signal,
+      credentials: 'omit',
+    });
 
     if (!response.ok || !response.body) {
       let message = `Lỗi ${response.status}`;
       let code: string | undefined;
       try {
-        const body = (await response.json()) as {
+        const errorBody = (await response.json()) as {
           error?: { message?: string; code?: string };
         };
-        message = body.error?.message ?? message;
-        code = body.error?.code;
+        message = errorBody.error?.message ?? message;
+        code = errorBody.error?.code;
       } catch {
         // không phải JSON
       }

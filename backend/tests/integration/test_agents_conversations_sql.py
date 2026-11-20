@@ -34,8 +34,11 @@ async def db() -> AsyncIterator[Database]:
 
 def spec(name: str = "IT agent") -> AgentSpec:
     return AgentSpec.model_validate(
-        {"name": name, "model": {"provider": "fake", "model": "fake-echo"},
-         "skills": [{"skill_id": "echo"}]}
+        {
+            "name": name,
+            "model": {"provider": "fake", "model": "fake-echo"},
+            "skills": [{"skill_id": "echo"}],
+        }
     )
 
 
@@ -45,12 +48,14 @@ async def test_agent_versions_publish_and_isolation(db: Database) -> None:
     assert (agent.latest_version, v1.version) == (1, 1)
     assert v1.spec.skills[0].skill_id == "echo"
 
-    v2 = await repo.add_version("default", agent.id, spec("v2"), "it-owner", CreatedVia.FORM,
-                                "sửa", expected_latest=1)
+    v2 = await repo.add_version(
+        "default", agent.id, spec("v2"), "it-owner", CreatedVia.FORM, "sửa", expected_latest=1
+    )
     assert v2.version == 2
     with pytest.raises(ConflictError):
-        await repo.add_version("default", agent.id, spec("stale"), "it-owner", CreatedVia.FORM,
-                               "", expected_latest=1)
+        await repo.add_version(
+            "default", agent.id, spec("stale"), "it-owner", CreatedVia.FORM, "", expected_latest=1
+        )
 
     published = await repo.set_published("default", agent.id, 1)
     assert (published.published_version, published.status.value) == (1, "published")
@@ -76,9 +81,16 @@ async def test_conversation_history_and_runs(db: Database) -> None:
     run = await conv.start_run("default", thread.id, agent.id, 1, "it-user", "fake-echo")
     content = [{"type": "text", "text": "Chào bạn 👋"}]
     await conv.append_message("default", thread.id, run.id, "user", content)
-    await conv.append_message("default", thread.id, run.id, "assistant",
-                              [{"type": "thinking", "thinking": "", "signature": "sig"},
-                               {"type": "text", "text": "Xin chào!"}])
+    await conv.append_message(
+        "default",
+        thread.id,
+        run.id,
+        "assistant",
+        [
+            {"type": "thinking", "thinking": "", "signature": "sig"},
+            {"type": "text", "text": "Xin chào!"},
+        ],
+    )
     await conv.finish_run("default", run.id, RunStatus.COMPLETED, Usage(10, 5), 0.0001, None)
 
     messages = await conv.list_messages("default", thread.id)
@@ -92,5 +104,6 @@ async def test_conversation_history_and_runs(db: Database) -> None:
 
     with pytest.raises(DBAPIError):  # lịch sử append-only
         async with db.tenant_session("default") as s:
-            await s.execute(text("DELETE FROM conversations.messages WHERE thread_id = :t"),
-                            {"t": thread.id})
+            await s.execute(
+                text("DELETE FROM conversations.messages WHERE thread_id = :t"), {"t": thread.id}
+            )

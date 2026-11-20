@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from aiagent.modules.agents.application import AgentService
-from aiagent.modules.agents.domain import Agent, AgentVersion, render_system_prompt
+from aiagent.modules.agents.domain import Agent, AgentSpec, AgentVersion, render_system_prompt
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.audit.domain import Outcome
 from aiagent.modules.conversations.application import ConversationService
@@ -28,6 +28,7 @@ from aiagent.modules.runtime.domain import (
     estimate_cost,
     history_for_model,
     pending_tool_uses,
+    text_of,
 )
 from aiagent.plugin_sdk import ToolContext
 from aiagent.shared_kernel.errors import AppError, ConflictError
@@ -36,6 +37,17 @@ from aiagent.shared_kernel.usage import Usage
 logger = logging.getLogger(__name__)
 
 MAX_USER_MESSAGE_CHARS = 20_000
+
+
+@dataclass(frozen=True)
+class EphemeralResult:
+    """Kết quả chạy thử một spec (eval của Architect) — không lưu lịch sử."""
+
+    text: str
+    tools_used: list[str]
+    status: str
+    error: str | None
+    usage: Usage
 
 
 @dataclass
@@ -245,4 +257,61 @@ class RunAgentService:
                 "tokens": usage.total,
                 "cost_usd": cost,
             },
+        )
+
+    # ------------------------------------------------------------------ sandbox
+    async def run_ephemeral(
+        self, principal: Principal, spec: AgentSpec, message: str, *, run_label: str
+    ) -> EphemeralResult:
+        """Chạy một lượt với spec nháp: tool không phải `read` chạy dry-run, không ghi DB.
+
+        Vẫn qua ModelRouter (chặn `restricted`), ToolGateway (validate, audit) như run thật.
+        """
+        model = self._router.select(spec)
+        tools = self._gateway.bind(
+            spec,
+            ToolContext(
+                tenant_id=principal.tenant_id,
+                user_id=principal.subject,
+                agent_id="draft",
+                run_id=run_label,
+            ),
+            dry_run=True,
+        )
+        request = ModelRequest(
+            model=spec.model.model,
+            system=render_system_prompt(spec),
+            messages=[{"role": "user", "content": [{"type": "text", "text": message}]}],
+            tools=tools.definitions,
+            effort=spec.model.effort.value,
+            max_tokens=spec.model.max_tokens,
+        )
+        loop = LoopInput(
+            model=model,
+            request=request,
+            tools=tools,
+            max_iterations=spec.limits.max_iterations,
+            max_tokens_per_run=spec.limits.max_tokens_per_run,
+        )
+        text, status, error, usage = "", "failed", None, Usage()
+        try:
+            async with asyncio.timeout(spec.limits.timeout_s):
+                async for event in self._loop.run(loop):
+                    data = event.data
+                    if event.type is RunEventType.MESSAGE and data.get("role") == "assistant":
+                        content = data.get("content")
+                        if isinstance(content, list):
+                            text = text_of(content) or text
+                    elif event.type is RunEventType.DONE:
+                        status = str(data["status"])
+                        err = data.get("error")
+                        error = str(err) if err else None
+                        loop_usage = data.get("usage")
+                        usage = loop_usage if isinstance(loop_usage, Usage) else Usage()
+        except TimeoutError:
+            error = "Quá thời gian."
+        except AppError as exc:
+            error = exc.message
+        return EphemeralResult(
+            text=text, tools_used=list(tools.calls), status=status, error=error, usage=usage
         )

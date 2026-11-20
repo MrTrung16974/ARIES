@@ -15,6 +15,13 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./pages/home/home').then((m) => m.Home),
       },
       {
+        path: 'builder',
+        title: 'Agent Architect',
+        canActivate: [roleGuard('builder', 'admin')],
+        loadComponent: () =>
+          import('./pages/builder/builder').then((m) => m.Builder),
+      },
+      {
         path: 'agents',
         title: 'Agent',
         loadComponent: () =>

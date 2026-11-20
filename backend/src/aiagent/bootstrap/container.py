@@ -14,20 +14,27 @@ from redis.asyncio import Redis
 from aiagent.adapters.db import Database
 from aiagent.bootstrap.plugins import PluginRegistry
 from aiagent.bootstrap.settings import Settings
-from aiagent.modules.agents.application import AgentService
+from aiagent.modules.agents.application import ALLOWED_MODELS, AgentService
 from aiagent.modules.agents.infrastructure.sql_agent_repository import SqlAgentRepository
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.audit.infrastructure.sql_audit_log import SqlAuditLog
+from aiagent.modules.builder.application import ArchitectService, CommandService
+from aiagent.modules.builder.domain import ArchitectBrainPort, Catalog, CatalogSkill, CatalogTool
+from aiagent.modules.builder.infrastructure.heuristic_brain import HeuristicArchitectBrain
+from aiagent.modules.builder.infrastructure.llm_brain import LlmArchitectBrain
+from aiagent.modules.builder.infrastructure.sql_session_repository import (
+    SqlBuilderSessionRepository,
+)
 from aiagent.modules.conversations.application import ConversationService
 from aiagent.modules.conversations.infrastructure.sql_conversation_repository import (
     SqlConversationRepository,
 )
 from aiagent.modules.identity.application import IdentityService
-from aiagent.modules.identity.domain import TokenVerifierPort
+from aiagent.modules.identity.domain import Principal, TokenVerifierPort
 from aiagent.modules.identity.infrastructure.jwks_verifier import JwksTokenVerifier
 from aiagent.modules.identity.infrastructure.sql_user_repository import SqlUserRepository
 from aiagent.modules.runtime.application import ModelRouter, RunAgentService, ToolGateway
-from aiagent.modules.runtime.domain import ChatModelPort
+from aiagent.modules.runtime.domain import ChatModelPort, ModelUnavailableError
 from aiagent.modules.runtime.infrastructure.anthropic_model import AnthropicChatModel
 from aiagent.modules.runtime.infrastructure.fake_model import FakeChatModel
 from aiagent.modules.runtime.infrastructure.react_graph import LangGraphReactLoop
@@ -53,6 +60,62 @@ class PluginSkillCatalog:
         return list(plugin.manifest.tools)
 
 
+_MODEL_PREFERENCE = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "fake-echo")
+
+
+class PluginCatalogProvider:
+    """Catalog cho Architect: skill đang hoạt động + model có provider đã cấu hình.
+
+    Phase 3 sẽ lọc thêm theo connection/KB mà người tạo có quyền.
+    """
+
+    def __init__(self, plugins: PluginRegistry, router: ModelRouter) -> None:
+        self._plugins = plugins
+        self._router = router
+
+    def catalog_for(self, principal: Principal) -> Catalog:
+        skills = [
+            CatalogSkill(
+                id=m.id,
+                name=m.name,
+                description=m.description,
+                tools=[CatalogTool(t.name, t.description, t.risk.value) for t in m.tools],
+            )
+            for loaded in self._plugins.active()
+            if (m := loaded.manifest) is not None and m.kind is PluginKind.SKILL
+        ]
+        configured = set(self._router.providers)
+        allowed = {m for p, ms in ALLOWED_MODELS.items() if p in configured for m in ms}
+        models = [m for m in _MODEL_PREFERENCE if m in allowed]
+        return Catalog(skills=sorted(skills, key=lambda s: s.id), models=models)
+
+
+class _UnavailableStructuredModel:
+    async def generate_json(self, request: object) -> object:
+        raise ModelUnavailableError(
+            "Agent Architect cần Claude API key (AIAGENT_ANTHROPIC_API_KEY)."
+        )
+
+
+def build_architect_brain(
+    settings: Settings, providers: dict[str, ChatModelPort]
+) -> ArchitectBrainPort:
+    anthropic = providers.get("anthropic")
+    mode = settings.architect_brain
+    if mode == "heuristic" or (mode == "auto" and anthropic is None and settings.llm_fake_enabled):
+        logger.warning("Agent Architect dùng bộ não heuristic (chỉ cho dev/demo)")
+        return HeuristicArchitectBrain()
+    model = (
+        anthropic if isinstance(anthropic, AnthropicChatModel) else _UnavailableStructuredModel()
+    )
+    return LlmArchitectBrain(
+        model,  # type: ignore[arg-type]
+        architect_model=settings.architect_model,
+        fast_model=settings.architect_fast_model,
+        judge_model=settings.architect_judge_model,
+    )
+
+
 @dataclass
 class Container:
     settings: Settings
@@ -65,6 +128,8 @@ class Container:
     conversations: ConversationService
     runs: RunAgentService
     model_router: ModelRouter
+    architect: ArchitectService
+    commands: CommandService
     health_checks: dict[str, HealthCheck] = field(default_factory=dict)
     closers: list[Closer] = field(default_factory=list)
 
@@ -119,7 +184,8 @@ def build_container(settings: Settings) -> Container:
     audit = AuditService(SqlAuditLog(db))
     agents = AgentService(SqlAgentRepository(db), PluginSkillCatalog(plugins))
     conversations = ConversationService(SqlConversationRepository(db))
-    router = ModelRouter(build_model_providers(settings))
+    providers = build_model_providers(settings)
+    router = ModelRouter(providers)
     runs = RunAgentService(
         agents=agents,
         conversations=conversations,
@@ -127,6 +193,15 @@ def build_container(settings: Settings) -> Container:
         router=router,
         loop=LangGraphReactLoop(),
         audit=audit,
+    )
+    architect = ArchitectService(
+        sessions=SqlBuilderSessionRepository(db),
+        brain=build_architect_brain(settings, providers),
+        agents=agents,
+        runs=runs,
+        catalog=PluginCatalogProvider(plugins, router),
+        audit=audit,
+        cost_model=settings.architect_model,
     )
 
     return Container(
@@ -147,6 +222,8 @@ def build_container(settings: Settings) -> Container:
         conversations=conversations,
         runs=runs,
         model_router=router,
+        architect=architect,
+        commands=CommandService(architect, agents, audit),
         health_checks={"database": db.ping, "redis": redis_ok},
         closers=[db.dispose, redis.aclose, http.aclose],
     )

@@ -117,3 +117,23 @@ diff, kết quả eval ghi audit.
 | 2.6 | API + SSE + UI |
 | 2.7 | Publish/rollback có xác nhận + audit |
 | 2.8 | Golden dataset 40 mô tả trong CI |
+
+## 12. Hiện trạng triển khai (2026-11-19)
+
+- Module `backend/src/aiagent/modules/builder` — domain (Brief, Plan, Patch/diff, slash command),
+  application (`ArchitectService`, `CommandService`), infrastructure (bộ não LLM + heuristic, repo SQL).
+- **Hai bộ não** cùng `ArchitectBrainPort`:
+  - `LlmArchitectBrain` — Claude structured outputs (`output_config.format`), schema chặt từng bước,
+    skill/tool/model ràng buộc bằng `enum` sinh từ catalog.
+  - `HeuristicArchitectBrain` — theo từ khóa, chỉ cho dev/demo/test khi chưa có key
+    (`AIAGENT_ARCHITECT_BRAIN=auto|llm|heuristic`; prod cấm heuristic).
+- Eval chạy bằng `RunAgentService.run_ephemeral`: không ghi lịch sử, tool không phải `read` chạy dry-run.
+- Bảo vệ nhiều lớp: enum catalog → `_sanitize_plan` bỏ mọi ID ngoài catalog → `AgentService.validate`;
+  patch cấm `/approval`, `/schema_version`, `/graph_type`, `/knowledge_bases` và mọi path ngoài `scope`.
+- API: `POST /api/v1/builder/sessions`, `POST …/{id}/messages` (SSE), `GET …/{id}`,
+  `POST …/{id}/confirm`, `POST /api/v1/commands`. UI: `/builder`, command bar (Ctrl+K), ô mô tả ở trang chủ.
+- Golden dataset: `backend/tests/golden/architect_cases.json` (40 mô tả). Chạy (tốn phí Claude):
+
+```bash
+docker compose -f deploy/docker-compose.yml --profile tools run --rm -e AIAGENT_GOLDEN=1 backend-dev pytest -m golden -s
+```

@@ -54,6 +54,9 @@ class BoundTools:
     timeout_s: float
     tools: dict[str, _Bound] = field(default_factory=dict)
     hidden: list[str] = field(default_factory=list)  # tool bị ẩn do cần duyệt
+    # Sandbox (eval của Architect): tool không phải `read` chỉ giả lập, không gọi thật.
+    dry_run: bool = False
+    calls: list[str] = field(default_factory=list)  # tên tool đã gọi (cho eval)
 
     @property
     def definitions(self) -> list[ToolDefinition]:
@@ -90,6 +93,19 @@ class BoundTools:
             return self._result(tool_use_id, f"Input không hợp lệ: {detail}", True), {
                 "name": bound.spec.name,
                 "is_error": True,
+            }
+
+        self.calls.append(bound.spec.name)
+        if self.dry_run and bound.spec.risk is not RiskLevel.READ:
+            preview = json.dumps(arguments, ensure_ascii=False, default=str)[:300]
+            content = (
+                f"[dry-run] Tool {bound.spec.name} sẽ được gọi với {preview} (không thực thi)."
+            )
+            return self._result(tool_use_id, content, False), {
+                "name": bound.spec.name,
+                "is_error": False,
+                "dry_run": True,
+                "preview": content,
             }
 
         try:
@@ -146,8 +162,8 @@ class ToolGateway:
         self._audit = audit
         self._timeout_s = timeout_s
 
-    def bind(self, spec: AgentSpec, ctx: ToolContext) -> BoundTools:
-        bound = BoundTools(ctx=ctx, audit=self._audit, timeout_s=self._timeout_s)
+    def bind(self, spec: AgentSpec, ctx: ToolContext, *, dry_run: bool = False) -> BoundTools:
+        bound = BoundTools(ctx=ctx, audit=self._audit, timeout_s=self._timeout_s, dry_run=dry_run)
         needs_approval: set[RiskLevel] = set(spec.approval.require_for)
         for binding in spec.skills:
             plugin = self._plugins.get(binding.skill_id)
