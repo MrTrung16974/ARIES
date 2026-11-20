@@ -13,6 +13,7 @@ from aiagent.plugin_sdk.manifest import (
     ToolSpec,
 )
 from aiagent.plugin_sdk.plugin import (
+    ConnectionContext,
     HealthStatus,
     Plugin,
     PluginContext,
@@ -24,6 +25,7 @@ from aiagent.plugin_sdk.plugin import (
 __all__ = [
     "ENTRY_POINT_GROUPS",
     "PLUGIN_API_VERSION",
+    "ConnectionContext",
     "HealthStatus",
     "Plugin",
     "PluginContext",

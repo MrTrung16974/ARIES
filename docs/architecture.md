@@ -122,6 +122,10 @@ Middleware: tracing → quota → guardrail_in → [graph] → guardrail_out →
 CompiledGraph (cache theo agent_id + version + hash)
 ```
 
+**Master agent (ADR-0017, Phase 3c):** template `supervisor` — mỗi agent thành viên là một tool
+`delegate__<alias>`; mỗi lần giao tạo run con (cùng danh tính người dùng, độ sâu 1), taint/HITL/ngân
+sách lan lên run cha.
+
 Mọi tool call trong graph đi qua `ToolGateway`:
 `Policy check → (HITL interrupt) → Credential Broker → Sandbox/Egress → Audit`.
 
@@ -130,7 +134,7 @@ Mọi tool call trong graph đi qua `ToolGateway`:
 ```
 RunEvent { run_id, seq, type, payload, ts }
 type ∈ token | message | tool_start | tool_end | citation |
-       approval_required | error | usage | done
+       approval_required | delegation_start | delegation_end | error | usage | done
 ```
 
 ### AgentDefinition (schema v1)

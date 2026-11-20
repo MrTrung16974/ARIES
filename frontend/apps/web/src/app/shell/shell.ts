@@ -1,9 +1,10 @@
-import { Component, computed, inject, OnInit } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIcon } from '@angular/material/icon';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SessionService } from '@aiagent/core';
-import { AppIcon, Tag } from '@aiagent/ui';
+import { AppIcon } from '@aiagent/ui';
 import { CommandBar } from './command-bar';
 
 interface NavItem {
@@ -13,6 +14,8 @@ interface NavItem {
   visible: boolean;
 }
 
+const THEME_STORAGE_KEY = 'aries_theme_mode';
+
 @Component({
   selector: 'app-shell',
   imports: [
@@ -21,7 +24,6 @@ interface NavItem {
     RouterLinkActive,
     MatButtonModule,
     MatIcon,
-    Tag,
     CommandBar,
   ],
   templateUrl: './shell.html',
@@ -29,6 +31,14 @@ interface NavItem {
 })
 export class Shell implements OnInit {
   protected readonly session = inject(SessionService);
+  private readonly doc = inject(DOCUMENT);
+
+  protected readonly darkMode = signal<boolean>(false);
+
+  protected readonly userInitial = computed(() => {
+    const name = this.session.displayName()?.trim();
+    return name ? name.charAt(0).toUpperCase() : 'A';
+  });
 
   protected readonly nav = computed<NavItem[]>(() => {
     this.session.me(); // phụ thuộc để tính lại khi hồ sơ tải xong
@@ -42,6 +52,8 @@ export class Shell implements OnInit {
           link: '/builder',
           visible: this.session.hasAnyRole('builder', 'admin'),
         },
+        { label: 'Kết nối', icon: 'cable', link: '/connections', visible: true },
+        { label: 'Duyệt', icon: 'gavel', link: '/approvals', visible: true },
         {
           label: 'Plugin',
           icon: 'deployed_code',
@@ -59,10 +71,35 @@ export class Shell implements OnInit {
   });
 
   ngOnInit(): void {
+    this.initTheme();
     this.session.load().catch(() => undefined);
+  }
+
+  protected toggleTheme(): void {
+    const next = !this.darkMode();
+    this.applyTheme(next);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next ? 'dark' : 'light');
+    } catch {
+      // ignore storage errors
+    }
   }
 
   protected logout(): void {
     this.session.logout();
+  }
+
+  private initTheme(): void {
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
+      this.applyTheme(saved === 'dark');
+    } catch {
+      this.applyTheme(false);
+    }
+  }
+
+  private applyTheme(dark: boolean): void {
+    this.darkMode.set(dark);
+    this.doc.documentElement.classList.toggle('dark-theme', dark);
   }
 }

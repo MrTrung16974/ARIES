@@ -3,15 +3,39 @@
 from __future__ import annotations
 
 import itertools
+from collections.abc import Callable
 from dataclasses import replace
+from importlib.metadata import entry_points
 from typing import Any
 from uuid import UUID, uuid4
 
 from aiagent.modules.agents.domain import Agent, AgentSpec, AgentStatus, AgentVersion, CreatedVia
 from aiagent.modules.audit.domain import GENESIS_HASH, AuditEvent, AuditRecord, compute_hash
 from aiagent.modules.builder.domain import BuilderSession, SessionStatus
-from aiagent.modules.conversations.domain import Message, Run, RunStatus, Thread
+from aiagent.modules.connections.domain import Connection, ConnectionStatus
+from aiagent.modules.conversations.domain import (
+    Approval,
+    ApprovalStatus,
+    Delegation,
+    DelegationStatus,
+    Message,
+    Run,
+    RunStatus,
+    Thread,
+)
 from aiagent.modules.identity.domain import Principal, Role, UserProfile
+from aiagent.plugin_sdk import (
+    PLUGIN_API_VERSION,
+    ConnectionContext,
+    HealthStatus,
+    Plugin,
+    PluginKind,
+    PluginManifest,
+    RiskLevel,
+    ToolContext,
+    ToolResult,
+    ToolSpec,
+)
 from aiagent.shared_kernel.clock import utcnow
 from aiagent.shared_kernel.errors import ConflictError, NotFoundError
 from aiagent.shared_kernel.usage import Usage
@@ -137,6 +161,7 @@ class InMemoryConversationRepository:
         self.threads: dict[UUID, Thread] = {}
         self.messages: list[Message] = []
         self.runs: dict[UUID, dict[str, Any]] = {}
+        self.approvals: list[Approval] = []
         self._ids = itertools.count(1)
 
     async def create_thread(
@@ -207,6 +232,97 @@ class InMemoryConversationRepository:
     ) -> None:
         self.runs[run_id] = {"status": status, "usage": usage, "cost": cost_usd, "error": error}
 
+    # ------------------------------------------------------------ approvals
+    async def create_approvals(
+        self,
+        tenant_id: str,
+        thread_id: UUID,
+        run_id: UUID,
+        agent_id: UUID,
+        requester_id: str,
+        requests: list[dict[str, Any]],
+    ) -> list[Approval]:
+        out = []
+        for r in requests:
+            a = Approval(
+                id=uuid4(),
+                tenant_id=tenant_id,
+                thread_id=thread_id,
+                run_id=run_id,
+                agent_id=agent_id,
+                requester_id=requester_id,
+                tool_use_id=str(r["tool_use_id"]),
+                tool=str(r["tool"]),
+                risk=str(r["risk"]),
+                reason=str(r.get("reason", "")),
+                arguments=dict(r.get("arguments") or {}),
+                approver_roles=list(r.get("approver_roles") or []),
+                connection_id=r.get("connection_id"),
+                status=ApprovalStatus.PENDING,
+                decided_by=None,
+                decision_note=None,
+                created_at=utcnow(),
+                decided_at=None,
+            )
+            self.approvals.insert(0, a)
+            out.append(a)
+        return out
+
+    async def get_approval(self, tenant_id: str, approval_id: UUID) -> Approval | None:
+        return next((a for a in self.approvals if a.id == approval_id), None)
+
+    async def list_approvals(
+        self,
+        tenant_id: str,
+        *,
+        status: ApprovalStatus | None,
+        requester_id: str | None,
+        thread_id: UUID | None,
+        limit: int,
+    ) -> list[Approval]:
+        return [
+            a
+            for a in self.approvals
+            if (status is None or a.status is status)
+            and (requester_id is None or a.requester_id == requester_id)
+            and (thread_id is None or a.thread_id == thread_id)
+        ][:limit]
+
+    async def decide_approval(
+        self,
+        tenant_id: str,
+        approval_id: UUID,
+        status: ApprovalStatus,
+        decided_by: str,
+        note: str | None,
+    ) -> Approval | None:
+        for i, a in enumerate(self.approvals):
+            if a.id == approval_id and a.status is ApprovalStatus.PENDING:
+                self.approvals[i] = replace(
+                    a,
+                    status=status,
+                    decided_by=decided_by,
+                    decision_note=note,
+                    decided_at=utcnow(),
+                )
+                return self.approvals[i]
+        return None
+
+    async def approvals_for_tool_uses(
+        self, tenant_id: str, thread_id: UUID, tool_use_ids: list[str]
+    ) -> list[Approval]:
+        return [
+            a for a in self.approvals if a.thread_id == thread_id and a.tool_use_id in tool_use_ids
+        ]
+
+    async def expire_pending(self, tenant_id: str, thread_id: UUID) -> int:
+        n = 0
+        for i, a in enumerate(self.approvals):
+            if a.thread_id == thread_id and a.status is ApprovalStatus.PENDING:
+                self.approvals[i] = replace(a, status=ApprovalStatus.EXPIRED, decided_at=utcnow())
+                n += 1
+        return n
+
 
 class InMemoryBuilderSessionRepository:
     def __init__(self) -> None:
@@ -265,3 +381,221 @@ class InMemoryBuilderSessionRepository:
 
     async def messages(self, tenant_id: str, session_id: UUID) -> list[dict[str, Any]]:
         return list(self.history.get(session_id, []))
+
+
+# ---------------------------------------------------------------- plugin rủi ro cho test HITL
+class NotifySkill(Plugin):
+    """Skill test: `notify.send` (external_send — luôn cần duyệt), `notify.drop` (destructive)."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict[str, Any]] = []
+
+    @property
+    def manifest(self) -> PluginManifest:
+        schema = {"type": "object", "properties": {"to": {"type": "string"}}, "required": ["to"]}
+        return PluginManifest(
+            id="notify",
+            kind=PluginKind.SKILL,
+            name="Notify",
+            version="1.0.0",
+            api_version=PLUGIN_API_VERSION,
+            tools=(
+                ToolSpec(
+                    name="notify.send",
+                    description="gửi",
+                    risk=RiskLevel.EXTERNAL_SEND,
+                    input_schema=schema,
+                ),
+                ToolSpec(name="notify.drop", description="xóa", risk=RiskLevel.DESTRUCTIVE),
+            ),
+        )
+
+    async def call_tool(self, name: str, arguments: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        self.sent.append({"tool": name, **arguments})
+        return ToolResult(f"đã gửi tới {arguments.get('to')}")
+
+
+class _StaticEntryPoint:
+    def __init__(self, name: str, group: str, obj: object) -> None:
+        self.name, self.group, self.value, self._obj = name, group, f"tests:{name}", obj
+
+    def load(self) -> object:
+        return self._obj
+
+
+def source_with(*plugins: Plugin) -> Callable[[str], list[Any]]:
+    """Entry point mặc định + plugin test (theo nhóm của manifest)."""
+
+    def source(group: str) -> list[Any]:
+        eps: list[Any] = list(entry_points(group=group))
+        eps += [
+            _StaticEntryPoint(p.manifest.id, group, p)
+            for p in plugins
+            if p.manifest.entry_point_group == group
+        ]
+        return eps
+
+    return source
+
+
+class FakeDbConnector(Plugin):
+    """Connector test: cần secret `password`; `fakedb.query` trả dữ liệu không tin cậy."""
+
+    def __init__(self) -> None:
+        self.seen_secrets: list[str] = []
+
+    @property
+    def manifest(self) -> PluginManifest:
+        return PluginManifest(
+            id="fakedb",
+            kind=PluginKind.CONNECTOR,
+            name="Fake DB",
+            version="1.0.0",
+            api_version=PLUGIN_API_VERSION,
+            config_schema={
+                "type": "object",
+                "properties": {"host": {"type": "string"}, "port": {"type": "integer"}},
+                "required": ["host"],
+                "additionalProperties": False,
+            },
+            secrets=("password",),
+            tools=(
+                ToolSpec(
+                    name="fakedb.query",
+                    description="đọc",
+                    risk=RiskLevel.READ,
+                    untrusted_output=True,
+                ),
+                ToolSpec(name="fakedb.exec", description="ghi", risk=RiskLevel.WRITE),
+            ),
+        )
+
+    async def call_tool(self, name: str, arguments: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        assert ctx.connection is not None
+        self.seen_secrets.append(ctx.connection.secrets.get("password", ""))
+        return ToolResult(f"{name}@{ctx.connection.config['host']}: hàng 1")
+
+    async def test_connection(self, connection: ConnectionContext) -> HealthStatus:
+        ok = connection.secrets.get("password") == "pw"
+        return HealthStatus(ok, "OK" if ok else "Sai mật khẩu")
+
+
+class InMemoryVault:
+    def __init__(self) -> None:
+        self.data: dict[str, dict[str, str]] = {}
+
+    async def put(self, path: str, data: dict[str, str]) -> None:
+        self.data[path] = dict(data)
+
+    async def get(self, path: str) -> dict[str, str]:
+        return dict(self.data.get(path, {}))
+
+    async def delete(self, path: str) -> None:
+        self.data.pop(path, None)
+
+
+class InMemoryConnectionRepository:
+    def __init__(self) -> None:
+        self.items: dict[UUID, Connection] = {}
+
+    async def create(self, connection: Connection) -> Connection:
+        if any(
+            c.name == connection.name
+            and c.tenant_id == connection.tenant_id
+            and c.status is not ConnectionStatus.DELETED
+            for c in self.items.values()
+        ):
+            raise ConflictError("Tên kết nối đã tồn tại.")
+        self.items[connection.id] = connection
+        return connection
+
+    async def get(self, tenant_id: str, connection_id: UUID) -> Connection | None:
+        c = self.items.get(connection_id)
+        return c if c and c.tenant_id == tenant_id else None
+
+    async def list_all(self, tenant_id: str) -> list[Connection]:
+        return [
+            c
+            for c in self.items.values()
+            if c.tenant_id == tenant_id and c.status is not ConnectionStatus.DELETED
+        ]
+
+    async def save(self, connection: Connection) -> Connection:
+        self.items[connection.id] = connection
+        return connection
+
+
+def _add_delegation_methods() -> None:
+    """Gắn method delegation vào InMemoryConversationRepository (Phase 3c)."""
+
+    async def create_delegation(
+        self: InMemoryConversationRepository,
+        tenant_id: str,
+        parent_thread_id: UUID,
+        parent_run_id: UUID,
+        tool_use_id: str,
+        agent_id: UUID,
+        task: str,
+    ) -> Delegation:
+        now = utcnow()
+        d = Delegation(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            parent_thread_id=parent_thread_id,
+            parent_run_id=parent_run_id,
+            tool_use_id=tool_use_id,
+            agent_id=agent_id,
+            task=task,
+            child_thread_id=None,
+            child_run_id=None,
+            status=DelegationStatus.RUNNING,
+            result=None,
+            tainted=False,
+            created_at=now,
+            updated_at=now,
+        )
+        self.__dict__.setdefault("delegations", []).insert(0, d)
+        return d
+
+    async def update_delegation(
+        self: InMemoryConversationRepository,
+        tenant_id: str,
+        delegation_id: UUID,
+        *,
+        status: DelegationStatus,
+        child_thread_id: UUID | None,
+        child_run_id: UUID | None,
+        result: str | None,
+        tainted: bool,
+    ) -> None:
+        items = self.__dict__.setdefault("delegations", [])
+        for i, d in enumerate(items):
+            if d.id == delegation_id:
+                items[i] = replace(
+                    d,
+                    status=status,
+                    child_thread_id=child_thread_id,
+                    child_run_id=child_run_id,
+                    result=result,
+                    tainted=tainted,
+                    updated_at=utcnow(),
+                )
+
+    async def delegations_for_tool_uses(
+        self: InMemoryConversationRepository,
+        tenant_id: str,
+        parent_thread_id: UUID,
+        tool_use_ids: list[str],
+    ) -> list[Delegation]:
+        return [
+            d
+            for d in self.__dict__.setdefault("delegations", [])
+            if d.parent_thread_id == parent_thread_id and d.tool_use_id in tool_use_ids
+        ]
+
+    InMemoryConversationRepository.create_delegation = create_delegation  # type: ignore[attr-defined]
+    InMemoryConversationRepository.update_delegation = update_delegation  # type: ignore[attr-defined]
+    InMemoryConversationRepository.delegations_for_tool_uses = delegations_for_tool_uses  # type: ignore[attr-defined]
+
+
+_add_delegation_methods()

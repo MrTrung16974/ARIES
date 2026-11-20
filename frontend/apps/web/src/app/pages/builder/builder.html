@@ -1,96 +1,136 @@
 <div class="builder">
   <section class="chat">
     <header>
-      <mat-icon svgIcon="bolt" class="sm" aria-hidden="true" />
-      <strong>Agent Architect</strong>
+      <div class="head-icon accent" aria-hidden="true">
+        <mat-icon svgIcon="bolt" class="sm" />
+      </div>
+      <div class="head-title">
+        <strong>Agent Architect</strong>
+        <span class="muted small"
+          >Trợ lý thiết kế &amp; kiểm thử Agent tự động</span
+        >
+      </div>
       @if (view()?.brain === 'heuristic') {
-      <ui-tag value="chế độ dev (không LLM)" severity="warn" />
+        <ui-tag value="chế độ dev (không LLM)" severity="warn" />
       }
       <span class="spacer"></span>
       @if (cost() !== null && cost()! > 0) {
-      <span class="muted small">≈ {{ cost()!.toFixed(4) }} USD</span>
+        <span class="cost-pill muted small"
+          >≈ {{ cost()!.toFixed(4) }} USD</span
+        >
       }
     </header>
 
     <div class="messages" #scroller>
       @if (items().length === 0 && !busy()) {
-      <div class="empty">
-        <p><strong>Mô tả agent bạn muốn tạo</strong></p>
-        <p class="muted">
-          Ví dụ: “Trợ lý CSKH trả lời về đơn hàng và chính sách đổi trả, không
-          bao giờ hứa hoàn tiền”. Mình sẽ hỏi lại nếu thiếu thông tin quan
-          trọng, dựng bản nháp và tự chạy thử.
-        </p>
-      </div>
-      } @for (m of items(); track $index) {
-      <div class="msg" [class.user]="m.role === 'user'" [class.error]="m.error">
-        <div class="bubble">{{ m.text }}</div>
-        @if (m.changes?.length) {
-        <ul class="changes">
-          @for (c of m.changes; track $index) {
-          <li><code>{{ c }}</code></li>
-          }
-        </ul>
-        } @if (m.test; as t) {
-        <div class="test">
-          <div class="muted small">Hỏi: {{ t.input }}</div>
-          @if (t.tools.length) {
-          <div class="muted small">Tool: {{ t.tools.join(', ') }}</div>
-          }
-          <div class="bubble">
-            {{ t.answer || t.error || '(không có câu trả lời)' }}
+        <div class="empty">
+          <div class="empty-badge">
+            <img
+              src="assets/brand/aries-mark-v3.png?v=aries4"
+              alt="ARIES"
+              width="64"
+              height="64"
+            />
           </div>
+          <h2>Mô tả agent bạn muốn tạo</h2>
+          <p class="muted">
+            Ví dụ: “Trợ lý CSKH trả lời về đơn hàng và chính sách đổi trả, không
+            bao giờ hứa hoàn tiền”. Mình sẽ hỏi lại nếu thiếu thông tin quan
+            trọng, dựng bản nháp và tự chạy thử.
+          </p>
         </div>
-        }
-      </div>
-      } @if (questions().length) {
-      <div class="clarify">
-        @for (q of questions(); track q.id) {
-        <div class="question">
-          <p>{{ q.question }}</p>
-          <div class="options">
-            @for (o of q.options; track o.value) {
+      }
+      @for (m of items(); track $index) {
+        <div
+          class="msg"
+          [class.user]="m.role === 'user'"
+          [class.error]="m.error"
+        >
+          <div class="msg-author">
+            <mat-icon
+              class="sm"
+              [svgIcon]="m.role === 'user' ? 'person' : 'bolt'"
+              aria-hidden="true"
+            />
+            {{ m.role === 'user' ? 'Bạn' : 'ARIES Architect' }}
+          </div>
+          <div class="bubble">{{ m.text }}</div>
+          @if (m.changes?.length) {
+            <ul class="changes">
+              @for (c of m.changes; track $index) {
+                <li><code>{{ c }}</code></li>
+              }
+            </ul>
+          }
+          @if (m.test; as t) {
+            <div class="test">
+              <div class="muted small">Hỏi: {{ t.input }}</div>
+              @if (t.tools.length) {
+                <div class="muted small">Tool: {{ t.tools.join(', ') }}</div>
+              }
+              <div class="bubble">
+                {{ t.answer || t.error || '(không có câu trả lời)' }}
+              </div>
+            </div>
+          }
+        </div>
+      }
+      @if (questions().length) {
+        <div class="clarify">
+          <div class="clarify-title">
+            <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+            <span>Câu hỏi làm rõ yêu cầu</span>
+          </div>
+          @for (q of questions(); track q.id) {
+            <div class="question">
+              <p>{{ q.question }}</p>
+              <div class="options">
+                @for (o of q.options; track o.value) {
+                  <button
+                    type="button"
+                    [class.selected]="answers[q.id] === o.value"
+                    (click)="pick(q, o.value)"
+                  >
+                    {{ o.label }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+          <div class="clarify-actions">
             <button
+              mat-flat-button
+              class="btn-aries"
               type="button"
-              [class.selected]="answers[q.id] === o.value"
-              (click)="pick(q, o.value)"
+              [disabled]="!canAnswer() || busy()"
+              (click)="sendAnswers()"
             >
-              {{ o.label }}
+              <mat-icon svgIcon="check" /> Gửi trả lời
             </button>
-            }
           </div>
         </div>
-        }
-        <div>
-          <button
-            mat-flat-button
-            type="button"
-            [disabled]="!canAnswer() || busy()"
-            (click)="sendAnswers()"
-          >
-            <mat-icon svgIcon="check" /> Gửi trả lời
-          </button>
+      }
+      @if (busy()) {
+        <div class="status">
+          <span class="status-line">
+            <mat-spinner diameter="16" />
+            {{ status() ?? 'Đang xử lý…' }}
+          </span>
+          @if (progress(); as p) {
+            <span>Eval {{ p.done }}/{{ p.total }}</span>
+            <mat-progress-bar
+              mode="determinate"
+              [value]="p.total ? (p.done * 100) / p.total : 0"
+            />
+          }
         </div>
-      </div>
-      } @if (busy()) {
-      <div class="status">
-        <span class="status-line">
-          <mat-spinner diameter="16" />
-          {{ status() ?? 'Đang xử lý…' }}
-        </span>
-        @if (progress(); as p) {
-        <span>Eval {{ p.done }}/{{ p.total }}</span>
-        <mat-progress-bar
-          mode="determinate"
-          [value]="p.total ? (p.done * 100) / p.total : 0"
-        />
-        }
-      </div>
       }
     </div>
 
     @if (error()) {
-    <ui-notice severity="error">{{ error() }}</ui-notice>
+      <div class="notice-wrap">
+        <ui-notice severity="error">{{ error() }}</ui-notice>
+      </div>
     }
 
     <footer>
@@ -102,161 +142,261 @@
         <textarea
           matInput
           rows="2"
-          [(ngModel)]="input"
+          [formControl]="inputCtrl"
           (keydown)="onKey($event)"
-          [placeholder]="spec() ? 'Yêu cầu sửa, “thử: <câu hỏi>”, hoặc “publish”…' : 'Mô tả agent…'"
-          [disabled]="!view()"
+          [placeholder]="
+            spec()
+              ? 'Yêu cầu sửa, “thử: <câu hỏi>”, hoặc “publish”…'
+              : 'Mô tả agent…'
+          "
         ></textarea>
       </mat-form-field>
       @if (busy()) {
-      <button mat-icon-button type="button" aria-label="Dừng" (click)="stop()">
-        <mat-icon svgIcon="stop" />
-      </button>
+        <button
+          mat-icon-button
+          type="button"
+          aria-label="Dừng"
+          title="Dừng xử lý"
+          (click)="stop()"
+        >
+          <mat-icon svgIcon="stop" />
+        </button>
       } @else {
-      <button
-        mat-flat-button
-        type="button"
-        [disabled]="!input.trim()"
-        (click)="send()"
-      >
-        <mat-icon svgIcon="send" /> Gửi
-      </button>
+        <button
+          mat-flat-button
+          class="btn-aries send-btn"
+          type="button"
+          [disabled]="!inputCtrl.value.trim() || !view()"
+          (click)="send()"
+        >
+          <mat-icon svgIcon="send" /> Gửi
+        </button>
       }
     </footer>
   </section>
 
   <aside class="preview">
     @if (spec(); as s) {
-    <div class="preview-head">
-      <div>
-        <h2>{{ s.name }}</h2>
-        <p class="muted small">{{ s.description }}</p>
-      </div>
-      <div class="actions">
-        @if (view()?.agent_id; as agentId) {
-        <a mat-stroked-button [routerLink]="['/agents', agentId, 'edit']">
-          <mat-icon svgIcon="edit" /> Sửa tay
-        </a>
-        @if (view()?.status === 'published') {
-        <a mat-stroked-button [routerLink]="['/agents', agentId, 'chat']">
-          <mat-icon svgIcon="forum" /> Chat
-        </a>
-        } }
-        <button
-          mat-flat-button
-          class="success"
-          type="button"
-          [disabled]="busy()"
-          (click)="openConfirm()"
-        >
-          <mat-icon svgIcon="send" /> Publish
-        </button>
-      </div>
-    </div>
-
-    @if (evalReport(); as r) {
-    <div class="eval" [class.fail]="!r.passed">
-      <strong>Eval: {{ (r.score * 100).toFixed(0) }}%</strong>
-      <span
-        >{{ r.passed ? 'đạt' : 'chưa đạt' }} (ngưỡng {{ r.threshold * 100
-        }}%)</span
-      >
-      <details>
-        <summary>Xem {{ r.results.length }} tình huống</summary>
-        @for (c of r.results; track c.case.id) {
-        <div class="case">
-          <mat-icon
-            class="sm"
-            [svgIcon]="c.passed ? 'check' : 'close'"
-            [class.err]="!c.passed"
-          />
-          <ui-tag [value]="c.case.kind" severity="secondary" />
-          <span>{{ c.case.input }}</span>
-          <div class="muted small">{{ c.reason }}</div>
+      <div class="preview-head">
+        <div class="preview-title">
+          <div class="agent-icon accent" aria-hidden="true">
+            <mat-icon class="sm" svgIcon="robot_2" />
+          </div>
+          <div>
+            <h2>{{ s.name }}</h2>
+            <p class="muted small">{{ s.description }}</p>
+          </div>
         </div>
-        }
-      </details>
-    </div>
-    }
+        <div class="actions">
+          @if (view()?.agent_id; as agentId) {
+            <a mat-stroked-button [routerLink]="['/agents', agentId, 'edit']">
+              <mat-icon svgIcon="edit" /> Sửa tay
+            </a>
+            @if (view()?.status === 'published') {
+              <a mat-stroked-button [routerLink]="['/agents', agentId, 'chat']">
+                <mat-icon svgIcon="forum" /> Chat
+              </a>
+            }
+          }
+          <button
+            mat-flat-button
+            class="success"
+            type="button"
+            [disabled]="busy()"
+            (click)="openConfirm()"
+          >
+            <mat-icon svgIcon="send" /> Publish
+          </button>
+        </div>
+      </div>
 
-    <mat-tab-group
-      [(selectedIndex)]="tabIndex"
-      animationDuration="0ms"
-      mat-stretch-tabs="false"
-    >
-      <mat-tab label="Tổng quan">
-        <div class="tab-body">
-          <dl>
-            <dt>Model</dt>
-            <dd>{{ s.model.model }} · effort {{ s.model.effort }}</dd>
-            <dt>Dữ liệu</dt>
-            <dd>{{ s.data_classification }}</dd>
-          </dl>
-          <h3>Quyền</h3>
-          @for (p of permissions(); track p.tool) {
-          <div class="perm">
-            <code>{{ p.tool }}</code>
-            <ui-tag
-              [value]="riskLabel[p.risk] ?? p.risk"
-              [severity]="p.status === 'active' ? 'info' : 'warn'"
-            />
-            @if (p.status !== 'active') {
-            <span class="muted small">cần duyệt — đang ẩn</span>
+      @if (evalReport(); as r) {
+        <div class="eval" [class.fail]="!r.passed">
+          <div class="eval-head">
+            <strong class="sec-title">
+              <mat-icon
+                class="sm"
+                [svgIcon]="r.passed ? 'verified' : 'warning'"
+                aria-hidden="true"
+              />
+              <span>Eval: {{ (r.score * 100).toFixed(0) }}%</span>
+            </strong>
+            <span
+              >{{ r.passed ? 'đạt' : 'chưa đạt' }} (ngưỡng
+              {{ r.threshold * 100 }}%)</span
+            >
+          </div>
+          <details>
+            <summary>Xem {{ r.results.length }} tình huống kiểm thử</summary>
+            @for (c of r.results; track c.case.id) {
+              <div class="case">
+                <mat-icon
+                  class="sm"
+                  [svgIcon]="c.passed ? 'check' : 'close'"
+                  [class.ok]="c.passed"
+                  [class.err]="!c.passed"
+                />
+                <ui-tag [value]="c.case.kind" severity="secondary" />
+                <span>{{ c.case.input }}</span>
+                <div class="muted small">{{ c.reason }}</div>
+              </div>
+            }
+          </details>
+        </div>
+      }
+
+      <mat-tab-group
+        [(selectedIndex)]="tabIndex"
+        animationDuration="0ms"
+        mat-stretch-tabs="false"
+      >
+        <mat-tab>
+          <ng-template mat-tab-label>
+            <mat-icon class="sm" svgIcon="dashboard" aria-hidden="true" />
+            <span>Tổng quan</span>
+          </ng-template>
+          <div class="tab-body">
+            <dl class="spec-dl">
+              <div>
+                <dt class="dt-icon">
+                  <mat-icon class="sm" svgIcon="dns" aria-hidden="true" />
+                  <span>Model</span>
+                </dt>
+                <dd>
+                  <code>{{ s.model.model }}</code> · effort
+                  <code>{{ s.model.effort }}</code>
+                </dd>
+              </div>
+              <div>
+                <dt class="dt-icon">
+                  <mat-icon class="sm" svgIcon="shield" aria-hidden="true" />
+                  <span>Dữ liệu</span>
+                </dt>
+                <dd>
+                  <ui-tag [value]="s.data_classification" severity="info" />
+                </dd>
+              </div>
+            </dl>
+
+            <h3 class="sec-title">
+              <mat-icon class="sm" svgIcon="key" aria-hidden="true" />
+              <span>Quyền</span>
+            </h3>
+            @for (p of permissions(); track p.tool) {
+              <div class="perm">
+                <mat-icon
+                  class="sm"
+                  svgIcon="deployed_code"
+                  aria-hidden="true"
+                />
+                <code>{{ p.tool }}</code>
+                <ui-tag
+                  [value]="riskLabel[p.risk] ?? p.risk"
+                  [severity]="p.status === 'active' ? 'info' : 'warn'"
+                />
+                @if (p.status !== 'active') {
+                  <span class="muted small">cần duyệt — đang ẩn</span>
+                }
+              </div>
+            } @empty {
+              <p class="muted small">
+                Không dùng tool — chỉ trả lời bằng kiến thức của model.
+              </p>
+            }
+
+            @if (s.rules.length) {
+              <h3 class="sec-title">
+                <mat-icon class="sm" svgIcon="gavel" aria-hidden="true" />
+                <span>Quy tắc</span>
+              </h3>
+              <ul class="clean-list">
+                @for (r of s.rules; track $index) {
+                  <li>{{ r }}</li>
+                }
+              </ul>
+            }
+            @if (assumptions().length) {
+              <h3 class="sec-title">
+                <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+                <span>Giả định</span>
+              </h3>
+              <ul class="clean-list muted">
+                @for (a of assumptions(); track $index) {
+                  <li>{{ a }}</li>
+                }
+              </ul>
+            }
+            @if (missing().length) {
+              <h3 class="sec-title">
+                <mat-icon class="sm" svgIcon="warning" aria-hidden="true" />
+                <span>Còn thiếu</span>
+              </h3>
+              <ul class="clean-list missing">
+                @for (m of missing(); track $index) {
+                  <li>{{ m.description }}</li>
+                }
+              </ul>
             }
           </div>
-          } @empty {
-          <p class="muted small">
-            Không dùng tool — chỉ trả lời bằng kiến thức của model.
-          </p>
-          } @if (s.rules.length) {
-          <h3>Quy tắc</h3>
-          <ul>
-            @for (r of s.rules; track $index) {
-            <li>{{ r }}</li>
-            }
-          </ul>
-          } @if (assumptions().length) {
-          <h3>Giả định</h3>
-          <ul class="muted">
-            @for (a of assumptions(); track $index) {
-            <li>{{ a }}</li>
-            }
-          </ul>
-          } @if (missing().length) {
-          <h3>Còn thiếu</h3>
-          <ul class="missing">
-            @for (m of missing(); track $index) {
-            <li>{{ m.description }}</li>
-            }
-          </ul>
-          }
-        </div>
-      </mat-tab>
-      <mat-tab label="Prompt">
-        <div class="tab-body">
-          <h3>Vai trò</h3>
-          <p class="pre">{{ s.persona }}</p>
-          <h3>Hướng dẫn</h3>
-          <p class="pre">{{ s.instructions }}</p>
-          <h3>Phong cách</h3>
-          <p class="pre">{{ s.output_format.style }}</p>
-          <h3>Câu gợi ý</h3>
-          <ul>
-            @for (p of s.starter_prompts; track $index) {
-            <li>{{ p }}</li>
-            }
-          </ul>
-        </div>
-      </mat-tab>
-      <mat-tab label="JSON">
-        <pre class="json tab-body">{{ specJson() }}</pre>
-      </mat-tab>
-    </mat-tab-group>
+        </mat-tab>
+
+        <mat-tab>
+          <ng-template mat-tab-label>
+            <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
+            <span>Prompt</span>
+          </ng-template>
+          <div class="tab-body">
+            <h3 class="sec-title">
+              <mat-icon class="sm" svgIcon="person" aria-hidden="true" />
+              <span>Vai trò</span>
+            </h3>
+            <p class="pre-card">{{ s.persona }}</p>
+            <h3 class="sec-title">
+              <mat-icon class="sm" svgIcon="code" aria-hidden="true" />
+              <span>Hướng dẫn</span>
+            </h3>
+            <p class="pre-card">{{ s.instructions }}</p>
+            <h3 class="sec-title">
+              <mat-icon class="sm" svgIcon="tune" aria-hidden="true" />
+              <span>Phong cách</span>
+            </h3>
+            <p class="pre-card">{{ s.output_format.style }}</p>
+            <h3 class="sec-title">
+              <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
+              <span>Câu gợi ý</span>
+            </h3>
+            <ul class="clean-list">
+              @for (p of s.starter_prompts; track $index) {
+                <li>{{ p }}</li>
+              }
+            </ul>
+          </div>
+        </mat-tab>
+
+        <mat-tab>
+          <ng-template mat-tab-label>
+            <mat-icon class="sm" svgIcon="code" aria-hidden="true" />
+            <span>JSON</span>
+          </ng-template>
+          <pre class="json tab-body">{{ specJson() }}</pre>
+        </mat-tab>
+      </mat-tab-group>
     } @else {
-    <div class="placeholder muted">
-      <mat-icon svgIcon="dashboard" class="big" aria-hidden="true" />
-      <p>Bản xem trước agent sẽ hiện ở đây.</p>
-    </div>
+      <div class="placeholder muted">
+        <div class="empty-badge">
+          <img
+            src="assets/brand/aries-mark-v3.png?v=aries3d"
+            alt="ARIES"
+            width="58"
+            height="58"
+          />
+        </div>
+        <h3>Bản thiết kế Agent</h3>
+        <p class="small">
+          Bản xem trước cấu hình, điểm Eval và quyền hạn của agent sẽ xuất hiện
+          trực tiếp tại đây ngay khi bạn mô tả yêu cầu.
+        </p>
+      </div>
     }
   </aside>
 </div>
@@ -265,23 +405,27 @@
   <h2 mat-dialog-title>Publish agent</h2>
   <mat-dialog-content>
     @if (evalReport(); as r) {
-    <p>
-      Eval: <strong>{{ (r.score * 100).toFixed(0) }}%</strong> — {{ r.passed ?
-      'đạt ngưỡng.' : 'CHƯA đạt ngưỡng.' }}
-    </p>
-    @if (!r.passed) {
-    <mat-checkbox [(ngModel)]="override">
-      Tôi hiểu eval chưa đạt và vẫn muốn publish (sẽ ghi audit).
-    </mat-checkbox>
-    } } @else {
-    <p>Chưa có kết quả eval.</p>
-    <mat-checkbox [(ngModel)]="override">
-      Vẫn publish khi chưa có eval (sẽ ghi audit).
-    </mat-checkbox>
+      <p>
+        Eval: <strong>{{ (r.score * 100).toFixed(0) }}%</strong> —
+        {{ r.passed ? 'đạt ngưỡng.' : 'CHƯA đạt ngưỡng.' }}
+      </p>
+      @if (!r.passed) {
+        <mat-checkbox [(ngModel)]="override">
+          Tôi hiểu eval chưa đạt và vẫn muốn publish (sẽ ghi audit).
+        </mat-checkbox>
+      }
+    } @else {
+      <p>Chưa có kết quả eval.</p>
+      <mat-checkbox [(ngModel)]="override">
+        Vẫn publish khi chưa có eval (sẽ ghi audit).
+      </mat-checkbox>
     }
     <p class="muted small">
-      {{ view()?.agent_id ? 'Tạo version mới cho agent hiện có và publish.' :
-      'Tạo agent mới (v1) và publish.' }}
+      {{
+        view()?.agent_id
+          ? 'Tạo version mới cho agent hiện có và publish.'
+          : 'Tạo agent mới (v1) và publish.'
+      }}
     </p>
   </mat-dialog-content>
   <mat-dialog-actions align="end">
@@ -293,8 +437,8 @@
       [disabled]="publishing() || !(evalReport()?.passed || override)"
       (click)="publish()"
     >
-      <mat-icon svgIcon="send" /> {{ publishing() ? 'Đang publish…' : 'Xác nhận
-      publish' }}
+      <mat-icon svgIcon="send" />
+      {{ publishing() ? 'Đang publish…' : 'Xác nhận publish' }}
     </button>
   </mat-dialog-actions>
 </ng-template>

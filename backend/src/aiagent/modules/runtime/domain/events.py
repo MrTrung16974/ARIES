@@ -14,6 +14,10 @@ class RunEventType(StrEnum):
     THINKING = "thinking"
     TOOL_START = "tool_start"
     TOOL_END = "tool_end"
+    APPROVAL_REQUIRED = "approval_required"
+    DELEGATION_START = "delegation_start"  # Master giao việc (ADR-0017)
+    DELEGATION_PROGRESS = "delegation_progress"  # tool_start/tool_end của run con
+    DELEGATION_END = "delegation_end"
     MESSAGE = "message"
     USAGE = "usage"
     ERROR = "error"

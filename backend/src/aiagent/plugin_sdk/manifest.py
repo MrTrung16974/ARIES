@@ -61,6 +61,9 @@ class ToolSpec(BaseModel):
     description: str = Field(min_length=1, max_length=1024)
     risk: RiskLevel
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
+    # Kết quả chứa dữ liệu từ nguồn không tin cậy (web, nội dung người dùng nhập vào DB...):
+    # core bọc nhãn cảnh báo và đánh dấu run "nhiễm" (taint) — ADR-0016.
+    untrusted_output: bool = False
 
 
 class PluginManifest(BaseModel):

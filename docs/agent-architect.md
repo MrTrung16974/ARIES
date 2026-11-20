@@ -105,6 +105,11 @@ thang); validate ép `approval` cho `external_send`/`destructive`; eval chạy s
 ModelRouter áp dụng cả trong eval; publish cần xác nhận + version immutable + rollback; mọi lệnh,
 diff, kết quả eval ghi audit.
 
+**Master agent (Phase 3c, ADR-0017):** mỗi agent có thêm `when_to_use` (một câu mô tả khi nào nên
+giao việc cho nó) do Architect viết; sau khi publish, Architect đề xuất thêm agent vào ARIES
+Master. Lệnh `/team create|add|remove`; tạo team supervisor bằng lời. Eval định tuyến: bộ câu hỏi
+kèm agent đáng ra phải được giao, đo tỉ lệ giao đúng.
+
 ## 11. Các bước (Phase 2)
 
 | Bước | Nội dung |

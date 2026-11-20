@@ -6,7 +6,7 @@ Plugin lỗi hoặc không tương thích bị vô hiệu kèm lý do — không
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from importlib.metadata import EntryPoint, entry_points
@@ -59,9 +59,12 @@ class PluginRegistry:
         self,
         source: EntryPointSource = _default_source,
         disabled: Iterable[str] = (),
+        config: Mapping[str, dict[str, Any]] | None = None,
     ) -> None:
         self._source = source
         self._disabled = set(disabled)
+        # Cấu hình không bí mật theo từng plugin (AIAGENT_PLUGIN_CONFIG).
+        self._config = dict(config or {})
         self._plugins: dict[str, LoadedPlugin] = {}
         self._rejected: list[LoadedPlugin] = []
 
@@ -141,12 +144,12 @@ class PluginRegistry:
 
     # ----------------------------------------------------------- lifecycle
     async def start(self, ctx: PluginContext | None = None) -> None:
-        ctx = ctx or PluginContext()
         for plugin_id, loaded in list(self._plugins.items()):
             if loaded.instance is None:
                 continue
+            plugin_ctx = ctx or PluginContext(config=dict(self._config.get(plugin_id, {})))
             try:
-                await loaded.instance.on_load(ctx)
+                await loaded.instance.on_load(plugin_ctx)
             except Exception as exc:
                 logger.exception("on_load lỗi cho plugin %s", plugin_id)
                 loaded.status = PluginStatus.FAILED

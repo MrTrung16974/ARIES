@@ -15,6 +15,11 @@ x-backend-env: &backend-env
   # LLM (ADR-0012). Để trống ANTHROPIC_API_KEY thì chỉ dùng được model giả "fake-echo".
   AIAGENT_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   AIAGENT_LLM_FAKE_ENABLED: ${AIAGENT_LLM_FAKE_ENABLED:-true}
+  # Kho bí mật cho secret của connection (ADR-0016). Dev: root token của OpenBao dev mode.
+  AIAGENT_OPENBAO_ADDR: http://openbao:8200
+  AIAGENT_OPENBAO_TOKEN: ${OPENBAO_DEV_ROOT_TOKEN:?}
+  # Cấu hình không bí mật theo plugin.
+  AIAGENT_PLUGIN_CONFIG: '{"web": {"searxng_url": "http://searxng:8080"}}'
 
 services:
   # ------------------------------------------------------------------ edge
@@ -78,6 +83,17 @@ services:
       BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_DEV_ROOT_TOKEN:?}
     cap_add: [IPC_LOCK]
     networks: [data]
+    restart: unless-stopped
+
+  searxng:
+    image: searxng/searxng:2026.9.20-fdd8525b1
+    # Chỉ dùng nội bộ (không qua Traefik). Cần ra Internet để gọi các công cụ tìm kiếm.
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?}
+      SEARXNG_BASE_URL: http://searxng:8080/
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks: [app]
     restart: unless-stopped
 
   # ------------------------------------------------------------------ identity
@@ -179,6 +195,20 @@ services:
     restart: unless-stopped
 
   # ------------------------------------------------------------------ công cụ dev
+  demo-seed:
+    profiles: [demo]
+    image: pgvector/pgvector:pg16
+    entrypoint: ["bash", "/seed/seed-demo.sh"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      DEMO_READER_PASSWORD: ${DEMO_READER_PASSWORD:-}
+    volumes:
+      - ./postgres/demo:/seed:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [data]
+    restart: "no"
+
   backend-dev:
     profiles: [tools]
     build: { context: ../backend, target: dev }

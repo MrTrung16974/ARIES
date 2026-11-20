@@ -34,17 +34,35 @@ class CatalogSkill:
 
 
 @dataclass(frozen=True)
+class CatalogConnection:
+    """Connection người tạo ĐƯỢC DÙNG (personal của mình hoặc workspace)."""
+
+    id: str
+    name: str
+    connector_id: str
+    connector_name: str
+    tools: list[CatalogTool]
+
+
+@dataclass(frozen=True)
 class Catalog:
     """Những gì người tạo ĐƯỢC PHÉP dùng — Architect chỉ chọn trong đây (chống bịa, chống leo thang)."""
 
     skills: list[CatalogSkill]
     models: list[str]  # model khả dụng, model đầu tiên là mặc định
+    connections: list[CatalogConnection] = field(default_factory=list)
 
     def skill_ids(self) -> list[str]:
         return [s.id for s in self.skills]
 
     def tool_names(self) -> list[str]:
         return [t.name for s in self.skills for t in s.tools]
+
+    def connection_ids(self) -> list[str]:
+        return [c.id for c in self.connections]
+
+    def connection_tool_names(self) -> list[str]:
+        return sorted({t.name for c in self.connections for t in c.tools})
 
 
 @dataclass
@@ -129,6 +147,7 @@ __all__ = [
     "ArchitectBrainPort",
     "BuilderSessionRepositoryPort",
     "Catalog",
+    "CatalogConnection",
     "CatalogSkill",
     "CatalogTool",
     "SessionStatus",

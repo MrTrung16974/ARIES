@@ -1,0 +1,91 @@
+"""Connection: một phiên bản cấu hình của connector (Postgres, Gmail…) — ADR-0016.
+
+Chỉ cấu hình không bí mật nằm trong DB; secret nằm ở kho bí mật (OpenBao), core giải mã
+ngay lúc gọi tool qua Credential Broker.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
+from typing import Any, Protocol
+from uuid import UUID
+
+from aiagent.plugin_sdk import Plugin, PluginManifest
+
+
+class ConnectionScope(StrEnum):
+    PERSONAL = "personal"  # chỉ người tạo dùng được
+    WORKSPACE = "workspace"  # mọi người trong tenant dùng được; Admin quản lý
+
+
+class ConnectionStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    DELETED = "deleted"
+
+
+@dataclass(frozen=True)
+class Connection:
+    id: UUID
+    tenant_id: str
+    name: str
+    connector_id: str
+    scope: ConnectionScope
+    owner_id: str
+    config: dict[str, Any]
+    secret_keys: list[str]  # tên các secret đã lưu (không bao giờ là giá trị)
+    status: ConnectionStatus
+    last_test_ok: bool | None
+    last_test_note: str | None
+    last_test_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+def secret_path(tenant_id: str, connection_id: UUID) -> str:
+    return f"aries/{tenant_id}/connections/{connection_id}"
+
+
+class ConnectionRepositoryPort(Protocol):
+    async def create(self, connection: Connection) -> Connection: ...
+
+    async def get(self, tenant_id: str, connection_id: UUID) -> Connection | None: ...
+
+    async def list_all(self, tenant_id: str) -> list[Connection]:
+        """Mọi connection chưa xóa của tenant."""
+        ...
+
+    async def save(self, connection: Connection) -> Connection:
+        """Cập nhật name/config/secret_keys/status/last_test_*."""
+        ...
+
+
+class SecretVaultPort(Protocol):
+    async def put(self, path: str, data: dict[str, str]) -> None: ...
+
+    async def get(self, path: str) -> dict[str, str]:
+        """{} nếu không có."""
+        ...
+
+    async def delete(self, path: str) -> None: ...
+
+
+class ConnectorLookupPort(Protocol):
+    def get(self, plugin_id: str) -> Plugin | None: ...
+
+    def connectors(self) -> list[PluginManifest]:
+        """Manifest các connector đang hoạt động."""
+        ...
+
+
+__all__ = [
+    "Connection",
+    "ConnectionRepositoryPort",
+    "ConnectionScope",
+    "ConnectionStatus",
+    "ConnectorLookupPort",
+    "SecretVaultPort",
+    "secret_path",
+]

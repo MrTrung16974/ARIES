@@ -15,6 +15,7 @@ from aiagent.modules.builder.domain import (
     Catalog,
     ClarifyOption,
     ClarifyQuestion,
+    ConnectionChoice,
     DataSourceHint,
     EditProposal,
     EvalCase,
@@ -35,6 +36,10 @@ _DOCS = re.compile(r"tài liệu|chính sách|quy định|hướng dẫn nội b
 _EXTERNAL = re.compile(r"khách|customer|cskh|người dùng bên ngoài", re.I)
 _INTERNAL = re.compile(r"nội bộ|nhân viên|phòng ban|team", re.I)
 _SEND = re.compile(r"gửi (mail|email|tin)|telegram|thông báo", re.I)
+_DB = re.compile(
+    r"cơ sở dữ liệu|csdl|database|\bsql\b|truy vấn|đơn hàng|doanh thu|tồn kho|số liệu", re.I
+)
+_WEB = re.compile(r"tìm kiếm|internet|trên mạng|\bweb\b|tin tức|trang web", re.I)
 
 
 def _j(value: Any) -> str:
@@ -81,6 +86,10 @@ class HeuristicArchitectBrain:
             capabilities.append("biết ngày giờ hiện tại")
         if _ECHO.search(text):
             capabilities.append("lặp lại văn bản")
+        if _DB.search(text):
+            capabilities.append("truy vấn cơ sở dữ liệu")
+        if _WEB.search(text):
+            capabilities.append("tìm kiếm web")
         if _DOCS.search(text):
             sources.append(DataSourceHint(type="documents", hint="tài liệu được nhắc tới"))
         if _SEND.search(text):
@@ -149,13 +158,45 @@ class HeuristicArchitectBrain:
             )
         if "lặp lại" in joined and "echo" in ids:
             skills.append(SkillChoice(skill_id="echo", allowed_tools=[], reason="Lặp lại văn bản"))
+        if "tìm kiếm web" in joined and "web" in ids:
+            skills.append(
+                SkillChoice(skill_id="web", allowed_tools=[], reason="Tìm thông tin trên Internet")
+            )
+        connections: list[ConnectionChoice] = []
+        db_missing: list[MissingItem] = []
+        if "truy vấn cơ sở dữ liệu" in joined:
+            db = next(
+                (c for c in catalog.connections if any(t.name.endswith(".query") for t in c.tools)),
+                None,
+            )
+            if db is not None:
+                tools = [t.name for t in db.tools if t.risk == "read"]  # chỉ đọc
+                connections.append(
+                    ConnectionChoice(
+                        connection_id=db.id,
+                        allowed_tools=tools,
+                        reason=f"Tra cứu dữ liệu trong {db.name} (chỉ đọc)",
+                    )
+                )
+            else:
+                db_missing.append(
+                    MissingItem(
+                        kind="connection",
+                        description="Kết nối PostgreSQL (tạo ở trang Kết nối rồi gắn vào agent)",
+                    )
+                )
         missing = [
             MissingItem(kind="knowledge_base", description=f"Nguồn {s.hint} (Phase 4)")
             for s in brief.data_sources
         ]
+        missing += db_missing
         missing += [MissingItem(kind="connection", description=a) for a in brief.actions]
         return CapabilityPlan(
-            skills=skills, model=catalog.models[0], effort="medium", missing=missing
+            skills=skills,
+            connections=connections,
+            model=catalog.models[0],
+            effort="medium",
+            missing=missing,
         )
 
     async def compose(
@@ -164,6 +205,10 @@ class HeuristicArchitectBrain:
         who = "khách hàng" if brief.audience != "internal" else "nhân viên trong công ty"
         tool_hint = "".join(
             f" Dùng skill {s.skill_id} khi cần: {s.reason.lower()}." for s in plan.skills
+        ) + "".join(
+            f" Dùng các tool kết nối khi cần: {c.reason.lower()}; luôn xem cấu trúc bảng trước khi "
+            "viết SELECT."
+            for c in plan.connections
         )
         rules = list(brief.constraints)
         if brief.audience != "internal":
@@ -177,6 +222,7 @@ class HeuristicArchitectBrain:
             style="Ngắn gọn, lịch sự; dùng gạch đầu dòng khi liệt kê.",
             opening_statement="Xin chào! Mình có thể giúp gì cho bạn?",
             starter_prompts=["Bạn giúp được gì?", "Hôm nay là thứ mấy?", "Cho mình một ví dụ"],
+            when_to_use=f"Khi cần: {brief.goal[:200]}",
         )
 
     async def edit(

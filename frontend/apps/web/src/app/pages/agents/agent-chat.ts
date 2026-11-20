@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, JsonPipe } from '@angular/common';
 import {
   Component,
   computed,
@@ -10,13 +10,19 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   AgentDetail,
   AgentsApi,
+  Approval,
+  ApprovalRequest,
+  ApprovalsApi,
   ChatStreamError,
   ChatStreamService,
+  Role,
+  RunEventMessage,
+  SessionService,
   StoredMessage,
   ThreadInfo,
 } from '@aiagent/core';
@@ -35,10 +41,38 @@ interface ToolStep {
   durationMs?: number;
 }
 
+export interface ApprovalCard {
+  id: string;
+  toolUseId: string;
+  tool: string;
+  risk: string;
+  reason: string;
+  arguments: Record<string, unknown>;
+  approverRoles: string[];
+  status: 'pending' | 'approved' | 'denied' | 'expired';
+  agentName?: string;
+  canDecide: boolean;
+  note?: string | null;
+  deciding?: boolean;
+}
+
+export interface DelegationView {
+  id: string;
+  toolUseId: string;
+  agentName: string;
+  task: string;
+  status: 'running' | 'completed' | 'failed' | 'awaiting_approval';
+  steps: ToolStep[];
+  summary?: string;
+}
+
 interface ChatItem {
   role: 'user' | 'assistant';
   text: string;
   tools: ToolStep[];
+  delegations?: DelegationView[];
+  approvals?: ApprovalCard[];
+  canResume?: boolean;
   thinking?: string;
   error?: string;
   streaming?: boolean;
@@ -98,6 +132,7 @@ export function toChatItems(messages: StoredMessage[]): ChatItem[] {
   selector: 'app-agent-chat',
   imports: [
     FormsModule,
+    ReactiveFormsModule,
     RouterLink,
     MatButtonModule,
     MatFormFieldModule,
@@ -107,6 +142,7 @@ export function toChatItems(messages: StoredMessage[]): ChatItem[] {
     Notice,
     Tag,
     DecimalPipe,
+    JsonPipe,
   ],
   templateUrl: './agent-chat.html',
   styleUrl: './agent-chat.scss',
@@ -117,6 +153,8 @@ export class AgentChat implements OnInit, OnDestroy {
 
   private readonly api = inject(AgentsApi);
   private readonly stream = inject(ChatStreamService);
+  private readonly approvalsApi = inject(ApprovalsApi);
+  private readonly session = inject(SessionService);
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
 
   protected readonly agent = signal<AgentDetail | null>(null);
@@ -126,7 +164,8 @@ export class AgentChat implements OnInit, OnDestroy {
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly usage = signal<RunUsage | null>(null);
-  protected input = '';
+  // FormControl ghi thẳng vào DOM: xóa ô nhập chắc chắn kể cả khi Enter tới trước change detection.
+  protected readonly inputCtrl = new FormControl('', { nonNullable: true });
 
   protected readonly isDraft = computed(
     () => !!this.draft() && !!this.agent()?.can_edit,
@@ -167,6 +206,7 @@ export class AgentChat implements OnInit, OnDestroy {
     this.usage.set(null);
     this.api.messages(t.id).subscribe((m) => {
       this.items.set(toChatItems(m));
+      this.attachPendingApprovals(t.id);
       this.scrollDown();
     });
   }
@@ -179,7 +219,7 @@ export class AgentChat implements OnInit, OnDestroy {
   }
 
   protected useStarter(text: string): void {
-    this.input = text;
+    this.inputCtrl.setValue(text);
     void this.send();
   }
 
@@ -188,9 +228,9 @@ export class AgentChat implements OnInit, OnDestroy {
   }
 
   protected async send(): Promise<void> {
-    const message = this.input.trim();
+    const message = this.inputCtrl.value.trim();
     if (!message || this.busy()) return;
-    this.input = '';
+    this.inputCtrl.setValue('');
     this.error.set(null);
     this.busy.set(true);
 
@@ -206,11 +246,10 @@ export class AgentChat implements OnInit, OnDestroy {
       reply,
     ]);
     this.scrollDown();
-    const touch = (): void => this.items.update((list) => [...list]);
 
     this.abort = new AbortController();
-    try {
-      for await (const ev of this.stream.chat(
+    await this.consume(
+      this.stream.chat(
         {
           agentId: this.id(),
           message,
@@ -218,7 +257,19 @@ export class AgentChat implements OnInit, OnDestroy {
           draft: this.isDraft(),
         },
         this.abort.signal,
-      )) {
+      ),
+      reply,
+    );
+  }
+
+  /** Đọc luồng RunEvent vào một tin trả lời (dùng cho chat và resume). */
+  private async consume(
+    events: AsyncGenerator<RunEventMessage>,
+    reply: ChatItem,
+  ): Promise<void> {
+    const touch = (): void => this.items.update((list) => [...list]);
+    try {
+      for await (const ev of events) {
         const d = ev.data;
         switch (ev.event) {
           case 'run_started':
@@ -232,14 +283,17 @@ export class AgentChat implements OnInit, OnDestroy {
             reply.thinking = String(d['text'] ?? '');
             break;
           case 'tool_start':
-            reply.tools.push({
-              id: String(d['id']),
-              name: String(d['name']),
-              status: 'running',
-            });
+            // Resume: tool_use đã hiện ở tin trước (đang chờ duyệt) → cập nhật bước đó.
+            if (!this.findStep(String(d['id']))) {
+              reply.tools.push({
+                id: String(d['id']),
+                name: String(d['name']),
+                status: 'running',
+              });
+            }
             break;
           case 'tool_end': {
-            const step = reply.tools.find((t) => t.id === d['id']);
+            const step = this.findStep(String(d['id']));
             if (step) {
               step.status = d['is_error'] ? 'error' : 'ok';
               step.name = String(d['name'] ?? step.name);
@@ -248,6 +302,50 @@ export class AgentChat implements OnInit, OnDestroy {
             }
             break;
           }
+          case 'delegation_start': {
+            const existing = this.findDelegation(String(d['delegation_id']));
+            if (existing) {
+              existing.status = 'running';
+            } else {
+              (reply.delegations ??= []).push({
+                id: String(d['delegation_id']),
+                toolUseId: String(d['tool_use_id']),
+                agentName: String(d['agent_name'] ?? 'Agent'),
+                task: String(d['task'] ?? ''),
+                status: 'running',
+                steps: [],
+              });
+            }
+            break;
+          }
+          case 'delegation_progress': {
+            const del = this.findDelegation(String(d['delegation_id']));
+            if (!del) break;
+            const stepId = String(d['id']);
+            if (d['event'] === 'tool_start') {
+              del.steps.push({ id: stepId, name: String(d['name']), status: 'running' });
+            } else {
+              const st = del.steps.find((x) => x.id === stepId);
+              if (st) {
+                st.status = d['is_error'] ? 'error' : 'ok';
+                st.name = String(d['name'] ?? st.name);
+              }
+            }
+            break;
+          }
+          case 'delegation_end': {
+            const del = this.findDelegation(String(d['delegation_id']));
+            if (del) {
+              del.status = d['status'] as DelegationView['status'];
+              del.summary = String(d['summary'] ?? '');
+            }
+            break;
+          }
+          case 'approval_required':
+            reply.approvals = (
+              (d['requests'] as ApprovalRequest[] | undefined) ?? []
+            ).map((r) => this.cardFromRequest(r));
+            break;
           case 'usage':
             if (!d['partial']) this.usage.set(d as unknown as RunUsage);
             break;
@@ -275,6 +373,118 @@ export class AgentChat implements OnInit, OnDestroy {
       this.abort = null;
       this.loadThreads();
     }
+  }
+
+  protected async decide(
+    item: ChatItem,
+    card: ApprovalCard,
+    approve: boolean,
+  ): Promise<void> {
+    card.deciding = true;
+    this.items.update((list) => [...list]);
+    this.approvalsApi.decide(card.id, approve).subscribe({
+      next: (a) => {
+        card.status = a.status;
+        card.deciding = false;
+        this.afterDecision(item);
+      },
+      error: (e: { error?: { error?: { message?: string } } }) => {
+        card.deciding = false;
+        this.error.set(e.error?.error?.message ?? 'Không ghi được quyết định.');
+        this.items.update((list) => [...list]);
+      },
+    });
+  }
+
+  /** Tiếp tục run khi mọi yêu cầu duyệt đã có quyết định. */
+  protected async resume(item?: ChatItem): Promise<void> {
+    const threadId = this.threadId();
+    if (!threadId || this.busy()) return;
+    if (item) item.canResume = false;
+    this.error.set(null);
+    this.busy.set(true);
+    const reply: ChatItem = { role: 'assistant', text: '', tools: [], streaming: true };
+    this.items.update((list) => [...list, reply]);
+    this.abort = new AbortController();
+    await this.consume(this.stream.resume(threadId, this.abort.signal), reply);
+  }
+
+  private afterDecision(item: ChatItem): void {
+    const cards = item.approvals ?? [];
+    const allDecided = cards.every((c) => c.status !== 'pending');
+    item.canResume = allDecided;
+    this.items.update((list) => [...list]);
+    // Người yêu cầu tự duyệt xong → chạy tiếp ngay.
+    if (allDecided) void this.resume(item);
+  }
+
+  private findDelegation(id: string): DelegationView | undefined {
+    for (const item of this.items()) {
+      const found = item.delegations?.find((x) => x.id === id);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  /** Ẩn bước tool `delegate__*` khi đã có thẻ giao việc tương ứng. */
+  protected visibleTools(m: ChatItem): ToolStep[] {
+    const shown = new Set((m.delegations ?? []).map((x) => x.toolUseId));
+    return m.tools.filter((t) => !shown.has(t.id));
+  }
+
+  private findStep(id: string): ToolStep | undefined {
+    for (const item of this.items()) {
+      const step = item.tools.find((t) => t.id === id);
+      if (step) return step;
+    }
+    return undefined;
+  }
+
+  private canDecide(roles: string[]): boolean {
+    if (this.session.hasAnyRole('owner')) return true;
+    return roles.length === 0 || this.session.hasAnyRole(...(roles as Role[]));
+  }
+
+  private cardFromRequest(r: ApprovalRequest): ApprovalCard {
+    return {
+      id: r.approval_id,
+      toolUseId: r.tool_use_id,
+      tool: r.tool,
+      risk: r.risk,
+      reason: r.reason,
+      arguments: r.arguments ?? {},
+      approverRoles: r.approver_roles ?? [],
+      status: 'pending',
+      canDecide: this.canDecide(r.approver_roles ?? []),
+      agentName: (r as ApprovalRequest & { agent_name?: string }).agent_name,
+    };
+  }
+
+  private cardFromApproval(a: Approval): ApprovalCard {
+    return {
+      id: a.id,
+      toolUseId: a.tool_use_id,
+      tool: a.tool,
+      risk: a.risk,
+      reason: a.reason,
+      arguments: a.arguments,
+      approverRoles: a.approver_roles,
+      status: a.status,
+      canDecide: a.can_decide,
+      note: a.decision_note,
+    };
+  }
+
+  /** Hội thoại đang dừng chờ duyệt: gắn thẻ duyệt vào tin cuối của agent. */
+  private attachPendingApprovals(threadId: string): void {
+    const last = this.items().at(-1);
+    if (!last || last.role !== 'assistant') return;
+    this.approvalsApi.pending(threadId).subscribe((state) => {
+      if (!state.waiting) return;
+      last.approvals = state.approvals.map((a) => this.cardFromApproval(a));
+      last.canResume = state.can_resume;
+      this.items.update((l) => [...l]);
+    });
   }
 
   private loadThreads(): void {

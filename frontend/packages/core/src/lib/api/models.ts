@@ -67,11 +67,26 @@ export interface SkillBinding {
   config: Record<string, unknown>;
 }
 
+export interface ConnectionBinding {
+  connection_id: string;
+  allowed_tools: string[];
+}
+
+export interface TeamSettings {
+  mode: 'auto' | 'fixed';
+  members: { agent_id: string; when_to_use: string }[];
+  exclude: string[];
+  max_delegations_per_run: number;
+  max_parallel: number;
+}
+
 export interface AgentSpec {
   schema_version: 2;
   name: string;
   description: string;
-  graph_type: 'react';
+  graph_type: 'react' | 'supervisor';
+  when_to_use: string;
+  team?: TeamSettings | null;
   model: {
     provider: 'anthropic' | 'fake';
     model: string;
@@ -85,6 +100,7 @@ export interface AgentSpec {
   opening_statement: string;
   starter_prompts: string[];
   skills: SkillBinding[];
+  connections: ConnectionBinding[];
   knowledge_bases: string[];
   limits: {
     max_iterations: number;
@@ -165,6 +181,10 @@ export type RunEventName =
   | 'thinking'
   | 'tool_start'
   | 'tool_end'
+  | 'approval_required'
+  | 'delegation_start'
+  | 'delegation_progress'
+  | 'delegation_end'
   | 'usage'
   | 'error'
   | 'done';
@@ -180,6 +200,7 @@ export function defaultSpec(): AgentSpec {
     name: '',
     description: '',
     graph_type: 'react',
+    when_to_use: '',
     model: {
       provider: 'anthropic',
       model: 'claude-opus-5-5',
@@ -193,6 +214,7 @@ export function defaultSpec(): AgentSpec {
     opening_statement: '',
     starter_prompts: [],
     skills: [],
+    connections: [],
     knowledge_bases: [],
     limits: { max_iterations: 10, timeout_s: 120, max_tokens_per_run: 200000 },
     approval: { require_for: ['destructive', 'external_send'] },
@@ -209,6 +231,7 @@ export interface ClarifyQuestion {
 
 export interface Permission {
   skill: string;
+  connection?: string;
   tool: string;
   risk: RiskLevel;
   status: 'active' | 'needs_approval';
@@ -269,3 +292,122 @@ export type CommandResult =
   | { kind: 'navigate'; url: string }
   | { kind: 'result'; text: string }
   | { kind: 'error'; text: string };
+
+// ---------------------------------------------------------------- connections + HITL (Phase 3a)
+export interface ConnectorInfo {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  config_schema: JsonSchema;
+  secrets: string[];
+  tools: ToolSpec[];
+  ui_hints: Record<string, unknown>;
+}
+
+export interface JsonSchema {
+  type?: string;
+  title?: string;
+  description?: string;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  enum?: unknown[];
+  default?: unknown;
+  items?: JsonSchema;
+  minimum?: number;
+  maximum?: number;
+}
+
+export type ConnectionScope = 'personal' | 'workspace';
+
+export interface ConnectionInfo {
+  id: string;
+  name: string;
+  connector_id: string;
+  scope: ConnectionScope;
+  owner_id: string;
+  config: Record<string, unknown>;
+  secret_keys: string[];
+  status: 'active' | 'disabled';
+  last_test_ok: boolean | null;
+  last_test_note: string | null;
+  last_test_at: string | null;
+  created_at: string;
+  updated_at: string;
+  can_manage: boolean;
+  can_use: boolean;
+}
+
+export interface CreateConnection {
+  name: string;
+  connector_id: string;
+  scope: ConnectionScope;
+  config: Record<string, unknown>;
+  secrets: Record<string, string>;
+}
+
+export interface UpdateConnection {
+  name?: string;
+  config?: Record<string, unknown>;
+  secrets?: Record<string, string>;
+  enabled?: boolean;
+}
+
+export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
+
+export interface Approval {
+  id: string;
+  thread_id: string;
+  run_id: string;
+  agent_id: string;
+  requester_id: string;
+  tool_use_id: string;
+  tool: string;
+  risk: RiskLevel;
+  reason: string;
+  arguments: Record<string, unknown>;
+  approver_roles: string[];
+  connection_id: string | null;
+  status: ApprovalStatus;
+  decided_by: string | null;
+  decision_note: string | null;
+  created_at: string;
+  decided_at: string | null;
+  can_decide: boolean;
+}
+
+/** Một mục trong sự kiện `approval_required` (SSE). */
+export interface ApprovalRequest {
+  approval_id: string;
+  tool_use_id: string;
+  api_name: string;
+  tool: string;
+  risk: RiskLevel;
+  reason: string;
+  approver_roles: string[];
+  connection_id: string | null;
+  arguments: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------- Master agent (Phase 3c)
+export interface MasterInfo {
+  agent_id: string;
+  name: string;
+  members: number;
+}
+
+export interface PendingState {
+  waiting: boolean;
+  can_resume: boolean;
+  approvals: Approval[];
+}
+
+export function defaultTeam(): TeamSettings {
+  return {
+    mode: 'auto',
+    members: [],
+    exclude: [],
+    max_delegations_per_run: 8,
+    max_parallel: 3,
+  };
+}

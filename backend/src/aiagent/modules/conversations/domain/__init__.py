@@ -15,6 +15,14 @@ class RunStatus(StrEnum):
     FAILED = "failed"
     REFUSED = "refused"
     CANCELLED = "cancelled"
+    AWAITING_APPROVAL = "awaiting_approval"
+
+
+class ApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+    EXPIRED = "expired"
 
 
 @dataclass(frozen=True)
@@ -49,6 +57,57 @@ class Run:
     usage: Usage = field(default_factory=Usage)
     cost_usd: float = 0.0
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class Approval:
+    """Yêu cầu duyệt một tool_use (ADR-0016)."""
+
+    id: UUID
+    tenant_id: str
+    thread_id: UUID
+    run_id: UUID
+    agent_id: UUID
+    requester_id: str
+    tool_use_id: str
+    tool: str
+    risk: str
+    reason: str
+    arguments: dict[str, Any]
+    approver_roles: list[str]
+    connection_id: str | None
+    status: ApprovalStatus
+    decided_by: str | None
+    decision_note: str | None
+    created_at: datetime
+    decided_at: datetime | None
+
+
+class DelegationStatus(StrEnum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    AWAITING_APPROVAL = "awaiting_approval"
+
+
+@dataclass(frozen=True)
+class Delegation:
+    """Một lần Master giao việc cho agent khác (ADR-0017)."""
+
+    id: UUID
+    tenant_id: str
+    parent_thread_id: UUID
+    parent_run_id: UUID
+    tool_use_id: str
+    agent_id: UUID
+    task: str
+    child_thread_id: UUID | None
+    child_run_id: UUID | None
+    status: DelegationStatus
+    result: str | None
+    tainted: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class ConversationRepositoryPort(Protocol):
@@ -99,9 +158,80 @@ class ConversationRepositoryPort(Protocol):
         error: str | None,
     ) -> None: ...
 
+    async def create_approvals(
+        self,
+        tenant_id: str,
+        thread_id: UUID,
+        run_id: UUID,
+        agent_id: UUID,
+        requester_id: str,
+        requests: list[dict[str, Any]],
+    ) -> list[Approval]: ...
+
+    async def get_approval(self, tenant_id: str, approval_id: UUID) -> Approval | None: ...
+
+    async def list_approvals(
+        self,
+        tenant_id: str,
+        *,
+        status: ApprovalStatus | None,
+        requester_id: str | None,
+        thread_id: UUID | None,
+        limit: int,
+    ) -> list[Approval]: ...
+
+    async def decide_approval(
+        self,
+        tenant_id: str,
+        approval_id: UUID,
+        status: ApprovalStatus,
+        decided_by: str,
+        note: str | None,
+    ) -> Approval | None:
+        """Chỉ đổi được khi đang pending (None nếu đã có người quyết định trước)."""
+        ...
+
+    async def approvals_for_tool_uses(
+        self, tenant_id: str, thread_id: UUID, tool_use_ids: list[str]
+    ) -> list[Approval]: ...
+
+    async def expire_pending(self, tenant_id: str, thread_id: UUID) -> int: ...
+
+    async def create_delegation(
+        self,
+        tenant_id: str,
+        parent_thread_id: UUID,
+        parent_run_id: UUID,
+        tool_use_id: str,
+        agent_id: UUID,
+        task: str,
+    ) -> Delegation: ...
+
+    async def update_delegation(
+        self,
+        tenant_id: str,
+        delegation_id: UUID,
+        *,
+        status: DelegationStatus,
+        child_thread_id: UUID | None,
+        child_run_id: UUID | None,
+        result: str | None,
+        tainted: bool,
+    ) -> None: ...
+
+    async def delegations_for_tool_uses(
+        self, tenant_id: str, parent_thread_id: UUID, tool_use_ids: list[str]
+    ) -> list[Delegation]:
+        """Mới nhất trước."""
+        ...
+
 
 __all__ = [
+    "Approval",
+    "ApprovalStatus",
     "ConversationRepositoryPort",
+    "Delegation",
+    "DelegationStatus",
     "Message",
     "Run",
     "RunStatus",

@@ -6,7 +6,13 @@ from aiagent.modules.runtime.domain.blocks import (
     text_of,
 )
 from aiagent.modules.runtime.domain.events import RunEvent, RunEventType
-from aiagent.modules.runtime.domain.loop import AgentLoopPort, LoopInput, ToolExecutorPort
+from aiagent.modules.runtime.domain.loop import (
+    AgentLoopPort,
+    Effect,
+    LoopInput,
+    ToolDecision,
+    ToolExecutorPort,
+)
 from aiagent.modules.runtime.domain.model import (
     ChatMessage,
     ChatModelPort,
@@ -36,6 +42,7 @@ __all__ = [
     "ChatMessage",
     "ChatModelPort",
     "ContentBlock",
+    "Effect",
     "LoopInput",
     "ModelEvent",
     "ModelRateLimitedError",
@@ -50,6 +57,7 @@ __all__ = [
     "TextDelta",
     "ThinkingDelta",
     "ToolCallStarted",
+    "ToolDecision",
     "ToolDefinition",
     "ToolExecutorPort",
     "TurnCompleted",

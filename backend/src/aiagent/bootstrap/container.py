@@ -19,11 +19,23 @@ from aiagent.modules.agents.infrastructure.sql_agent_repository import SqlAgentR
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.audit.infrastructure.sql_audit_log import SqlAuditLog
 from aiagent.modules.builder.application import ArchitectService, CommandService
-from aiagent.modules.builder.domain import ArchitectBrainPort, Catalog, CatalogSkill, CatalogTool
+from aiagent.modules.builder.domain import (
+    ArchitectBrainPort,
+    Catalog,
+    CatalogConnection,
+    CatalogSkill,
+    CatalogTool,
+)
 from aiagent.modules.builder.infrastructure.heuristic_brain import HeuristicArchitectBrain
 from aiagent.modules.builder.infrastructure.llm_brain import LlmArchitectBrain
 from aiagent.modules.builder.infrastructure.sql_session_repository import (
     SqlBuilderSessionRepository,
+)
+from aiagent.modules.connections.application import ConnectionService
+from aiagent.modules.connections.domain import SecretVaultPort
+from aiagent.modules.connections.infrastructure.openbao_vault import OpenBaoVault, UnconfiguredVault
+from aiagent.modules.connections.infrastructure.sql_connection_repository import (
+    SqlConnectionRepository,
 )
 from aiagent.modules.conversations.application import ConversationService
 from aiagent.modules.conversations.infrastructure.sql_conversation_repository import (
@@ -33,12 +45,18 @@ from aiagent.modules.identity.application import IdentityService
 from aiagent.modules.identity.domain import Principal, TokenVerifierPort
 from aiagent.modules.identity.infrastructure.jwks_verifier import JwksTokenVerifier
 from aiagent.modules.identity.infrastructure.sql_user_repository import SqlUserRepository
-from aiagent.modules.runtime.application import ModelRouter, RunAgentService, ToolGateway
+from aiagent.modules.runtime.application import (
+    ApprovalService,
+    ConnectionRef,
+    ModelRouter,
+    RunAgentService,
+    ToolGateway,
+)
 from aiagent.modules.runtime.domain import ChatModelPort, ModelUnavailableError
 from aiagent.modules.runtime.infrastructure.anthropic_model import AnthropicChatModel
 from aiagent.modules.runtime.infrastructure.fake_model import FakeChatModel
 from aiagent.modules.runtime.infrastructure.react_graph import LangGraphReactLoop
-from aiagent.plugin_sdk import PluginKind, ToolSpec
+from aiagent.plugin_sdk import ConnectionContext, Plugin, PluginKind, PluginManifest, ToolSpec
 from aiagent.shared_kernel.events import EventBusPort, InProcessEventBus
 
 logger = logging.getLogger(__name__)
@@ -60,20 +78,84 @@ class PluginSkillCatalog:
         return list(plugin.manifest.tools)
 
 
+class PluginConnectorLookup:
+    """`ConnectorLookupPort` trên PluginRegistry."""
+
+    def __init__(self, plugins: PluginRegistry) -> None:
+        self._plugins = plugins
+
+    def get(self, plugin_id: str) -> Plugin | None:
+        return self._plugins.get(plugin_id)
+
+    def connectors(self) -> list[PluginManifest]:
+        return [
+            m
+            for loaded in self._plugins.active()
+            if (m := loaded.manifest) is not None and m.kind is PluginKind.CONNECTOR
+        ]
+
+
+class ConnectionCatalogAdapter:
+    """`ConnectionCatalogPort` (agents) trên ConnectionService + PluginRegistry."""
+
+    def __init__(self, service: ConnectionService, plugins: PluginRegistry) -> None:
+        self._service = service
+        self._plugins = plugins
+
+    async def tools_for(self, principal: Principal, connection_id: str) -> list[ToolSpec] | None:
+        found = await self._service.usable(principal, [connection_id])
+        if not found:
+            return None
+        plugin = self._plugins.get(found[0].connector_id)
+        return list(plugin.manifest.tools) if plugin is not None else None
+
+
+class ConnectionAccessAdapter:
+    """Credential Broker cho runtime (`ConnectionAccessPort`) trên ConnectionService."""
+
+    def __init__(self, service: ConnectionService) -> None:
+        self._service = service
+
+    async def usable(self, principal: Principal, connection_ids: list[str]) -> list[ConnectionRef]:
+        found = await self._service.usable(principal, connection_ids)
+        return [ConnectionRef(str(c.id), c.name, c.connector_id) for c in found]
+
+    async def open(self, principal: Principal, connection_id: str) -> ConnectionContext:
+        return await self._service.open(principal, connection_id)
+
+
 _MODEL_PREFERENCE = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "fake-echo")
 
 
 class PluginCatalogProvider:
-    """Catalog cho Architect: skill đang hoạt động + model có provider đã cấu hình.
-
-    Phase 3 sẽ lọc thêm theo connection/KB mà người tạo có quyền.
+    """Catalog cho Architect: skill đang hoạt động, model có provider đã cấu hình và các
+    connection người tạo được dùng (ADR-0016). KB: Phase 4.
     """
 
-    def __init__(self, plugins: PluginRegistry, router: ModelRouter) -> None:
+    def __init__(
+        self,
+        plugins: PluginRegistry,
+        router: ModelRouter,
+        connections: ConnectionService | None = None,
+    ) -> None:
         self._plugins = plugins
         self._router = router
+        self._connections = connections
 
-    def catalog_for(self, principal: Principal) -> Catalog:
+    async def _connections_for(self, principal: Principal) -> list[CatalogConnection]:
+        if self._connections is None:
+            return []
+        out = []
+        for c in await self._connections.list_visible(principal):
+            plugin = self._plugins.get(c.connector_id)
+            if plugin is None or not self._connections.can_use(principal, c):
+                continue
+            m = plugin.manifest
+            tools = [CatalogTool(t.name, t.description, t.risk.value) for t in m.tools]
+            out.append(CatalogConnection(str(c.id), c.name, c.connector_id, m.name, tools))
+        return out
+
+    async def catalog_for(self, principal: Principal) -> Catalog:
         skills = [
             CatalogSkill(
                 id=m.id,
@@ -87,7 +169,11 @@ class PluginCatalogProvider:
         configured = set(self._router.providers)
         allowed = {m for p, ms in ALLOWED_MODELS.items() if p in configured for m in ms}
         models = [m for m in _MODEL_PREFERENCE if m in allowed]
-        return Catalog(skills=sorted(skills, key=lambda s: s.id), models=models)
+        return Catalog(
+            skills=sorted(skills, key=lambda s: s.id),
+            models=models,
+            connections=await self._connections_for(principal),
+        )
 
 
 class _UnavailableStructuredModel:
@@ -127,6 +213,8 @@ class Container:
     agents: AgentService
     conversations: ConversationService
     runs: RunAgentService
+    approvals: ApprovalService
+    connections: ConnectionService
     model_router: ModelRouter
     architect: ArchitectService
     commands: CommandService
@@ -178,18 +266,43 @@ def build_container(settings: Settings) -> Container:
     async def redis_ok() -> bool:
         return bool(await cast("Awaitable[bool]", redis.ping()))
 
-    plugins = PluginRegistry(disabled=settings.plugins_disabled)
+    plugins = PluginRegistry(disabled=settings.plugins_disabled, config=settings.plugin_config)
     plugins.load_all()
 
     audit = AuditService(SqlAuditLog(db))
-    agents = AgentService(SqlAgentRepository(db), PluginSkillCatalog(plugins))
     conversations = ConversationService(SqlConversationRepository(db))
+    vault: SecretVaultPort = UnconfiguredVault()
+    health_checks: dict[str, HealthCheck] = {"database": db.ping, "redis": redis_ok}
+    if settings.openbao_token is not None and settings.openbao_token.get_secret_value():
+        bao = OpenBaoVault(
+            settings.openbao_addr,
+            settings.openbao_token.get_secret_value(),
+            http,
+            mount=settings.openbao_kv_mount,
+        )
+        vault = bao
+        health_checks["vault"] = bao.ping
+    else:
+        logger.warning("Chưa cấu hình OpenBao — không tạo được kết nối có secret")
+    connections = ConnectionService(
+        SqlConnectionRepository(db), vault, PluginConnectorLookup(plugins), audit
+    )
+    agents = AgentService(
+        SqlAgentRepository(db),
+        PluginSkillCatalog(plugins),
+        connections=ConnectionCatalogAdapter(connections, plugins),
+    )
     providers = build_model_providers(settings)
     router = ModelRouter(providers)
     runs = RunAgentService(
         agents=agents,
         conversations=conversations,
-        gateway=ToolGateway(plugins, audit, timeout_s=settings.tool_timeout_seconds),
+        gateway=ToolGateway(
+            plugins,
+            audit,
+            timeout_s=settings.tool_timeout_seconds,
+            access=ConnectionAccessAdapter(connections),
+        ),
         router=router,
         loop=LangGraphReactLoop(),
         audit=audit,
@@ -199,7 +312,7 @@ def build_container(settings: Settings) -> Container:
         brain=build_architect_brain(settings, providers),
         agents=agents,
         runs=runs,
-        catalog=PluginCatalogProvider(plugins, router),
+        catalog=PluginCatalogProvider(plugins, router, connections),
         audit=audit,
         cost_model=settings.architect_model,
     )
@@ -221,9 +334,11 @@ def build_container(settings: Settings) -> Container:
         agents=agents,
         conversations=conversations,
         runs=runs,
+        approvals=ApprovalService(conversations.repo, audit),
+        connections=connections,
         model_router=router,
         architect=architect,
         commands=CommandService(architect, agents, audit),
-        health_checks={"database": db.ping, "redis": redis_ok},
+        health_checks=health_checks,
         closers=[db.dispose, redis.aclose, http.aclose],
     )

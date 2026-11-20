@@ -50,7 +50,7 @@ async def _sse(events: AsyncIterator[BuilderEvent]) -> AsyncIterator[str]:
 @router.post("/builder/sessions", status_code=status.HTTP_201_CREATED)
 async def create_session(body: CreateSessionIn, p: Builder, c: ContainerDep) -> dict[str, Any]:
     session = await c.architect.create_session(p, body.agent_id)
-    return c.architect.view(p, session)
+    return await c.architect.view(p, session)
 
 
 @router.get("/builder/sessions")
@@ -74,7 +74,10 @@ async def list_sessions(p: Builder, c: ContainerDep) -> list[dict[str, Any]]:
 @router.get("/builder/sessions/{session_id}")
 async def get_session(session_id: UUID, p: Builder, c: ContainerDep) -> dict[str, Any]:
     session = await c.architect.owned(p, session_id)
-    return {**c.architect.view(p, session), "messages": await c.architect.history(p, session_id)}
+    return {
+        **(await c.architect.view(p, session)),
+        "messages": await c.architect.history(p, session_id),
+    }
 
 
 @router.post(

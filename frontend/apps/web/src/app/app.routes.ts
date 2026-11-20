@@ -48,6 +48,18 @@ export const appRoutes: Route[] = [
           import('./pages/agents/agent-chat').then((m) => m.AgentChat),
       },
       {
+        path: 'connections',
+        title: 'Kết nối',
+        loadComponent: () =>
+          import('./pages/connections/connections').then((m) => m.Connections),
+      },
+      {
+        path: 'approvals',
+        title: 'Duyệt thao tác',
+        loadComponent: () =>
+          import('./pages/approvals/approvals').then((m) => m.Approvals),
+      },
+      {
         path: 'plugins',
         title: 'Plugin',
         canActivate: [roleGuard('admin')],

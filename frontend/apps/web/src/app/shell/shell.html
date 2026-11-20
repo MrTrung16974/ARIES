@@ -1,45 +1,103 @@
-<div class="layout">
-  <header class="topbar">
+<div class="studio-shell">
+  <aside class="sidebar">
     <a class="brand" routerLink="/" aria-label="ARIES — trang chủ">
-      <img src="assets/brand/aries-mark-64.png" alt="" width="32" height="32" />
-      <span>ARIES</span>
+      <div class="brand-logo-wrap">
+        <img
+          src="assets/brand/aries-mark-v3.png?v=aries4"
+          alt="ARIES"
+          width="38"
+          height="38"
+        />
+      </div>
+      <div class="brand-text">
+        <span class="brand-name">ARIES</span>
+        <span class="brand-sub">AI Agent Studio</span>
+      </div>
     </a>
-    <nav class="nav" aria-label="Điều hướng chính">
+
+    <nav class="side-nav" aria-label="Điều hướng chính">
       @for (item of nav(); track item.link) {
-      <a
-        [routerLink]="item.link"
-        routerLinkActive="active"
-        [routerLinkActiveOptions]="{ exact: item.link === '/' }"
-      >
-        <mat-icon class="sm" [svgIcon]="item.icon" aria-hidden="true" />
-        {{ item.label }}
-      </a>
+        <a
+          [routerLink]="item.link"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: item.link === '/' }"
+        >
+          <mat-icon class="sm" [svgIcon]="item.icon" aria-hidden="true" />
+          <span>{{ item.label }}</span>
+        </a>
       }
     </nav>
-    @if (session.hasAnyRole('builder', 'admin')) {
-    <button
-      type="button"
-      class="kbd"
-      (click)="bar.toggle()"
-      title="Command bar"
-    >
-      <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" /> Ctrl K
-    </button>
-    }
-    <div class="user">
-      @if (session.me(); as me) {
-      <span class="name">{{ session.displayName() }}</span>
-      @for (role of me.roles; track role) {
-      <ui-tag [value]="role" severity="secondary" />
-      } }
-      <button mat-button class="logout" type="button" (click)="logout()">
-        <mat-icon svgIcon="logout" />
-        Đăng xuất
-      </button>
+
+    <div class="side-footer">
+      @if (session.hasAnyRole('builder', 'admin')) {
+        <button
+          type="button"
+          class="side-card-btn"
+          (click)="bar.toggle()"
+          title="Mở bảng lệnh nhanh (Ctrl+K)"
+        >
+          <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+          <span>Lệnh nhanh</span>
+          <kbd>Ctrl K</kbd>
+        </button>
+      }
+
+      <div class="side-meter">
+        <div class="meter-row">
+          <span>ARIES Core</span>
+          <button
+            type="button"
+            class="theme-chip"
+            (click)="toggleTheme()"
+            [attr.aria-label]="
+              darkMode()
+                ? 'Chuyển sang giao diện sáng'
+                : 'Chuyển sang giao diện đêm sao'
+            "
+          >
+            <mat-icon
+              class="sm"
+              [svgIcon]="darkMode() ? 'light_mode' : 'dark_mode'"
+              aria-hidden="true"
+            />
+            <span>{{ darkMode() ? 'Đêm sao' : 'Sáng' }}</span>
+          </button>
+        </div>
+        <div class="meter-track">
+          <div class="meter-fill"></div>
+        </div>
+      </div>
+
+      <div class="user-card">
+        <span class="avatar" aria-hidden="true">{{ userInitial() }}</span>
+        @if (session.me(); as me) {
+          <div class="user-info">
+            <span class="name">{{ session.displayName() }}</span>
+            <span class="sub">{{ me.email || me.roles.join(' · ') }}</span>
+          </div>
+        } @else {
+          <div class="user-info">
+            <span class="name">Tài khoản</span>
+            <span class="sub">Đang kết nối…</span>
+          </div>
+        }
+        <button
+          type="button"
+          class="logout-icon"
+          (click)="logout()"
+          title="Đăng xuất"
+          aria-label="Đăng xuất"
+        >
+          <mat-icon class="sm" svgIcon="logout" aria-hidden="true" />
+        </button>
+      </div>
     </div>
-  </header>
-  <main class="content">
-    <router-outlet />
-  </main>
+  </aside>
+
+  <div class="workspace">
+    <main class="content">
+      <router-outlet />
+    </main>
+  </div>
 </div>
 <app-command-bar #bar />

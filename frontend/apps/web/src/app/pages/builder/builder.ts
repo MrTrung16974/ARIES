@@ -11,7 +11,7 @@ import {
   TemplateRef,
   viewChild,
 } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import {
   BuilderApi,
@@ -60,6 +60,7 @@ const RISK_LABEL: Record<string, string> = {
   selector: 'app-builder',
   imports: [
     FormsModule,
+    ReactiveFormsModule,
     RouterLink,
     MatButtonModule,
     MatCheckboxModule,
@@ -111,7 +112,8 @@ export class Builder implements OnInit, OnDestroy {
   protected readonly error = signal<string | null>(null);
   protected readonly cost = signal<number | null>(null);
 
-  protected input = '';
+  // FormControl ghi thẳng vào DOM (xóa ô nhập chắc chắn trong chế độ zoneless).
+  protected readonly inputCtrl = new FormControl('', { nonNullable: true });
   protected answers: Record<string, string> = {};
   protected override = false;
   protected tabIndex = 0;
@@ -145,7 +147,7 @@ export class Builder implements OnInit, OnDestroy {
         });
         const first = this.q()?.trim();
         if (first) {
-          this.input = first;
+          this.inputCtrl.setValue(first);
           void this.send();
         } else if (s.spec) {
           this.items.set([
@@ -193,9 +195,9 @@ export class Builder implements OnInit, OnDestroy {
   }
 
   protected async send(): Promise<void> {
-    const message = this.input.trim();
-    if (!message || this.busy()) return;
-    this.input = '';
+    const message = this.inputCtrl.value.trim();
+    if (!message || this.busy() || !this.view()) return;
+    this.inputCtrl.setValue('');
     await this.run({ message }, message);
   }
 
