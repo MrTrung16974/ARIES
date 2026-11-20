@@ -3,12 +3,20 @@ import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
-import { RouterLink } from '@angular/router';
+import { MatInputModule } from '@angular/material/input';
+import { Router, RouterLink } from '@angular/router';
 import { AgentsApi, AgentSummary, SessionService } from '@aiagent/core';
 import { Tag } from '@aiagent/ui';
 
 type FilterMode = 'all' | 'published' | 'draft';
+
+const IDEA_PRESETS = [
+  'Trợ lý nội bộ trả lời giờ làm việc ở các văn phòng, ngắn gọn, không bàn chuyện chính trị',
+  'Trợ lý CSKH giải đáp chính sách bảo hành & đổi trả, lịch sự, không tự ý hứa hoàn tiền',
+  'Trợ lý IT Helpdesk hướng dẫn xử lý sự cố mạng và tài khoản nội bộ theo từng bước',
+];
 
 @Component({
   selector: 'app-agents-list',
@@ -18,7 +26,9 @@ type FilterMode = 'all' | 'published' | 'draft';
     RouterLink,
     MatButtonModule,
     MatCardModule,
+    MatFormFieldModule,
     MatIcon,
+    MatInputModule,
     Tag,
   ],
   template: `
@@ -26,8 +36,8 @@ type FilterMode = 'all' | 'published' | 'draft';
       <div>
         <h1>Agent</h1>
         <p class="muted subtitle">
-          Quản lý các AI Agent đã tạo, trò chuyện thử nghiệm hoặc xuất bản cho
-          tổ chức.
+          Khởi tạo AI Agent mới bằng mô tả tự nhiên hoặc biểu mẫu, quản lý và
+          xuất bản cho tổ chức.
         </p>
       </div>
       @if (canCreate()) {
@@ -36,11 +46,64 @@ type FilterMode = 'all' | 'published' | 'draft';
             <mat-icon svgIcon="add" /> Tạo bằng form
           </a>
           <a mat-flat-button class="btn-aries" routerLink="/builder">
-            <mat-icon svgIcon="bolt" /> Tạo bằng mô tả
+            <mat-icon svgIcon="bolt" /> Mở Agent Architect
           </a>
         </div>
       }
     </div>
+
+    <!-- Khu vực Tạo Agent đặt tại Tab Agent -->
+    @if (canCreate()) {
+      <section class="ask-card">
+        <div class="ask-title">
+          <span class="icon-badge accent">
+            <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+          </span>
+          <div>
+            <label for="ask">Bạn muốn tạo AI Agent gì hôm nay?</label>
+            <p class="muted small">
+              Mô tả agent bằng lời — ARIES Architect sẽ dựng cấu hình, tự chạy
+              thử (Eval) và vận hành cho bạn. Mẹo: Ctrl+K để mở command bar.
+            </p>
+          </div>
+        </div>
+
+        <div class="ask-row">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <textarea
+              matInput
+              id="ask"
+              rows="2"
+              [(ngModel)]="idea"
+              (keydown.enter)="$event.preventDefault(); createByIdea()"
+              placeholder="Ví dụ: Trợ lý nội bộ trả lời giờ làm việc ở các văn phòng, ngắn gọn, không bàn chuyện chính trị…"
+            ></textarea>
+          </mat-form-field>
+          <button
+            mat-flat-button
+            class="btn-aries create-btn"
+            type="button"
+            [disabled]="!idea.trim()"
+            (click)="createByIdea()"
+          >
+            <mat-icon svgIcon="bolt" /> Tạo Agent
+          </button>
+        </div>
+
+        <div class="presets">
+          <span class="presets-label">
+            <mat-icon class="sm" svgIcon="play_arrow" aria-hidden="true" />
+            Thử mẫu nhanh:
+          </span>
+          @for (p of presets; track p) {
+            <button type="button" class="preset-chip" (click)="usePreset(p)">
+              <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+              <span>{{ p }}</span>
+            </button>
+          }
+        </div>
+      </section>
+    }
 
     @if (!loading() && agents().length > 0) {
       <div class="filter-bar">
@@ -108,7 +171,7 @@ type FilterMode = 'all' | 'published' | 'draft';
           </h2>
           @if (canCreate()) {
             <p class="muted">
-              Tạo agent đầu tiên bằng mô tả (Agent Architect) hoặc bằng form.
+              Nhập mô tả vào khung bên trên hoặc tạo bằng biểu mẫu để bắt đầu.
             </p>
             <div class="empty-actions">
               <a mat-flat-button class="btn-aries" routerLink="/builder">
@@ -199,9 +262,9 @@ type FilterMode = 'all' | 'published' | 'draft';
       align-items: flex-start;
       flex-wrap: wrap;
       gap: 1rem;
-      margin-bottom: 0.9rem;
+      margin-bottom: 1rem;
       h1 {
-        font-size: 1.25rem;
+        font-size: 1.35rem;
         margin: 0 0 0.15rem;
       }
       .subtitle {
@@ -216,6 +279,81 @@ type FilterMode = 'all' | 'published' | 'draft';
     }
     .pill-btn {
       border-radius: 999px !important;
+    }
+    .ask-card {
+      margin-bottom: 1.25rem;
+      padding: 1.15rem 1.25rem;
+      border-radius: var(--app-radius-xl);
+      background: var(--app-surface);
+      border: 1px solid var(--app-border-strong);
+      box-shadow: var(--app-shadow-md);
+      display: grid;
+      gap: 0.85rem;
+    }
+    .ask-title {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      label {
+        font-weight: 700;
+        display: block;
+      }
+      p {
+        margin: 0.1rem 0 0;
+      }
+    }
+    .ask-row {
+      display: flex;
+      gap: 0.6rem;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      mat-form-field {
+        flex: 1;
+        min-width: 240px;
+      }
+      .create-btn {
+        min-height: 44px;
+      }
+    }
+    .presets {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+    .presets-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--app-muted);
+    }
+    .preset-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: 1px solid var(--app-border);
+      background: var(--app-surface-2);
+      color: var(--app-text);
+      border-radius: 999px;
+      padding: 0.25rem 0.75rem;
+      font: inherit;
+      font-size: 0.76rem;
+      cursor: pointer;
+      max-width: 100%;
+      mat-icon {
+        color: var(--app-primary);
+      }
+      span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      &:hover {
+        border-color: var(--app-primary);
+        background: var(--app-highlight);
+      }
     }
     .filter-bar {
       display: flex;
@@ -349,6 +487,10 @@ type FilterMode = 'all' | 'published' | 'draft';
 export class AgentsList implements OnInit {
   private readonly api = inject(AgentsApi);
   private readonly session = inject(SessionService);
+  private readonly router = inject(Router);
+
+  protected readonly presets = IDEA_PRESETS;
+  protected idea = '';
 
   protected readonly agents = signal<AgentSummary[]>([]);
   protected readonly loading = signal(true);
@@ -383,6 +525,15 @@ export class AgentsList implements OnInit {
       complete: () => this.loading.set(false),
       error: () => this.loading.set(false),
     });
+  }
+
+  protected usePreset(preset: string): void {
+    this.idea = preset;
+  }
+
+  protected createByIdea(): void {
+    const q = this.idea.trim();
+    if (q) void this.router.navigate(['/builder'], { queryParams: { q } });
   }
 
   protected canCreate(): boolean {
