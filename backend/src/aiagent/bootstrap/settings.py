@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     oidc_issuer: str = "http://localhost:8080/realms/aiagent"
     oidc_jwks_url: str | None = None
     oidc_audience: str = "aiagent-api"
+    # Client công khai cho CLI `aiagent` (Device Authorization Grant — ADR-0022).
+    cli_client_id: str = "aiagent-cli"
     oidc_tenant_claim: str = "tenant_id"
     oidc_leeway_seconds: int = Field(default=30, ge=0, le=300)
 

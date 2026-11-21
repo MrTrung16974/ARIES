@@ -1,5 +1,6 @@
 from aiagent.modules.runtime.application.approvals import ApprovalService
 from aiagent.modules.runtime.application.model_catalog import ModelCatalog, ModelEntry
+from aiagent.modules.runtime.application.model_providers import ModelProviderService, ProviderView
 from aiagent.modules.runtime.application.router import LOCAL_PROVIDERS, ModelRouter
 from aiagent.modules.runtime.application.run_agent import (
     CompletedRun,
@@ -31,10 +32,12 @@ __all__ = [
     "McpAccessPort",
     "ModelCatalog",
     "ModelEntry",
+    "ModelProviderService",
     "ModelRouter",
     "PendingState",
     "PluginLookupPort",
     "PreparedRun",
+    "ProviderView",
     "RunAgentService",
     "ToolGateway",
     "api_tool_name",

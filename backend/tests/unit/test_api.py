@@ -33,6 +33,7 @@ from aiagent.modules.conversations.application import ConversationService
 from aiagent.modules.identity.application import IdentityService
 from aiagent.modules.identity.infrastructure.jwks_verifier import JwksTokenVerifier
 from aiagent.modules.knowledge.application import KnowledgeAccess, KnowledgeService
+from aiagent.modules.manifests.application import ManifestService
 from aiagent.modules.mcp.application import McpService
 from aiagent.modules.mcp.infrastructure.sdk_client import SdkMcpClient
 from aiagent.modules.ops.application import OpsService
@@ -283,6 +284,7 @@ async def client(
                 audit,
                 "https://aries.example",
             ),
+            manifests=ManifestService(agents, connections, knowledge, mcp, model_catalog, audit),
             automation=AutomationService(
                 sched_repo,
                 agents,
@@ -2069,3 +2071,113 @@ async def test_external_channels_mask_sensitive_output(
         headers={"Authorization": f"Bearer {key}"},
     )
     assert "[số thẻ đã ẩn]" in r.json()["answer"]
+
+
+async def test_agent_manifest_export_apply_and_templates(
+    client: httpx.AsyncClient,
+    make_token,
+    audit_log,  # type: ignore[no-untyped-def]
+) -> None:
+    import yaml
+
+    admin = auth(make_token(sub="a1", roles=["admin"]))
+    b1 = auth(make_token(sub="b1", roles=["builder"]))
+    conn = (
+        await client.post(
+            "/api/v1/connections",
+            headers=admin,
+            json={
+                "name": "DB chung",
+                "connector_id": "fakedb",
+                "scope": "workspace",
+                "config": {"host": "h"},
+                "secrets": {"password": "pw"},
+            },
+        )
+    ).json()
+    spec = {
+        **SPEC,
+        "name": "Trợ lý kho",
+        "instructions": "Tra tồn kho.",
+        "skills": [{"skill_id": "echo"}],
+        "connections": [{"connection_id": conn["id"]}],
+    }
+    agent_id = await _publish(client, make_token(sub="b1", roles=["builder"]), spec)
+
+    r = await client.get(f"/api/v1/agents/{agent_id}/export", headers=b1)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/yaml")
+    text = r.text
+    doc = yaml.safe_load(text)
+    assert doc["apiVersion"] == "aries.ai/v1" and doc["metadata"]["id"] == agent_id
+    assert doc["spec"]["connections"] == [{"connection": "DB chung"}]
+    assert conn["id"] not in text and "Tra tồn kho." in text
+    other = auth(make_token(sub="b2", roles=["builder"]))
+    assert (await client.get(f"/api/v1/agents/{agent_id}/export", headers=other)).status_code == 404
+
+    async def apply(manifest: str, headers: dict[str, str] = b1, **kw: bool) -> httpx.Response:
+        return await client.post(
+            "/api/v1/agents/apply", headers=headers, json={"manifest": manifest, **kw}
+        )
+
+    assert (await apply(text, dry_run=True)).json()["action"] == "unchanged"
+    doc["spec"]["instructions"] = "Tra tồn kho và báo giá."
+    edited = yaml.safe_dump(doc, allow_unicode=True)
+    plan = (await apply(edited, dry_run=True)).json()
+    assert plan == {
+        "action": "update",
+        "agent_id": agent_id,
+        "version": None,
+        "changed": ["instructions"],
+        "published": False,
+        "dry_run": True,
+    }
+    r = await apply(edited, publish=True)
+    assert r.json()["version"] == 2 and r.json()["published"] is True
+    detail = (await client.get(f"/api/v1/agents/{agent_id}", headers=b1)).json()
+    assert detail["published_version"] == 2
+    assert (await apply(edited)).json()["action"] == "unchanged"  # không tạo version rỗng
+    r = await apply(edited, headers=other)
+    assert r.status_code == 409  # metadata.id của agent người khác
+
+    # Không có id, tên mới → tạo mới (môi trường khác)
+    fresh = {
+        **doc,
+        "metadata": {"name": "Trợ lý kho 2"},
+        "spec": {**doc["spec"], "name": "Trợ lý kho 2"},
+    }
+    r = await apply(yaml.safe_dump(fresh, allow_unicode=True))
+    assert r.json()["action"] == "create" and r.json()["agent_id"] != agent_id
+
+    bad_ref = {
+        **fresh,
+        "spec": {**fresh["spec"], "name": "X", "connections": [{"connection": "Không có"}]},
+    }
+    r = await apply(yaml.safe_dump(bad_ref, allow_unicode=True))
+    assert r.status_code == 422 and "spec.connections[0]" in r.text
+    for broken, hint in (
+        ("apiVersion: aries.ai/v1\nkind: Agent\nspec: [1", "YAML"),
+        ("!!python/object/apply:os.system ['echo hi']", "YAML"),
+        ("apiVersion: v0\nkind: Agent\nspec: {}", "apiVersion"),
+        (
+            "apiVersion: aries.ai/v1\nkind: Agent\nspec: {name: X, limits: {max_iterations: 999}}",
+            "spec.limits.max_iterations",
+        ),
+    ):
+        r = await apply(broken)
+        assert r.status_code == 422 and hint in r.text, (broken, r.text)
+
+    templates = (await client.get("/api/v1/templates", headers=b1)).json()
+    assert {"cskh", "hr", "it-helpdesk", "research", "van-ban"} <= {t["id"] for t in templates}
+    r = await client.post("/api/v1/templates/cskh/use", headers=b1)
+    assert r.status_code == 201, r.text
+    made = (await client.get(f"/api/v1/agents/{r.json()['agent_id']}", headers=b1)).json()
+    assert made["status"] == "draft" and made["current"]["spec"]["model"]["provider"] == "fake"
+    assert made["current"]["spec"]["data_classification"] == "public"
+    assert (await client.post("/api/v1/templates/khong-co/use", headers=b1)).status_code == 404
+    assert (
+        await client.post("/api/v1/templates/cskh/use", headers=auth(make_token(sub="u1")))
+    ).status_code == 403
+
+    cfg = (await client.get("/api/v1/cli/config")).json()
+    assert cfg["client_id"] == "aiagent-cli" and cfg["issuer"] == ISSUER
+    assert {"agent.applied", "agent.created_from_template"} <= set(audit_log.actions())

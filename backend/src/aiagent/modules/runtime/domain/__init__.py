@@ -29,6 +29,16 @@ from aiagent.modules.runtime.domain.model import (
     TurnCompleted,
 )
 from aiagent.modules.runtime.domain.pricing import PRICES, estimate_cost
+from aiagent.modules.runtime.domain.provider_config import (
+    PROVIDER_BY_ID,
+    PROVIDER_CATALOG,
+    ProbeResult,
+    ProviderDescriptor,
+    ProviderFactoryPort,
+    ProviderKind,
+    ProviderRecord,
+    ProviderRepositoryPort,
+)
 from aiagent.modules.runtime.domain.structured import (
     StructuredModelPort,
     StructuredRequest,
@@ -38,6 +48,8 @@ from aiagent.modules.runtime.domain.structured import (
 
 __all__ = [
     "PRICES",
+    "PROVIDER_BY_ID",
+    "PROVIDER_CATALOG",
     "AgentLoopPort",
     "ChatMessage",
     "ChatModelPort",
@@ -49,6 +61,12 @@ __all__ = [
     "ModelRequest",
     "ModelTurn",
     "ModelUnavailableError",
+    "ProbeResult",
+    "ProviderDescriptor",
+    "ProviderFactoryPort",
+    "ProviderKind",
+    "ProviderRecord",
+    "ProviderRepositoryPort",
     "RunEvent",
     "RunEventType",
     "StructuredModelPort",

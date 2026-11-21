@@ -26,6 +26,7 @@ from aiagent.modules.channels.api.telegram_router import router as telegram_rout
 from aiagent.modules.connections.api.router import router as connections_router
 from aiagent.modules.identity.api.router import router as identity_router
 from aiagent.modules.knowledge.api.router import router as knowledge_router
+from aiagent.modules.manifests.api.router import router as manifests_router
 from aiagent.modules.mcp.api.router import router as mcp_router
 from aiagent.modules.ops.api.router import router as ops_router
 from aiagent.modules.runtime.api.router import router as runtime_router
@@ -84,4 +85,5 @@ def create_app(
     app.include_router(telegram_router)
     app.include_router(telegram_public)
     app.include_router(automation_router)
+    app.include_router(manifests_router)
     return app

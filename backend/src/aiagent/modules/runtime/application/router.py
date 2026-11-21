@@ -39,3 +39,12 @@ class ModelRouter:
     @property
     def providers(self) -> list[str]:
         return sorted(self._providers)
+
+    def get(self, provider_id: str) -> ChatModelPort | None:
+        return self._providers.get(provider_id)
+
+    def set_provider(self, provider_id: str, model: ChatModelPort) -> None:
+        self._providers[provider_id] = model
+
+    def remove_provider(self, provider_id: str) -> None:
+        self._providers.pop(provider_id, None)

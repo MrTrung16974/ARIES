@@ -85,6 +85,7 @@ from aiagent.modules.knowledge.infrastructure.adapters import (
 from aiagent.modules.knowledge.infrastructure.sql_knowledge_repository import (
     SqlKnowledgeRepository,
 )
+from aiagent.modules.manifests.application import ManifestService
 from aiagent.modules.mcp.application import McpService
 from aiagent.modules.mcp.infrastructure.sdk_client import SdkMcpClient
 from aiagent.modules.mcp.infrastructure.sql_mcp_repository import SqlMcpServerRepository
@@ -282,6 +283,7 @@ class Container:
     ops: OpsService
     telegram: TelegramService
     automation: AutomationService
+    manifests: ManifestService
     model_router: ModelRouter
     model_catalog: ModelCatalog
     architect: ArchitectService
@@ -550,6 +552,7 @@ def build_container(settings: Settings) -> Container:
             audit,
             settings.public_base_url,
         ),
+        manifests=ManifestService(agents, connections, knowledge, mcp, model_catalog, audit),
         automation=AutomationService(
             SqlScheduleRepository(db),
             agents,

@@ -23,5 +23,6 @@
 | [0019](0019-knowledge-rag.md) | Kho tri thức (RAG): TEI bge-m3 tự host, pgvector + từ khóa, RRF, ACL (Phase 4) |
 | [0020](0020-publish-channels.md) | Publish: link chia sẻ, widget nhúng, API key, Telegram (Phase 5) |
 | [0021](0021-automation-triggers.md) | Tự động hóa: lịch chạy, trigger Gmail, taint/DLP (Phase 6) |
+| [0022](0022-agent-as-code.md) | Agent-as-code: manifest YAML, thư viện mẫu, CLI `aiagent` (Phase 7) |
 
 Mẫu ADR mới: Bối cảnh → Quyết định → Phương án khác → Hệ quả.

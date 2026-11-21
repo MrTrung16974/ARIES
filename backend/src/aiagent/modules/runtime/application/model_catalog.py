@@ -25,7 +25,16 @@ class ModelEntry:
 
 
 # Thứ tự ưu tiên khi chọn model mặc định (Architect).
-_PROVIDER_ORDER = ("anthropic", "gemini", "groq", "openrouter", "ollama", "fake")
+_PROVIDER_ORDER = (
+    "anthropic",
+    "openai",
+    "gemini",
+    "groq",
+    "openrouter",
+    "deepseek",
+    "ollama",
+    "fake",
+)
 _ANTHROPIC_ORDER = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
 
 
@@ -35,12 +44,32 @@ class ModelCatalog:
         allowed: Mapping[str, frozenset[str] | None],
         providers: Mapping[str, ChatModelPort],
     ) -> None:
-        self._allowed = dict(allowed)
+        self._allowed = allowed if isinstance(allowed, dict) else dict(allowed)
         self._providers = dict(providers)
 
     @property
     def allowed(self) -> dict[str, frozenset[str] | None]:
         return self._allowed
+
+    def has_provider(self, provider_id: str) -> bool:
+        return provider_id in self._providers
+
+    def set_provider(
+        self,
+        provider_id: str,
+        model: ChatModelPort,
+        models: frozenset[str] | None = None,
+    ) -> None:
+        self._providers[provider_id] = model
+        self._allowed[provider_id] = models
+
+    def remove_provider(self, provider_id: str) -> None:
+        self._providers.pop(provider_id, None)
+        if provider_id not in ("anthropic", "fake"):
+            self._allowed.pop(provider_id, None)
+
+    async def models_of(self, provider: str) -> list[str]:
+        return await self._models_of(provider)
 
     async def _models_of(self, provider: str) -> list[str]:
         static = self._allowed.get(provider)
