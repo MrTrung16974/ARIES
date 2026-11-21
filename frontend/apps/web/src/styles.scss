@@ -1009,3 +1009,158 @@ mat-icon.sm {
   button { opacity: 0.45; }
   button.on, button:hover { opacity: 1; color: var(--app-primary, #e11d74); }
 }
+
+/* Các khối dùng chung ARIES Studio (Card, Back link, Table, Segmented tabs) */
+mat-icon.xs {
+  width: 15px !important;
+  height: 15px !important;
+  font-size: 15px;
+}
+
+.panel-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-xl);
+  box-shadow: var(--app-shadow-sm);
+  padding: 1.15rem 1.25rem;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.7rem 0.25rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-muted);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--app-primary);
+    border-color: var(--app-border-strong);
+    background: var(--app-surface-2);
+  }
+}
+
+.sec-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--app-highlight);
+  border: 1px solid rgba(255, 61, 139, 0.24);
+  color: var(--app-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.danger-btn {
+  color: var(--app-danger) !important;
+  border-color: var(--app-danger-border) !important;
+}
+
+.del-icon-btn {
+  color: var(--app-muted);
+  &:hover {
+    color: var(--app-danger);
+  }
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table.aries-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+
+  th {
+    text-align: left;
+    font-size: 0.73rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--app-muted);
+    padding: 0.55rem 0.65rem;
+    background: var(--app-surface-2);
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  td {
+    padding: 0.68rem 0.65rem;
+    border-bottom: 1px solid var(--app-border);
+    vertical-align: middle;
+  }
+
+  tbody tr:hover {
+    background: var(--app-hover);
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .act {
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+.aries-sub-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--app-surface-2);
+  border: 1px solid var(--app-border);
+  flex-wrap: wrap;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--app-muted);
+    padding: 0.38rem 0.9rem;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.84rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.16s ease;
+
+    mat-icon {
+      color: var(--app-muted);
+    }
+
+    &:hover {
+      color: var(--app-text);
+    }
+
+    &.active {
+      background: var(--app-surface);
+      color: var(--app-text);
+      font-weight: 600;
+      border-color: var(--app-border);
+      box-shadow: var(--app-shadow-sm);
+
+      mat-icon {
+        color: var(--app-primary);
+      }
+    }
+  }
+}

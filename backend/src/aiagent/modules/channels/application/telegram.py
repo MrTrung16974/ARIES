@@ -34,6 +34,7 @@ from aiagent.modules.connections.domain import SecretVaultPort
 from aiagent.modules.conversations.domain import ConversationRepositoryPort
 from aiagent.modules.identity.domain import Principal
 from aiagent.shared_kernel.clock import utcnow
+from aiagent.shared_kernel.dlp import mask
 from aiagent.shared_kernel.errors import (
     ForbiddenError,
     NotFoundError,
@@ -328,7 +329,8 @@ class TelegramService:
         }
         if sources and answer.text:
             body += "\n\nNguồn: " + "; ".join(sorted(sources)[:5])
-        await reply(body)
+        _agent, version = await self._agents.resolve_for_run(principal, bot.agent_id, draft=False)
+        await reply(mask(body, version.spec.dlp))
 
     async def _new_thread(self, principal: Principal, bot: TelegramBot) -> None:
         _agent, version = await self._agents.resolve_for_run(principal, bot.agent_id, draft=False)

@@ -19,6 +19,14 @@ from aiagent.modules.agents.application import ALLOWED_MODELS, AgentService
 from aiagent.modules.agents.infrastructure.sql_agent_repository import SqlAgentRepository
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.audit.infrastructure.sql_audit_log import SqlAuditLog
+from aiagent.modules.automation.application import AutomationService
+from aiagent.modules.automation.infrastructure import (
+    ArqScheduleQueue,
+    PluginTriggerSource,
+    RuntimeRunner,
+    SqlScheduleRepository,
+    SqlTenantList,
+)
 from aiagent.modules.builder.application import ArchitectService, CommandService
 from aiagent.modules.builder.domain import (
     ArchitectBrainPort,
@@ -273,6 +281,7 @@ class Container:
     channels: ChannelService
     ops: OpsService
     telegram: TelegramService
+    automation: AutomationService
     model_router: ModelRouter
     model_catalog: ModelCatalog
     architect: ArchitectService
@@ -451,6 +460,7 @@ def build_container(settings: Settings) -> Container:
         settings.mcp_stdio_commands,
     )
     ingest_queue = ArqIngestQueue(settings.redis_url.get_secret_value())
+    schedule_queue = ArqScheduleQueue(settings.redis_url.get_secret_value())
     embedder = TeiEmbedder(settings.embedder_url, http)
     knowledge = KnowledgeService(
         SqlKnowledgeRepository(db),
@@ -540,6 +550,16 @@ def build_container(settings: Settings) -> Container:
             audit,
             settings.public_base_url,
         ),
+        automation=AutomationService(
+            SqlScheduleRepository(db),
+            agents,
+            connections,
+            RuntimeRunner(runs),
+            PluginTriggerSource(connections, plugins),
+            schedule_queue,
+            SqlTenantList(db),
+            audit,
+        ),
         model_router=router,
         model_catalog=model_catalog,
         architect=architect,
@@ -547,6 +567,7 @@ def build_container(settings: Settings) -> Container:
         health_checks=health_checks,
         closers=[
             ingest_queue.close,
+            schedule_queue.close,
             db.dispose,
             redis.aclose,
             http.aclose,

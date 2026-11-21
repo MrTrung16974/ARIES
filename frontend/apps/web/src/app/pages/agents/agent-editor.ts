@@ -110,7 +110,9 @@ export class AgentEditor implements OnInit {
   protected readonly agents = signal<AgentSummary[]>([]);
   /** Thành viên có thể chọn: agent đã publish, trừ chính nó. */
   protected readonly memberChoices = computed(() =>
-    this.agents().filter((a) => a.published_version !== null && a.id !== this.id()),
+    this.agents().filter(
+      (a) => a.published_version !== null && a.id !== this.id(),
+    ),
   );
   protected readonly connectors = signal<ConnectorInfo[]>([]);
   protected readonly mcpServers = signal<McpServerInfo[]>([]);
@@ -152,6 +154,11 @@ export class AgentEditor implements OnInit {
     { label: 'Mật (confidential)', value: 'confidential' },
     { label: 'Hạn chế (restricted) — chỉ model tự host', value: 'restricted' },
   ];
+  protected readonly dlpOptions = [
+    { label: 'Che khóa bí mật, CCCD, số thẻ', value: 'mask' },
+    { label: 'Che thêm email, số điện thoại', value: 'strict' },
+    { label: 'Không che', value: 'off' },
+  ];
   protected readonly riskLabel = RISK_LABEL;
 
   ngOnInit(): void {
@@ -159,7 +166,12 @@ export class AgentEditor implements OnInit {
     this.connectionsApi.list().subscribe((c) => this.connections.set(c));
     this.api.list().subscribe((a) => this.agents.set(a));
     this.connectionsApi.connectors().subscribe((c) => this.connectors.set(c));
-    this.mcpApi.list().subscribe({ next: (m) => this.mcpServers.set(m), error: () => undefined });
+    this.mcpApi
+      .list()
+      .subscribe({
+        next: (m) => this.mcpServers.set(m),
+        error: () => undefined,
+      });
     this.knowledgeApi.list().subscribe({
       next: (k) => this.knowledgeBases.set(k),
       error: () => undefined,
@@ -183,7 +195,10 @@ export class AgentEditor implements OnInit {
   protected set modelKey(value: string) {
     // Id model có thể chứa ':' (Ollama: qwen3:8b) — chỉ tách ở dấu ':' đầu tiên.
     const i = value.indexOf(':');
-    this.spec.model.provider = value.slice(0, i) as AgentSpec['model']['provider'];
+    this.spec.model.provider = value.slice(
+      0,
+      i,
+    ) as AgentSpec['model']['provider'];
     this.spec.model.model = value.slice(i + 1);
   }
 
@@ -223,21 +238,29 @@ export class AgentEditor implements OnInit {
       return;
     }
     const server = this.mcpServers().find((s) => s.id === id);
-    const read = (server?.tools ?? []).filter((t) => t.risk === 'read').map((t) => t.tool);
+    const read = (server?.tools ?? [])
+      .filter((t) => t.risk === 'read')
+      .map((t) => t.tool);
     this.spec.mcp_servers = [...others, { server_id: id, allowed_tools: read }];
   }
 
   protected mcpToolAllowed(id: string, tool: string): boolean {
     const b = this.spec.mcp_servers.find((m) => m.server_id === id);
-    return !!b && (b.allowed_tools.length === 0 || b.allowed_tools.includes(tool));
+    return (
+      !!b && (b.allowed_tools.length === 0 || b.allowed_tools.includes(tool))
+    );
   }
 
   protected toggleMcpTool(id: string, tool: string, on: boolean): void {
     const b = this.spec.mcp_servers.find((m) => m.server_id === id);
     if (!b) return;
-    const all = (this.mcpServers().find((s) => s.id === id)?.tools ?? []).map((t) => t.tool);
+    const all = (this.mcpServers().find((s) => s.id === id)?.tools ?? []).map(
+      (t) => t.tool,
+    );
     const current = b.allowed_tools.length ? b.allowed_tools : all;
-    const next = on ? [...new Set([...current, tool])] : current.filter((t) => t !== tool);
+    const next = on
+      ? [...new Set([...current, tool])]
+      : current.filter((t) => t !== tool);
     b.allowed_tools = next.length === all.length ? [] : next;
     if (!next.length) this.toggleMcp(id, false);
   }
@@ -277,7 +300,9 @@ export class AgentEditor implements OnInit {
   }
 
   protected toggleConnection(c: ConnectionInfo, on: boolean): void {
-    const others = this.spec.connections.filter((x) => x.connection_id !== c.id);
+    const others = this.spec.connections.filter(
+      (x) => x.connection_id !== c.id,
+    );
     if (!on) {
       this.spec.connections = others;
       return;
@@ -286,12 +311,19 @@ export class AgentEditor implements OnInit {
     const read = (this.connectorOf(c)?.tools ?? [])
       .filter((t) => t.risk === 'read')
       .map((t) => t.name);
-    this.spec.connections = [...others, { connection_id: c.id, allowed_tools: read }];
+    this.spec.connections = [
+      ...others,
+      { connection_id: c.id, allowed_tools: read },
+    ];
   }
 
   protected connToolAllowed(connectionId: string, tool: string): boolean {
-    const b = this.spec.connections.find((x) => x.connection_id === connectionId);
-    return !!b && (b.allowed_tools.length === 0 || b.allowed_tools.includes(tool));
+    const b = this.spec.connections.find(
+      (x) => x.connection_id === connectionId,
+    );
+    return (
+      !!b && (b.allowed_tools.length === 0 || b.allowed_tools.includes(tool))
+    );
   }
 
   protected toggleConnTool(c: ConnectionInfo, tool: string, on: boolean): void {
@@ -299,7 +331,9 @@ export class AgentEditor implements OnInit {
     if (!b) return;
     const all = (this.connectorOf(c)?.tools ?? []).map((t) => t.name);
     const current = b.allowed_tools.length ? b.allowed_tools : all;
-    const next = on ? [...new Set([...current, tool])] : current.filter((t) => t !== tool);
+    const next = on
+      ? [...new Set([...current, tool])]
+      : current.filter((t) => t !== tool);
     b.allowed_tools = next.length === all.length ? [] : next;
     if (!next.length) this.toggleConnection(c, false);
   }
@@ -330,6 +364,11 @@ export class AgentEditor implements OnInit {
     } catch (e) {
       this.error.set(`JSON không hợp lệ: ${String(e)}`);
     }
+  }
+
+  protected copyJson(): void {
+    void navigator.clipboard?.writeText(this.jsonText);
+    this.info.set('Đã sao chép JSON đặc tả vào bộ nhớ tạm.');
   }
 
   // ---------------------------------------------------------------- actions
@@ -385,7 +424,7 @@ export class AgentEditor implements OnInit {
 
   private load(a: AgentDetail): void {
     this.agent.set(a);
-    this.spec = structuredClone(a.current.spec);
+    this.spec = { dlp: 'mask', ...structuredClone(a.current.spec) };
     this.spec.connections ??= [];
     this.spec.mcp_servers ??= [];
     this.spec.when_to_use ??= '';

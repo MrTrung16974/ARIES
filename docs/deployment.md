@@ -129,3 +129,14 @@ API/worker **không có đường ra Internet nào ngoài Squid**:
 - Danh sách bot polling nằm ở Redis (`aries:telegram:polling`); nếu Redis mất dữ liệu, vào trang
   Chia sẻ & API bấm Tắt rồi Bật bot — mọi lần cập nhật bot polling đều tự đăng ký lại.
 - Trang **Vận hành** (`/ops`): admin/auditor xem toàn tenant; builder chỉ xem agent mình sở hữu.
+
+## 8. Phase 6 — Tự động hóa (ADR-0021)
+
+- Migration `0010` (schema `automation`): `docker compose run --rm migrate`.
+- Worker chạy cron `schedule_tick` mỗi phút (giây thứ 5) để nhận lịch đến hạn ở mọi tenant và đẩy
+  job `run_schedule`; worker tối đa 4 job song song. Worker tắt thì lịch lỡ **không chạy bù**.
+- Gmail: dùng chung OAuth Google (`OAUTH_GOOGLE_CLIENT_ID/SECRET`); connector `gmail` xin scope
+  `gmail.readonly`, `gmail.compose`, `gmail.send` — với Workspace nên đặt consent screen "Internal".
+  Ra Internet qua Squid (`.googleapis.com` đã có trong allowlist).
+- Lịch chạy không có người trực: thao tác cần duyệt tạo yêu cầu ở trang **Duyệt**; chủ lịch mở hội
+  thoại (nút "Mở hội thoại" ở trang Tự động) để chạy tiếp sau khi duyệt.

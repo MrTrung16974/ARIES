@@ -51,6 +51,7 @@ web = "aiagent_plugins.skill_web:WebSkill"
 postgres = "aiagent_plugins.connector_postgres:PostgresConnector"
 google = "aiagent_plugins.connector_oidc:GoogleAccountConnector"
 sso = "aiagent_plugins.connector_oidc:SsoProfileConnector"
+gmail = "aiagent_plugins.connector_gmail:GmailConnector"
 
 [project.scripts]
 aiagent-worker = "aiagent.workers.main:run"
@@ -141,6 +142,7 @@ source_modules = [
   "aiagent.modules.knowledge.domain",
   "aiagent.modules.channels.domain",
   "aiagent.modules.ops.domain",
+  "aiagent.modules.automation.domain",
 ]
 forbidden_modules = [
   "fastapi", "sqlalchemy", "httpx", "redis", "arq", "langgraph", "anthropic",
@@ -183,6 +185,7 @@ source_modules = [
   "aiagent.modules.knowledge",
   "aiagent.modules.channels",
   "aiagent.modules.ops",
+  "aiagent.modules.automation",
   "aiagent.modules.runtime.domain", "aiagent.modules.runtime.application",
   "aiagent.modules.runtime.api",
 ]
@@ -278,4 +281,13 @@ layers = [
   "aiagent.modules.ops.api",
   "aiagent.modules.ops.application | aiagent.modules.ops.infrastructure",
   "aiagent.modules.ops.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module automation"
+type = "layers"
+layers = [
+  "aiagent.modules.automation.api",
+  "aiagent.modules.automation.application | aiagent.modules.automation.infrastructure",
+  "aiagent.modules.automation.domain",
 ]

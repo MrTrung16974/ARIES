@@ -2,8 +2,10 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatSelectModule } from '@angular/material/select';
 import {
   AgentsApi,
   AgentSummary,
@@ -16,7 +18,7 @@ import {
   OpsUsage,
   SessionService,
 } from '@aiagent/core';
-import { Notice } from '@aiagent/ui';
+import { Notice, Severity, Tag } from '@aiagent/ui';
 
 type Tab = 'threads' | 'feedback' | 'usage';
 
@@ -27,12 +29,20 @@ const CHANNEL_LABEL: Record<OpsChannel, string> = {
   telegram: 'Telegram',
 };
 
+const CHANNEL_SEVERITY: Record<OpsChannel, Severity> = {
+  app: 'primary',
+  share: 'info',
+  api: 'warn',
+  telegram: 'success',
+};
+
 interface Group {
   key: string;
   label: string;
   runs: number;
   cost: number;
   tokens: number;
+  pct: number;
 }
 
 @Component({
@@ -42,9 +52,12 @@ interface Group {
     DecimalPipe,
     FormsModule,
     MatButtonModule,
+    MatFormFieldModule,
     MatIcon,
     MatProgressBarModule,
+    MatSelectModule,
     Notice,
+    Tag,
   ],
   template: `
     <div class="page-hero">
@@ -55,8 +68,8 @@ interface Group {
         <div class="hero-copy">
           <h1>Vận hành</h1>
           <p class="subtitle">
-            Nhật ký hội thoại mọi kênh, phản hồi của người dùng và chi phí
-            model. Mở toàn văn hội thoại của người khác được ghi audit.
+            Theo dõi nhật ký hội thoại đa kênh, phản hồi người dùng và chi phí
+            vận hành mô hình theo thời gian thực.
           </p>
         </div>
       </div>
@@ -68,78 +81,113 @@ interface Group {
           [disabled]="loading()"
           (click)="reload()"
         >
-          <mat-icon svgIcon="refresh" /> Tải lại
+          <mat-icon svgIcon="refresh" />
+          {{ loading() ? 'Đang tải…' : 'Tải lại' }}
         </button>
       </div>
     </div>
 
-    <div class="filters">
-      <label>
-        <span>Agent</span>
-        <select
-          [ngModel]="agentId()"
-          (ngModelChange)="setAgent($event)"
-          aria-label="Lọc theo agent"
-        >
-          @if (seeAll()) {
-            <option value="">Tất cả agent</option>
-          }
-          @for (a of agentOptions(); track a.id) {
-            <option [value]="a.id">{{ a.name }}</option>
-          }
-        </select>
-      </label>
-      <label>
-        <span>Kênh</span>
-        <select
-          [ngModel]="channel()"
-          (ngModelChange)="channel.set($event); reload()"
-          aria-label="Lọc theo kênh"
-        >
-          <option value="">Mọi kênh</option>
-          @for (c of channels; track c) {
-            <option [value]="c">{{ label(c) }}</option>
-          }
-        </select>
-      </label>
-      <label>
-        <span>Thời gian</span>
-        <select
-          [ngModel]="days()"
-          (ngModelChange)="days.set(+$event); reload()"
-          aria-label="Khoảng thời gian"
-        >
-          <option [value]="1">24 giờ</option>
-          <option [value]="7">7 ngày</option>
-          <option [value]="30">30 ngày</option>
-          <option [value]="90">90 ngày</option>
-        </select>
-      </label>
-      <div class="sub-tabs" role="tablist" aria-label="Mục">
+    <div class="flow-info-strip">
+      <mat-icon class="sm" svgIcon="shield" aria-hidden="true" />
+      <span>
+        Mọi thao tác mở xem toàn văn hội thoại của người dùng khác đều được hệ
+        thống tự động ghi nhận vào nhật ký Audit bất biến.
+      </span>
+    </div>
+
+    <div class="ops-toolbar">
+      <div class="aries-sub-tabs" role="tablist" aria-label="Mục vận hành">
         <button
           type="button"
           role="tab"
+          [attr.aria-selected]="tab() === 'threads'"
           [class.active]="tab() === 'threads'"
           (click)="setTab('threads')"
         >
+          <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
           Hội thoại
         </button>
         <button
           type="button"
           role="tab"
+          [attr.aria-selected]="tab() === 'feedback'"
           [class.active]="tab() === 'feedback'"
           (click)="setTab('feedback')"
         >
+          <mat-icon class="sm" svgIcon="thumb_up" aria-hidden="true" />
           Phản hồi
         </button>
         <button
           type="button"
           role="tab"
+          [attr.aria-selected]="tab() === 'usage'"
           [class.active]="tab() === 'usage'"
           (click)="setTab('usage')"
         >
-          Chi phí
+          <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+          Chi phí &amp; Token
         </button>
+      </div>
+
+      <div class="filter-controls">
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="filter-field"
+        >
+          <mat-icon matPrefix class="sm" svgIcon="robot_2" />
+          <mat-label>Agent</mat-label>
+          <mat-select
+            [ngModel]="agentId()"
+            (ngModelChange)="setAgent($event)"
+            aria-label="Lọc theo agent"
+          >
+            @if (seeAll()) {
+              <mat-option value="">Tất cả agent</mat-option>
+            }
+            @for (a of agentOptions(); track a.id) {
+              <mat-option [value]="a.id">{{ a.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="filter-field"
+        >
+          <mat-icon matPrefix class="sm" svgIcon="public" />
+          <mat-label>Kênh</mat-label>
+          <mat-select
+            [ngModel]="channel()"
+            (ngModelChange)="channel.set($event); reload()"
+            aria-label="Lọc theo kênh"
+          >
+            <mat-option value="">Mọi kênh</mat-option>
+            @for (c of channels; track c) {
+              <mat-option [value]="c">{{ label(c) }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field
+          appearance="outline"
+          subscriptSizing="dynamic"
+          class="filter-field compact"
+        >
+          <mat-icon matPrefix class="sm" svgIcon="refresh" />
+          <mat-label>Thời gian</mat-label>
+          <mat-select
+            [ngModel]="days()"
+            (ngModelChange)="days.set(+$event); reload()"
+            aria-label="Khoảng thời gian"
+          >
+            <mat-option [value]="1">24 giờ qua</mat-option>
+            <mat-option [value]="7">7 ngày qua</mat-option>
+            <mat-option [value]="30">30 ngày qua</mat-option>
+            <mat-option [value]="90">90 ngày qua</mat-option>
+          </mat-select>
+        </mat-form-field>
       </div>
     </div>
 
@@ -148,548 +196,1073 @@ interface Group {
     }
     @if (!seeAll() && agentOptions().length === 0) {
       <ui-notice severity="info"
-        >Bạn chưa sở hữu agent nào để xem nhật ký.</ui-notice
+        >Bạn chưa sở hữu agent nào để xem nhật ký vận hành.</ui-notice
       >
     }
     @if (loading()) {
-      <mat-progress-bar mode="indeterminate" />
+      <mat-progress-bar mode="indeterminate" class="ops-progress" />
     }
 
     @switch (tab()) {
       @case ('threads') {
-        <div class="split" [class.open]="!!transcript()">
-          <div class="card list">
-            @for (t of threads(); track t.id) {
-              <button
-                type="button"
-                class="row"
-                [class.sel]="transcript()?.id === t.id"
-                (click)="open(t.id)"
-              >
-                <div class="row-main">
-                  <strong>{{ t.title || '(không tiêu đề)' }}</strong>
-                  <span class="muted small">
-                    {{ agentName(t.agent_id) }} · {{ t.user_id }}
-                  </span>
-                </div>
-                <div class="row-meta">
-                  <span class="chip" [attr.data-ch]="t.channel">{{
-                    label(t.channel)
-                  }}</span>
-                  <span class="muted small"
-                    >{{ t.message_count }} tin ·
-                    {{ t.cost_usd | number: '1.2-4' }} $</span
-                  >
-                  @if (t.thumbs_down) {
-                    <span class="bad small"
-                      ><mat-icon class="xs" svgIcon="thumb_down" />
-                      {{ t.thumbs_down }}</span
-                    >
-                  }
-                  @if (t.thumbs_up) {
-                    <span class="good small"
-                      ><mat-icon class="xs" svgIcon="thumb_up" />
-                      {{ t.thumbs_up }}</span
-                    >
-                  }
-                  <span class="muted small">{{
-                    t.updated_at | date: 'dd/MM HH:mm'
-                  }}</span>
-                </div>
-              </button>
-            } @empty {
-              <p class="empty">Không có hội thoại trong khoảng này.</p>
-            }
-            @if (hasMore()) {
-              <button
-                mat-stroked-button
-                class="pill-btn more"
-                type="button"
-                (click)="loadMore()"
-              >
-                Xem thêm
-              </button>
-            }
+        <div class="kpi-strip">
+          <div class="kpi-card">
+            <span class="kpi-icon" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="forum" />
+            </span>
+            <div class="kpi-meta">
+              <span class="kpi-val">{{ threads().length | number }}</span>
+              <span class="kpi-label">Hội thoại đang hiển thị</span>
+            </div>
           </div>
+          <div class="kpi-card">
+            <span class="kpi-icon info" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="description" />
+            </span>
+            <div class="kpi-meta">
+              <span class="kpi-val">{{ threadMessagesTotal() | number }}</span>
+              <span class="kpi-label">Tổng tin nhắn</span>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-icon ok" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="thumb_up" />
+            </span>
+            <div class="kpi-meta">
+              <span class="kpi-val"
+                >{{ threadThumbsUpTotal() }} / {{ threadThumbsDownTotal() }}</span
+              >
+              <span class="kpi-label">Hữu ích / Chưa tốt</span>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-icon warn" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="bolt" />
+            </span>
+            <div class="kpi-meta">
+              <span class="kpi-val"
+                >\${{ threadCostTotal() | number: '1.2-4' }}</span
+              >
+              <span class="kpi-label">Chi phí ước tính</span>
+            </div>
+          </div>
+        </div>
 
-          @if (transcript(); as tr) {
-            <aside class="card transcript" aria-label="Toàn văn hội thoại">
-              <header>
-                <div>
-                  <strong>{{ tr.title || '(không tiêu đề)' }}</strong>
-                  <div class="muted small">
-                    {{ agentName(tr.agent_id) }} v{{ tr.agent_version }} ·
-                    {{ label(tr.channel) }} · {{ tr.user_id }}
-                  </div>
+        @if (threads().length === 0 && !loading()) {
+          <div class="empty-state-card">
+            <div class="empty-icon-ring" aria-hidden="true">
+              <mat-icon svgIcon="forum" />
+            </div>
+            <h2>Chưa có hội thoại nào trong khoảng thời gian này</h2>
+            <p>
+              Hãy thử mở rộng khoảng thời gian, đổi bộ lọc kênh hoặc chọn một
+              Agent khác để xem lịch sử tương tác.
+            </p>
+          </div>
+        } @else {
+          <div class="split" [class.open]="!!transcript()">
+            <section class="panel-card list-panel">
+              <div class="panel-header">
+                <h2 class="sec-title">
+                  <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
+                  <span>Danh sách hội thoại</span>
+                </h2>
+                <ui-tag
+                  [value]="threads().length + ' phiên'"
+                  severity="secondary"
+                />
+              </div>
+
+              <div class="thread-list">
+                @for (t of threads(); track t.id) {
+                  <button
+                    type="button"
+                    class="thread-row"
+                    [class.sel]="transcript()?.id === t.id"
+                    (click)="open(t.id)"
+                  >
+                    <div class="row-top">
+                      <strong class="row-title">{{
+                        t.title || '(Hội thoại chưa đặt tiêu đề)'
+                      }}</strong>
+                      <span class="muted small row-time">{{
+                        t.updated_at | date: 'dd/MM HH:mm'
+                      }}</span>
+                    </div>
+                    <div class="row-bottom">
+                      <span class="row-sub muted small">
+                        <mat-icon class="xs" svgIcon="robot_2" />
+                        {{ agentName(t.agent_id) }} · {{ t.user_id }}
+                      </span>
+                      <div class="row-badges">
+                        <ui-tag
+                          [value]="label(t.channel)"
+                          [severity]="channelSeverity(t.channel)"
+                        />
+                        <span class="flow-chip chip-read">
+                          {{ t.message_count }} tin
+                        </span>
+                        <span class="flow-chip chip-warn">
+                          \${{ t.cost_usd | number: '1.2-4' }}
+                        </span>
+                        @if (t.thumbs_up) {
+                          <span class="rating-pill good">
+                            <mat-icon class="xs" svgIcon="thumb_up" />
+                            {{ t.thumbs_up }}
+                          </span>
+                        }
+                        @if (t.thumbs_down) {
+                          <span class="rating-pill bad">
+                            <mat-icon class="xs" svgIcon="thumb_down" />
+                            {{ t.thumbs_down }}
+                          </span>
+                        }
+                      </div>
+                    </div>
+                  </button>
+                }
+              </div>
+
+              @if (hasMore()) {
+                <div class="list-foot">
+                  <button
+                    mat-stroked-button
+                    class="pill-btn"
+                    type="button"
+                    (click)="loadMore()"
+                  >
+                    <mat-icon svgIcon="refresh" /> Xem thêm hội thoại
+                  </button>
                 </div>
-                <button
-                  mat-icon-button
-                  type="button"
-                  aria-label="Đóng"
-                  (click)="transcript.set(null)"
-                >
-                  <mat-icon svgIcon="close" />
-                </button>
-              </header>
-              @for (m of tr.messages; track m.id) {
-                <div class="msg" [class.user]="m.role === 'user'">
-                  <div class="who small muted">
-                    {{ m.role === 'user' ? 'Người dùng' : 'Agent' }} ·
-                    {{ m.created_at | date: 'HH:mm:ss' }}
-                  </div>
-                  @for (p of m.parts; track $index) {
-                    @switch (p.type) {
-                      @case ('text') {
-                        <div class="text">{{ p.text }}</div>
-                      }
-                      @case ('tool_use') {
-                        <div class="tool">
-                          <code>{{ p.name }}</code>
-                          <code class="args">{{ p.input }}</code>
-                        </div>
-                      }
-                      @case ('tool_result') {
-                        <div class="tool result" [class.err]="p.is_error">
-                          <code>{{ p.text }}</code>
-                        </div>
-                      }
-                    }
-                  }
-                  @for (f of feedbackFor(tr, m.id); track f.user_id) {
-                    <div
-                      class="fb"
-                      [class.bad]="f.rating < 0"
-                      [class.good]="f.rating > 0"
-                    >
-                      <mat-icon
-                        class="xs"
-                        [svgIcon]="f.rating > 0 ? 'thumb_up' : 'thumb_down'"
+              }
+            </section>
+
+            @if (transcript(); as tr) {
+              <aside
+                class="panel-card transcript-panel"
+                aria-label="Toàn văn hội thoại"
+              >
+                <header class="tr-header">
+                  <div class="tr-head-copy">
+                    <div class="tr-title-row">
+                      <strong>{{
+                        tr.title || '(Hội thoại chưa đặt tiêu đề)'
+                      }}</strong>
+                      <ui-tag
+                        [value]="'v' + tr.agent_version"
+                        severity="secondary"
                       />
-                      {{ f.comment || (f.rating > 0 ? 'Hữu ích' : 'Chưa tốt') }}
+                      <ui-tag
+                        [value]="label(tr.channel)"
+                        [severity]="channelSeverity(tr.channel)"
+                      />
+                    </div>
+                    <div class="muted small">
+                      {{ agentName(tr.agent_id) }} · Người dùng:
+                      <code>{{ tr.user_id }}</code>
+                    </div>
+                  </div>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    aria-label="Đóng toàn văn"
+                    (click)="transcript.set(null)"
+                  >
+                    <mat-icon svgIcon="close" />
+                  </button>
+                </header>
+
+                <div class="tr-body">
+                  @for (m of tr.messages; track m.id) {
+                    <div
+                      class="tr-msg"
+                      [class.is-user]="m.role === 'user'"
+                      [class.is-agent]="m.role !== 'user'"
+                    >
+                      <div class="tr-who">
+                        <span class="tr-role">
+                          <mat-icon
+                            class="xs"
+                            [svgIcon]="
+                              m.role === 'user' ? 'person' : 'robot_2'
+                            "
+                          />
+                          {{ m.role === 'user' ? 'Người dùng' : 'Agent' }}
+                        </span>
+                        <span class="muted small">{{
+                          m.created_at | date: 'HH:mm:ss'
+                        }}</span>
+                      </div>
+
+                      <div class="tr-parts">
+                        @for (p of m.parts; track $index) {
+                          @switch (p.type) {
+                            @case ('text') {
+                              <div class="tr-text">{{ p.text }}</div>
+                            }
+                            @case ('tool_use') {
+                              <div class="tr-tool">
+                                <div class="tr-tool-head">
+                                  <mat-icon
+                                    class="xs"
+                                    svgIcon="deployed_code"
+                                  />
+                                  <strong>Gọi tool</strong>
+                                  <code>{{ p.name }}</code>
+                                </div>
+                                <pre class="tr-code">{{ p.input }}</pre>
+                              </div>
+                            }
+                            @case ('tool_result') {
+                              <div
+                                class="tr-tool result"
+                                [class.is-err]="p.is_error"
+                              >
+                                <div class="tr-tool-head">
+                                  <mat-icon
+                                    class="xs"
+                                    [svgIcon]="
+                                      p.is_error ? 'warning' : 'check_circle'
+                                    "
+                                  />
+                                  <strong>{{
+                                    p.is_error ? 'Lỗi tool' : 'Kết quả tool'
+                                  }}</strong>
+                                </div>
+                                <pre class="tr-code">{{ p.text }}</pre>
+                              </div>
+                            }
+                          }
+                        }
+                      </div>
+
+                      @for (f of feedbackFor(tr, m.id); track f.user_id) {
+                        <div
+                          class="tr-fb"
+                          [class.bad]="f.rating < 0"
+                          [class.good]="f.rating > 0"
+                        >
+                          <mat-icon
+                            class="xs"
+                            [svgIcon]="
+                              f.rating > 0 ? 'thumb_up' : 'thumb_down'
+                            "
+                          />
+                          <span>{{
+                            f.comment || (f.rating > 0 ? 'Hữu ích' : 'Chưa tốt')
+                          }}</span>
+                        </div>
+                      }
                     </div>
                   }
                 </div>
-              }
-            </aside>
-          }
-        </div>
+              </aside>
+            }
+          </div>
+        }
       }
 
       @case ('feedback') {
-        <div class="sub-tabs inline" role="tablist" aria-label="Lọc đánh giá">
-          <button
-            type="button"
-            [class.active]="rating() === null"
-            (click)="setRating(null)"
-          >
-            Tất cả
-          </button>
-          <button
-            type="button"
-            [class.active]="rating() === -1"
-            (click)="setRating(-1)"
-          >
-            👎 Chưa tốt
-          </button>
-          <button
-            type="button"
-            [class.active]="rating() === 1"
-            (click)="setRating(1)"
-          >
-            👍 Hữu ích
-          </button>
+        <div class="fb-filter-row">
+          <div class="aries-sub-tabs" role="tablist" aria-label="Lọc đánh giá">
+            <button
+              type="button"
+              [class.active]="rating() === null"
+              (click)="setRating(null)"
+            >
+              <mat-icon class="sm" svgIcon="dashboard" aria-hidden="true" />
+              Tất cả · {{ feedback().length }}
+            </button>
+            <button
+              type="button"
+              [class.active]="rating() === -1"
+              (click)="setRating(-1)"
+            >
+              <mat-icon class="sm" svgIcon="thumb_down" aria-hidden="true" />
+              Chưa tốt
+            </button>
+            <button
+              type="button"
+              [class.active]="rating() === 1"
+              (click)="setRating(1)"
+            >
+              <mat-icon class="sm" svgIcon="thumb_up" aria-hidden="true" />
+              Hữu ích
+            </button>
+          </div>
         </div>
-        <div class="fb-grid">
-          @for (f of feedback(); track f.id) {
-            <article class="card fb-card">
-              <header>
-                <span [class.bad]="f.rating < 0" [class.good]="f.rating > 0">
-                  <mat-icon
-                    class="xs"
-                    [svgIcon]="f.rating > 0 ? 'thumb_up' : 'thumb_down'"
-                  />
-                </span>
-                <span class="muted small">
-                  {{ agentName(f.agent_id) }} · {{ label(f.channel) }} ·
-                  {{ f.created_at | date: 'dd/MM HH:mm' }}
-                </span>
-              </header>
-              @if (f.comment) {
-                <p class="comment">“{{ f.comment }}”</p>
-              }
-              <p class="answer small">
-                {{ f.answer || '(câu trả lời không có văn bản)' }}
-              </p>
-              <button
-                mat-button
-                type="button"
-                (click)="openFromFeedback(f.thread_id)"
+
+        @if (feedback().length === 0 && !loading()) {
+          <div class="empty-state-card">
+            <div class="empty-icon-ring" aria-hidden="true">
+              <mat-icon svgIcon="thumb_up" />
+            </div>
+            <h2>Chưa có phản hồi nào</h2>
+            <p>
+              Đánh giá hữu ích hoặc góp ý từ người dùng cuối trong các phiên
+              chat sẽ xuất hiện tại đây để bạn cải thiện prompt và tri thức.
+            </p>
+          </div>
+        } @else {
+          <div class="fb-grid">
+            @for (f of feedback(); track f.id) {
+              <article
+                class="panel-card fb-card"
+                [class.is-good]="f.rating > 0"
+                [class.is-bad]="f.rating < 0"
               >
-                Xem hội thoại
-              </button>
-            </article>
-          } @empty {
-            <p class="empty">Chưa có phản hồi.</p>
-          }
-        </div>
+                <header class="fb-head">
+                  <span
+                    class="fb-icon"
+                    [class.good]="f.rating > 0"
+                    [class.bad]="f.rating < 0"
+                    aria-hidden="true"
+                  >
+                    <mat-icon
+                      class="sm"
+                      [svgIcon]="f.rating > 0 ? 'thumb_up' : 'thumb_down'"
+                    />
+                  </span>
+                  <div class="fb-meta">
+                    <div class="fb-meta-top">
+                      <strong>{{ agentName(f.agent_id) }}</strong>
+                      <ui-tag
+                        [value]="label(f.channel)"
+                        [severity]="channelSeverity(f.channel)"
+                      />
+                    </div>
+                    <span class="muted small">{{
+                      f.created_at | date: 'dd/MM/yyyy HH:mm'
+                    }}</span>
+                  </div>
+                </header>
+
+                @if (f.comment) {
+                  <blockquote class="fb-comment">
+                    “{{ f.comment }}”
+                  </blockquote>
+                }
+
+                <div class="fb-answer">
+                  <span class="fb-answer-label">Phản hồi của Agent</span>
+                  <p>{{ f.answer || '(câu trả lời không có văn bản)' }}</p>
+                </div>
+
+                <footer class="fb-foot">
+                  <button
+                    mat-stroked-button
+                    class="pill-btn"
+                    type="button"
+                    (click)="openFromFeedback(f.thread_id)"
+                  >
+                    <mat-icon svgIcon="forum" /> Xem toàn văn hội thoại
+                  </button>
+                </footer>
+              </article>
+            }
+          </div>
+        }
       }
 
       @case ('usage') {
         @if (usage(); as u) {
-          <div class="kpis">
-            <div class="card kpi">
-              <span class="muted small">Lượt chạy</span
-              ><strong>{{ u.runs | number }}</strong>
+          <div class="kpi-strip">
+            <div class="kpi-card">
+              <span class="kpi-icon" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="play_arrow" />
+              </span>
+              <div class="kpi-meta">
+                <span class="kpi-val">{{ u.runs | number }}</span>
+                <span class="kpi-label">Tổng lượt chạy</span>
+              </div>
             </div>
-            <div class="card kpi">
-              <span class="muted small">Tỉ lệ lỗi</span>
-              <strong
-                >{{
-                  u.runs
-                    ? ((u.failed_runs / u.runs) * 100 | number: '1.0-1')
-                    : 0
-                }}%</strong
+            <div class="kpi-card">
+              <span
+                class="kpi-icon"
+                [class.ok]="u.failed_runs === 0"
+                [class.warn]="u.failed_runs > 0"
+                aria-hidden="true"
               >
-            </div>
-            <div class="card kpi">
-              <span class="muted small">Token vào / ra</span>
-              <strong
-                >{{ u.input_tokens | number }} /
-                {{ u.output_tokens | number }}</strong
-              >
-            </div>
-            <div class="card kpi">
-              <span class="muted small">Chi phí ước tính</span
-              ><strong>{{ u.cost_usd | number: '1.2-4' }} $</strong>
-            </div>
-          </div>
-
-          <div class="card chart">
-            <h3>Chi phí theo ngày</h3>
-            <div
-              class="bars"
-              role="img"
-              [attr.aria-label]="
-                'Chi phí theo ngày, tổng ' + u.cost_usd + ' USD'
-              "
-            >
-              @for (d of daily(); track d.day) {
-                <div
-                  class="bar"
-                  [title]="
-                    d.day +
-                    ': ' +
-                    (d.cost | number: '1.2-4') +
-                    ' $ · ' +
-                    d.runs +
-                    ' lượt'
-                  "
+                <mat-icon
+                  class="sm"
+                  [svgIcon]="u.failed_runs > 0 ? 'warning' : 'check_circle'"
+                />
+              </span>
+              <div class="kpi-meta">
+                <span class="kpi-val"
+                  >{{
+                    u.runs
+                      ? ((u.failed_runs / u.runs) * 100 | number: '1.0-1')
+                      : 0
+                  }}%</span
                 >
-                  <span [style.height.%]="d.pct"></span>
-                </div>
-              } @empty {
-                <p class="empty">Chưa có lượt chạy.</p>
-              }
+                <span class="kpi-label"
+                  >Tỉ lệ lỗi ({{ u.failed_runs | number }} lượt)</span
+                >
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-icon info" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="database" />
+              </span>
+              <div class="kpi-meta">
+                <span class="kpi-val"
+                  >{{ u.input_tokens | number }} /
+                  {{ u.output_tokens | number }}</span
+                >
+                <span class="kpi-label">Token vào / ra</span>
+              </div>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-icon warn" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="bolt" />
+              </span>
+              <div class="kpi-meta">
+                <span class="kpi-val"
+                  >\${{ u.cost_usd | number: '1.2-4' }}</span
+                >
+                <span class="kpi-label">Chi phí ước tính</span>
+              </div>
             </div>
           </div>
 
-          <div class="groups">
-            @for (g of [byAgent(), byChannel()]; track $index) {
-              <div class="card">
-                <h3>{{ $index === 0 ? 'Theo agent' : 'Theo kênh' }}</h3>
-                <table class="simple">
-                  <thead>
-                    <tr>
-                      <th>Tên</th>
-                      <th>Lượt</th>
-                      <th>Token</th>
-                      <th>Chi phí ($)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (r of g; track r.key) {
-                      <tr>
-                        <td>{{ r.label }}</td>
-                        <td>{{ r.runs | number }}</td>
-                        <td>{{ r.tokens | number }}</td>
-                        <td>{{ r.cost | number: '1.2-4' }}</td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
+          <section class="panel-card chart-card">
+            <div class="panel-header">
+              <div>
+                <h2 class="sec-title">
+                  <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+                  <span>Biểu đồ chi phí theo ngày</span>
+                </h2>
+                <p class="muted small chart-sub">
+                  Di chuột lên từng cột để xem chi phí và số lượt chạy chi tiết
+                  của ngày đó.
+                </p>
+              </div>
+              <ui-tag
+                [value]="'Tổng: $' + (u.cost_usd | number: '1.2-4')"
+                severity="primary"
+              />
+            </div>
+
+            @if (daily().length === 0) {
+              <p class="muted small chart-empty">Chưa có dữ liệu lượt chạy.</p>
+            } @else {
+              <div
+                class="bars-wrap"
+                role="img"
+                [attr.aria-label]="
+                  'Chi phí theo ngày, tổng ' + u.cost_usd + ' USD'
+                "
+              >
+                <div class="bars">
+                  @for (d of daily(); track d.day) {
+                    <div
+                      class="bar-col"
+                      [title]="
+                        d.day +
+                        ': $' +
+                        (d.cost | number: '1.2-4') +
+                        ' · ' +
+                        d.runs +
+                        ' lượt'
+                      "
+                    >
+                      <div class="bar-track">
+                        <span
+                          class="bar-fill"
+                          [class.has-val]="d.cost > 0"
+                          [style.height.%]="d.pct"
+                        ></span>
+                      </div>
+                      @if (showDateTick($index, daily().length)) {
+                        <span class="bar-tick">{{ d.day.slice(5) }}</span>
+                      }
+                    </div>
+                  }
+                </div>
               </div>
             }
+          </section>
+
+          <div class="groups">
+            @for (
+              section of [
+                { title: 'Phân bổ theo Agent', icon: 'robot_2', rows: byAgent() },
+                { title: 'Phân bổ theo Kênh', icon: 'public', rows: byChannel() }
+              ];
+              track section.title
+            ) {
+              <section class="panel-card">
+                <div class="panel-header">
+                  <h2 class="sec-title">
+                    <mat-icon
+                      class="sm"
+                      [svgIcon]="section.icon"
+                      aria-hidden="true"
+                    />
+                    <span>{{ section.title }}</span>
+                  </h2>
+                  <ui-tag
+                    [value]="section.rows.length + ' mục'"
+                    severity="secondary"
+                  />
+                </div>
+
+                @if (section.rows.length === 0) {
+                  <p class="muted small table-empty">Chưa có dữ liệu phát sinh.</p>
+                } @else {
+                  <div class="table-wrap">
+                    <table class="aries-table">
+                      <thead>
+                        <tr>
+                          <th>Tên</th>
+                          <th class="num">Lượt</th>
+                          <th class="num">Token</th>
+                          <th class="num">Chi phí ($)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (r of section.rows; track r.key) {
+                          <tr>
+                            <td>
+                              <div class="cell-name">
+                                <strong>{{ r.label }}</strong>
+                                <div class="share-track" aria-hidden="true">
+                                  <span
+                                    class="share-fill"
+                                    [style.width.%]="r.pct"
+                                  ></span>
+                                </div>
+                              </div>
+                            </td>
+                            <td class="num">{{ r.runs | number }}</td>
+                            <td class="num">{{ r.tokens | number }}</td>
+                            <td class="num cost-cell">
+                              \${{ r.cost | number: '1.2-4' }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                }
+              </section>
+            }
+          </div>
+        } @else if (!loading()) {
+          <div class="empty-state-card">
+            <div class="empty-icon-ring" aria-hidden="true">
+              <mat-icon svgIcon="bolt" />
+            </div>
+            <h2>Chưa có dữ liệu chi phí</h2>
+            <p>
+              Số liệu lượt chạy, token tiêu thụ và chi phí ước tính sẽ hiển thị
+              ngay khi các Agent bắt đầu hoạt động.
+            </p>
           </div>
         }
       }
     }
   `,
   styles: `
-    .filters {
+    .ops-toolbar {
       display: flex;
+      justify-content: space-between;
+      align-items: center;
       flex-wrap: wrap;
-      gap: 0.75rem;
-      align-items: flex-end;
-      margin-bottom: 0.9rem;
-    }
-    .filters label {
-      display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-      font-size: 0.78rem;
-      color: var(--app-muted);
-    }
-    .filters select {
-      font: inherit;
-      font-size: 0.86rem;
-      padding: 0.35rem 0.6rem;
-      border-radius: 10px;
-      border: 1px solid var(--app-border);
-      background: var(--app-surface);
-      color: var(--app-text);
-      min-width: 10rem;
-    }
-    .sub-tabs {
-      display: flex;
-      gap: 0.35rem;
-      margin-left: auto;
-      flex-wrap: wrap;
-    }
-    .sub-tabs.inline {
-      margin: 0 0 0.75rem;
-    }
-    .sub-tabs button {
-      border: 1px solid transparent;
-      background: transparent;
-      color: var(--app-muted);
-      padding: 0.35rem 0.85rem;
-      border-radius: 999px;
-      font: inherit;
-      font-size: 0.84rem;
-      cursor: pointer;
-    }
-    .sub-tabs button.active {
-      background: var(--app-surface);
-      color: var(--app-text);
-      font-weight: 600;
-      border-color: var(--app-border);
-      box-shadow: var(--app-shadow-sm);
-    }
-    .card {
-      background: var(--app-surface);
-      border: 1px solid var(--app-border);
+      gap: 0.85rem;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.15rem;
       border-radius: var(--app-radius-xl);
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
       box-shadow: var(--app-shadow-sm);
-      padding: 0.9rem;
     }
-    .card h3 {
-      margin: 0 0 0.6rem;
-      font-size: 0.92rem;
+    .filter-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex-wrap: wrap;
     }
+    .filter-field {
+      width: 185px;
+      &.compact {
+        width: 160px;
+      }
+    }
+    .ops-progress {
+      border-radius: 999px;
+      margin-bottom: 1rem;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.9rem;
+      h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+    }
+
+    /* Master-detail threads */
     .split {
       display: grid;
-      gap: 0.9rem;
+      gap: 1rem;
       grid-template-columns: 1fr;
+      align-items: start;
+      &.open {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      }
     }
-    .split.open {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-    }
-    @media (max-width: 960px) {
+    @media (max-width: 980px) {
       .split.open {
         grid-template-columns: 1fr;
       }
     }
-    .list {
-      padding: 0.35rem;
+    .list-panel {
+      padding: 1rem;
+    }
+    .thread-list {
       display: flex;
       flex-direction: column;
+      gap: 0.45rem;
     }
-    .row {
+    .thread-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      width: 100%;
+      text-align: left;
+      padding: 0.75rem 0.9rem;
+      border-radius: var(--app-radius-lg);
+      border: 1px solid var(--app-border);
+      background: var(--app-surface-2);
+      color: var(--app-text);
+      font: inherit;
+      cursor: pointer;
+      transition: all 0.16s ease;
+      &:hover {
+        border-color: var(--app-border-strong);
+        background: var(--app-surface);
+        box-shadow: var(--app-shadow-sm);
+      }
+      &.sel {
+        border-color: var(--app-primary);
+        background: var(--app-highlight);
+        box-shadow: var(--app-shadow-sm);
+      }
+    }
+    .row-top {
       display: flex;
       justify-content: space-between;
+      align-items: baseline;
       gap: 0.75rem;
-      flex-wrap: wrap;
-      text-align: left;
-      border: none;
-      background: transparent;
-      padding: 0.6rem 0.7rem;
-      border-radius: 12px;
-      cursor: pointer;
-      font: inherit;
-      color: var(--app-text);
     }
-    .row:hover,
-    .row.sel {
-      background: var(--app-surface-2);
-    }
-    .row-main {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-    .row-main strong {
+    .row-title {
+      font-size: 0.92rem;
+      font-weight: 600;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      max-width: 28rem;
+      min-width: 0;
     }
-    .row-meta {
+    .row-time {
+      flex-shrink: 0;
+    }
+    .row-bottom {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 0.6rem;
+      gap: 0.55rem;
       flex-wrap: wrap;
     }
-    .chip {
-      font-size: 0.72rem;
-      padding: 0.1rem 0.5rem;
+    .row-sub {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .row-badges {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+    .rating-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      padding: 0.12rem 0.45rem;
       border-radius: 999px;
-      background: var(--app-surface-2);
+      font-size: 0.74rem;
+      font-weight: 600;
+      &.good {
+        background: var(--app-success-bg);
+        color: var(--app-success);
+        border: 1px solid var(--app-success-border);
+      }
+      &.bad {
+        background: var(--app-danger-bg);
+        color: var(--app-danger);
+        border: 1px solid var(--app-danger-border);
+      }
     }
-    .good {
-      color: #16a34a;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.2rem;
+    .list-foot {
+      display: flex;
+      justify-content: center;
+      margin-top: 0.9rem;
     }
-    .bad {
-      color: #dc2626;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.2rem;
-    }
-    mat-icon.xs {
-      width: 16px;
-      height: 16px;
-      font-size: 16px;
-    }
-    .more {
-      align-self: center;
-      margin: 0.5rem;
-    }
-    .empty {
-      padding: 2rem 1rem;
-      text-align: center;
-      color: var(--app-muted);
-    }
-    .transcript {
-      max-height: 75vh;
-      overflow: auto;
+
+    /* Transcript drawer */
+    .transcript-panel {
+      padding: 0;
+      overflow: hidden;
+      position: sticky;
+      top: 1rem;
+      max-height: 78vh;
       display: flex;
       flex-direction: column;
-      gap: 0.7rem;
     }
-    .transcript header {
+    .tr-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 0.5rem;
+      gap: 0.75rem;
+      padding: 1rem 1.15rem;
+      background: var(--app-surface-2);
+      border-bottom: 1px solid var(--app-border);
     }
-    .msg {
-      border-left: 3px solid var(--app-border);
-      padding-left: 0.7rem;
-    }
-    .msg.user {
-      border-left-color: var(--app-accent, #e11d74);
-    }
-    .text {
-      white-space: pre-wrap;
-      line-height: 1.5;
-    }
-    .tool {
-      margin: 0.3rem 0;
-      font-size: 0.8rem;
-    }
-    .tool code {
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .tool .args,
-    .tool.result code {
-      color: var(--app-muted);
-    }
-    .tool.err code {
-      color: #dc2626;
-    }
-    .fb {
-      margin-top: 0.35rem;
-      font-size: 0.82rem;
-    }
-    .fb-grid {
-      display: grid;
-      gap: 0.8rem;
-      grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-    }
-    .fb-card header {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .comment {
-      font-weight: 500;
-      margin: 0.5rem 0;
-    }
-    .answer {
-      color: var(--app-muted);
-      white-space: pre-wrap;
-      max-height: 8rem;
-      overflow: hidden;
-      margin: 0.3rem 0;
-    }
-    .kpis {
-      display: grid;
-      gap: 0.8rem;
-      grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-      margin-bottom: 0.9rem;
-    }
-    .kpi {
+    .tr-head-copy {
       display: flex;
       flex-direction: column;
       gap: 0.25rem;
+      min-width: 0;
     }
-    .kpi strong {
-      font-size: 1.35rem;
+    .tr-title-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+      strong {
+        font-size: 0.96rem;
+      }
     }
-    .chart {
-      margin-bottom: 0.9rem;
+    .tr-body {
+      padding: 1rem 1.15rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .tr-msg {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: var(--app-radius-lg);
+      border: 1px solid var(--app-border);
+      background: var(--app-surface-2);
+      &.is-user {
+        border-left: 3px solid var(--app-primary);
+        background: var(--app-highlight);
+      }
+      &.is-agent {
+        border-left: 3px solid var(--app-info);
+      }
+    }
+    .tr-who {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .tr-role {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--app-text);
+      mat-icon {
+        color: var(--app-primary);
+      }
+    }
+    .tr-parts {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .tr-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+    .tr-tool {
+      border-radius: var(--app-radius-md);
+      border: 1px solid var(--app-border);
+      background: var(--app-surface);
+      padding: 0.55rem 0.7rem;
+      &.is-err {
+        border-color: var(--app-danger-border);
+        background: var(--app-danger-bg);
+      }
+    }
+    .tr-tool-head {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.76rem;
+      color: var(--app-muted);
+      margin-bottom: 0.35rem;
+      mat-icon {
+        color: var(--app-primary);
+      }
+    }
+    .tr-tool.is-err .tr-tool-head {
+      color: var(--app-danger);
+      mat-icon {
+        color: var(--app-danger);
+      }
+    }
+    .tr-code {
+      margin: 0;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 0.76rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 12rem;
+      overflow: auto;
+      color: var(--app-text);
+    }
+    .tr-fb {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      width: fit-content;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-top: 0.2rem;
+      &.good {
+        background: var(--app-success-bg);
+        color: var(--app-success);
+        border: 1px solid var(--app-success-border);
+      }
+      &.bad {
+        background: var(--app-danger-bg);
+        color: var(--app-danger);
+        border: 1px solid var(--app-danger-border);
+      }
+    }
+
+    /* Feedback tab */
+    .fb-filter-row {
+      margin-bottom: 1rem;
+    }
+    .fb-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    }
+    .fb-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      transition: all 0.18s ease;
+      &:hover {
+        border-color: var(--app-border-strong);
+        box-shadow: var(--app-shadow-md);
+        transform: translateY(-2px);
+      }
+    }
+    .fb-head {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+    }
+    .fb-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      &.good {
+        background: var(--app-success-bg);
+        color: var(--app-success);
+        border: 1px solid var(--app-success-border);
+      }
+      &.bad {
+        background: var(--app-danger-bg);
+        color: var(--app-danger);
+        border: 1px solid var(--app-danger-border);
+      }
+    }
+    .fb-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 0;
+    }
+    .fb-meta-top {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+      font-size: 0.9rem;
+    }
+    .fb-comment {
+      margin: 0;
+      padding: 0.6rem 0.85rem;
+      border-radius: var(--app-radius-md);
+      border-left: 3px solid var(--app-primary);
+      background: var(--app-highlight);
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--app-text);
+    }
+    .fb-answer {
+      flex: 1;
+      padding: 0.65rem 0.85rem;
+      border-radius: var(--app-radius-md);
+      background: var(--app-surface-2);
+      border: 1px solid var(--app-border);
+      .fb-answer-label {
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--app-muted);
+        margin-bottom: 0.25rem;
+      }
+      p {
+        margin: 0;
+        font-size: 0.83rem;
+        color: var(--app-muted);
+        white-space: pre-wrap;
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+    }
+    .fb-foot {
+      display: flex;
+      justify-content: flex-end;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--app-border);
+    }
+
+    /* Usage tab */
+    .chart-card {
+      margin-bottom: 1.15rem;
+    }
+    .chart-sub {
+      margin: 0.15rem 0 0;
+    }
+    .chart-empty,
+    .table-empty {
+      padding: 1.5rem 0;
+      text-align: center;
+      margin: 0;
+    }
+    .bars-wrap {
+      padding: 0.75rem 0.5rem 0.25rem;
+      border-radius: var(--app-radius-lg);
+      background: var(--app-surface-2);
+      border: 1px solid var(--app-border);
     }
     .bars {
       display: flex;
-      align-items: flex-end;
-      gap: 3px;
-      height: 140px;
+      align-items: stretch;
+      gap: 4px;
+      height: 170px;
     }
-    .bar {
+    .bar-col {
       flex: 1;
-      height: 100%;
+      min-width: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      cursor: default;
+    }
+    .bar-track {
+      flex: 1;
+      width: 100%;
       display: flex;
       align-items: flex-end;
-      min-width: 4px;
+      padding: 0 1px;
     }
-    .bar span {
+    .bar-fill {
       width: 100%;
-      min-height: 2px;
-      border-radius: 4px 4px 0 0;
-      background: var(--app-accent, #e11d74);
+      min-height: 3px;
+      border-radius: 6px 6px 2px 2px;
+      background: var(--app-border-strong);
+      transition:
+        transform 0.15s ease,
+        filter 0.15s ease;
+      &.has-val {
+        background: var(--aries-gradient);
+        box-shadow: 0 2px 8px rgba(255, 61, 139, 0.25);
+      }
     }
+    .bar-col:hover .bar-fill.has-val {
+      filter: brightness(1.12);
+      transform: scaleY(1.03);
+      transform-origin: bottom;
+    }
+    .bar-tick {
+      font-size: 0.68rem;
+      font-family: ui-monospace, monospace;
+      color: var(--app-muted);
+      white-space: nowrap;
+    }
+
     .groups {
       display: grid;
-      gap: 0.8rem;
-      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     }
-    table.simple {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.85rem;
+    .cost-cell {
+      font-weight: 600;
+      color: var(--app-primary);
     }
-    table.simple th,
-    table.simple td {
-      text-align: left;
-      padding: 0.35rem 0.4rem;
-      border-bottom: 1px solid var(--app-border);
+    .cell-name {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
     }
-    table.simple th:not(:first-child),
-    table.simple td:not(:first-child) {
-      text-align: right;
+    .share-track {
+      height: 4px;
+      border-radius: 999px;
+      background: var(--app-surface-3);
+      overflow: hidden;
+      max-width: 160px;
+    }
+    .share-fill {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--aries-gradient);
+    }
+
+    @media (max-width: 680px) {
+      .filter-field,
+      .filter-field.compact {
+        width: 100%;
+      }
     }
   `,
 })
@@ -725,6 +1298,19 @@ export class Ops implements OnInit {
   });
   protected readonly agentOptions = computed(() =>
     this.seeAll() ? this.agents() : this.agents().filter((a) => a.can_edit),
+  );
+
+  protected readonly threadMessagesTotal = computed(() =>
+    this.threads().reduce((sum, t) => sum + t.message_count, 0),
+  );
+  protected readonly threadThumbsUpTotal = computed(() =>
+    this.threads().reduce((sum, t) => sum + (t.thumbs_up || 0), 0),
+  );
+  protected readonly threadThumbsDownTotal = computed(() =>
+    this.threads().reduce((sum, t) => sum + (t.thumbs_down || 0), 0),
+  );
+  protected readonly threadCostTotal = computed(() =>
+    this.threads().reduce((sum, t) => sum + (t.cost_usd || 0), 0),
   );
 
   protected readonly daily = computed(() => {
@@ -787,8 +1373,18 @@ export class Ops implements OnInit {
     return CHANNEL_LABEL[c] ?? c;
   }
 
+  protected channelSeverity(c: OpsChannel): Severity {
+    return CHANNEL_SEVERITY[c] ?? 'secondary';
+  }
+
   protected agentName(id: string): string {
     return this.agents().find((a) => a.id === id)?.name ?? id.slice(0, 8);
+  }
+
+  protected showDateTick(index: number, total: number): boolean {
+    if (total <= 10) return true;
+    const step = Math.ceil(total / 7);
+    return index === 0 || index === total - 1 || index % step === 0;
   }
 
   protected feedbackFor(tr: OpsTranscript, messageId: number) {
@@ -899,12 +1495,18 @@ export class Ops implements OnInit {
         runs: 0,
         cost: 0,
         tokens: 0,
+        pct: 0,
       };
       g.runs += r.runs;
       g.cost += r.cost_usd;
       g.tokens += r.input_tokens + r.output_tokens;
       map.set(k, g);
     }
-    return [...map.values()].sort((a, b) => b.cost - a.cost);
+    const items = [...map.values()].sort((a, b) => b.cost - a.cost);
+    const maxCost = Math.max(0, ...items.map((x) => x.cost));
+    return items.map((x) => ({
+      ...x,
+      pct: maxCost > 0 ? Math.max(6, (x.cost / maxCost) * 100) : 0,
+    }));
   }
 }

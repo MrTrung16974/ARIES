@@ -17,6 +17,7 @@ from aiagent.bootstrap.logging import configure_logging
 from aiagent.bootstrap.settings import Settings, get_settings
 from aiagent.modules.agents.api.router import router as agents_router
 from aiagent.modules.audit.api.router import router as audit_router
+from aiagent.modules.automation.api.router import router as automation_router
 from aiagent.modules.builder.api.router import router as builder_router
 from aiagent.modules.channels.api.router import public_router
 from aiagent.modules.channels.api.router import router as channels_router
@@ -82,4 +83,5 @@ def create_app(
     app.include_router(ops_router)
     app.include_router(telegram_router)
     app.include_router(telegram_public)
+    app.include_router(automation_router)
     return app

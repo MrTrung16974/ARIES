@@ -156,6 +156,8 @@ export class AgentChat implements OnInit, OnDestroy {
   readonly id = input.required<string>();
   readonly draft = input<string>();
   readonly q = input<string>();
+  /** `?thread=<id>`: mở thẳng một hội thoại (ví dụ lần chạy của lịch tự động). */
+  readonly thread = input<string>();
 
   private readonly api = inject(AgentsApi);
   private readonly stream = inject(ChatStreamService);
@@ -219,6 +221,8 @@ export class AgentChat implements OnInit, OnDestroy {
       error: () => this.error.set('Không tải được agent.'),
     });
     this.loadThreads();
+    const thread = this.thread();
+    if (thread) this.openThread({ id: thread } as ThreadInfo);
   }
 
   ngOnDestroy(): void {
@@ -357,7 +361,11 @@ export class AgentChat implements OnInit, OnDestroy {
             if (!del) break;
             const stepId = String(d['id']);
             if (d['event'] === 'tool_start') {
-              del.steps.push({ id: stepId, name: String(d['name']), status: 'running' });
+              del.steps.push({
+                id: stepId,
+                name: String(d['name']),
+                status: 'running',
+              });
             } else {
               const st = del.steps.find((x) => x.id === stepId);
               if (st) {
@@ -440,7 +448,12 @@ export class AgentChat implements OnInit, OnDestroy {
     if (item) item.canResume = false;
     this.error.set(null);
     this.busy.set(true);
-    const reply: ChatItem = { role: 'assistant', text: '', tools: [], streaming: true };
+    const reply: ChatItem = {
+      role: 'assistant',
+      text: '',
+      tools: [],
+      streaming: true,
+    };
     this.items.update((list) => [...list, reply]);
     this.abort = new AbortController();
     await this.consume(this.stream.resume(threadId, this.abort.signal), reply);

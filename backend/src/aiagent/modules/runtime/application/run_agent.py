@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import json
 import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -47,6 +48,7 @@ from aiagent.modules.runtime.application.team import (
     alias_of,
 )
 from aiagent.modules.runtime.application.tool_gateway import (
+    UNTRUSTED_MARK,
     BoundTools,
     ToolGateway,
     history_is_tainted,
@@ -84,6 +86,16 @@ class EphemeralResult:
     status: str
     error: str | None
     usage: Usage
+
+
+@dataclass(frozen=True)
+class CompletedRun:
+    """Kết quả chạy hết một lượt (kênh không stream, lịch chạy — ADR-0020/0021)."""
+
+    thread_id: UUID
+    status: str  # completed | failed | refused | awaiting_approval | …
+    text: str  # câu trả lời sau lần gọi tool cuối
+    citations: list[dict[str, Any]]
 
 
 @dataclass
@@ -166,6 +178,8 @@ class RunAgentService:
                 version.spec, principal, agent_id=str(agent_id), run_id=str(run.id)
             )
         tools.tainted = history_is_tainted(history)
+        if isinstance(tools, BoundTools):
+            tools.observe(json.dumps(history, ensure_ascii=False, default=str))
         return tools
 
     async def _team_tools(
@@ -238,6 +252,7 @@ class RunAgentService:
         *,
         thread_id: UUID | None,
         draft: bool,
+        title: str | None = None,
     ) -> PreparedRun:
         """Mọi kiểm tra có thể thất bại chạy ở đây, trước khi mở stream, để trả HTTP lỗi rõ ràng."""
         message = message.strip()
@@ -260,7 +275,7 @@ class RunAgentService:
                 agent_id,
                 version.version,
                 draft,
-                title=message[:80],
+                title=(title or message)[:80],
             )
 
         history = await self._history(principal.tenant_id, thread.id)
@@ -300,6 +315,10 @@ class RunAgentService:
 
         sink: asyncio.Queue[object] = asyncio.Queue()
         tools = await self._bind(principal, version, agent_id, run, history, thread, sink)
+        if UNTRUSTED_MARK in message:  # nội dung do trigger mang vào (email…) — ADR-0021
+            tools.tainted = True
+        if isinstance(tools, BoundTools):
+            tools.observe(message)
         return PreparedRun(
             principal, agent, version, thread, run, model, tools, history, message, None, sink
         )
@@ -505,6 +524,31 @@ class RunAgentService:
             results.append(block)
             yield RunEvent(RunEventType.TOOL_END, {"id": tid, **info})
         yield _ResumeDone({"role": "user", "content": results}, [])
+
+    async def run_once(
+        self,
+        principal: Principal,
+        agent_id: UUID,
+        message: str,
+        *,
+        thread_id: UUID | None = None,
+        title: str | None = None,
+    ) -> CompletedRun:
+        """Chạy đến hết (hoặc đến khi chờ duyệt) và gom câu trả lời cuối."""
+        prepared = await self.prepare(
+            principal, agent_id, message, thread_id=thread_id, draft=False, title=title
+        )
+        text, citations, status = "", [], "failed"
+        async for event in self.stream(prepared):
+            if event.type is RunEventType.TEXT:
+                text += str(event.data.get("text", ""))
+            elif event.type is RunEventType.TOOL_START:
+                text = ""  # chỉ giữ câu trả lời sau lần gọi tool cuối
+            elif event.type is RunEventType.TOOL_END and event.data.get("citations"):
+                citations += list(event.data["citations"])
+            elif event.type is RunEventType.DONE:
+                status = str(event.data.get("status", "failed"))
+        return CompletedRun(prepared.thread.id, status, text.strip(), citations)
 
     async def stream(self, p: PreparedRun) -> AsyncIterator[RunEvent]:
         spec = p.version.spec

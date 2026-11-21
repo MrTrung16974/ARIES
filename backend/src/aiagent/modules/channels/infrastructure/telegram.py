@@ -20,7 +20,6 @@ from aiagent.modules.channels.domain.telegram import (
 )
 from aiagent.modules.identity.domain import Principal
 from aiagent.modules.runtime.application import RunAgentService
-from aiagent.modules.runtime.domain import RunEventType
 from aiagent.shared_kernel.errors import ConflictError, NotFoundError
 
 
@@ -246,26 +245,12 @@ class RuntimeAgentRunner:
         self, principal: Principal, agent_id: UUID, message: str, thread_id: UUID | None
     ) -> AgentAnswer:
         try:
-            prepared = await self._runs.prepare(
-                principal, agent_id, message, thread_id=thread_id, draft=False
-            )
+            done = await self._runs.run_once(principal, agent_id, message, thread_id=thread_id)
         except (ConflictError, NotFoundError):
             if thread_id is None:
                 raise
             # Agent đã publish version mới → mở hội thoại mới cho chat này.
-            prepared = await self._runs.prepare(
-                principal, agent_id, message, thread_id=None, draft=False
-            )
-        answer, citations, status = "", [], "failed"
-        async for event in self._runs.stream(prepared):
-            if event.type is RunEventType.TEXT:
-                answer += str(event.data.get("text", ""))
-            elif event.type is RunEventType.TOOL_START:
-                answer = ""
-            elif event.type is RunEventType.TOOL_END and event.data.get("citations"):
-                citations += list(event.data["citations"])
-            elif event.type is RunEventType.DONE:
-                status = str(event.data.get("status", "failed"))
+            done = await self._runs.run_once(principal, agent_id, message, thread_id=None)
         return AgentAnswer(
-            thread_id=prepared.thread.id, status=status, text=answer.strip(), citations=citations
+            thread_id=done.thread_id, status=done.status, text=done.text, citations=done.citations
         )

@@ -60,6 +60,15 @@ class ToolResult:
     data: dict[str, Any] | None = None  # dữ liệu có cấu trúc cho UI/log (không gửi model)
 
 
+@dataclass(frozen=True)
+class TriggerEvent:
+    """Một sự kiện mới từ nguồn ngoài. `content` là dữ liệu KHÔNG tin cậy — core tự bọc nhãn."""
+
+    id: str  # định danh ổn định (chống xử lý lặp)
+    title: str
+    content: str
+
+
 class ToolNotFoundError(LookupError):
     pass
 
@@ -84,6 +93,16 @@ class Plugin(ABC):
     async def test_connection(self, connection: ConnectionContext) -> HealthStatus:
         """Connector: kiểm tra kết nối với cấu hình + secret (khi tạo/sửa connection)."""
         return HealthStatus(healthy=True, detail="Connector không hỗ trợ kiểm tra")
+
+    async def poll_trigger(
+        self,
+        name: str,
+        connection: ConnectionContext,
+        state: dict[str, Any],
+        config: dict[str, Any],
+    ) -> tuple[list[TriggerEvent], dict[str, Any]]:
+        """Connector có trigger: trả sự kiện mới kể từ `state` và state mới (lưu ở core)."""
+        raise NotImplementedError(name)
 
     async def on_unload(self) -> None:  # noqa: B027 - hook tùy chọn
         """Gọi khi core tắt."""

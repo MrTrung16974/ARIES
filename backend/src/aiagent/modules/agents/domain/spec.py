@@ -132,6 +132,8 @@ class AgentSpec(_Strict):
     limits: Limits = Field(default_factory=Limits)
     approval: Approval = Field(default_factory=Approval)
     data_classification: DataClassification = DataClassification.INTERNAL
+    # Che dữ liệu nhạy cảm trong câu trả lời gửi qua kênh ngoài (ADR-0021): off | mask | strict.
+    dlp: Literal["off", "mask", "strict"] = "mask"
 
     @field_validator("rules", "starter_prompts")
     @classmethod

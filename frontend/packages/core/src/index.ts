@@ -11,3 +11,4 @@ export * from './lib/api/connections-api.service';
 export * from './lib/api/knowledge-api.service';
 export * from './lib/api/channels-api.service';
 export * from './lib/api/ops-api.service';
+export * from './lib/api/automation-api.service';

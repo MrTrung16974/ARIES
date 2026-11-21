@@ -1,38 +1,45 @@
-<div class="editor-head">
-  <div class="title-col">
-    <a routerLink="/agents" class="back">
-      <mat-icon class="sm" svgIcon="arrow_back" /> Danh sách Agent
-    </a>
-    <div class="title-row">
-      <span class="head-icon accent" aria-hidden="true">
-        <mat-icon class="sm" svgIcon="robot_2" />
-      </span>
-      <h1>{{ isNew() ? 'Tạo agent' : spec.name || 'Agent' }}</h1>
-      @if (agent(); as a) {
-        <ui-tag [value]="'v' + a.latest_version" severity="secondary" />
-        <ui-tag
-          [value]="
-            a.published_version
-              ? 'Đang chạy v' + a.published_version
-              : 'Chưa publish'
-          "
-          [severity]="a.published_version ? 'success' : 'warn'"
-        />
-      }
-    </div>
-    @if (agent(); as a) {
-      <p class="muted small sub-meta">
-        Version mới nhất v{{ a.latest_version }} ·
+<div class="editor-top">
+  <a routerLink="/agents" class="back-link">
+    <mat-icon class="sm" svgIcon="arrow_back" aria-hidden="true" />
+    <span>Quay lại danh sách Agent</span>
+  </a>
+</div>
+
+<div class="page-hero">
+  <div class="hero-left">
+    <span class="head-icon accent" aria-hidden="true">
+      <mat-icon class="sm" svgIcon="robot_2" />
+    </span>
+    <div class="hero-copy">
+      <h1>
+        <span>{{ isNew() ? 'Tạo AI Agent mới' : spec.name || 'Agent' }}</span>
+        @if (agent(); as a) {
+          <ui-tag [value]="'v' + a.latest_version" severity="secondary" />
+          <ui-tag
+            [value]="
+              a.published_version
+                ? 'Đang chạy v' + a.published_version
+                : 'Chưa publish'
+            "
+            [severity]="a.published_version ? 'success' : 'warn'"
+          />
+        }
+        @if (spec.graph_type === 'supervisor') {
+          <ui-tag value="Điều phối (Supervisor)" severity="primary" />
+        }
+      </h1>
+      <p class="subtitle">
         {{
-          a.published_version
-            ? 'đang chạy v' + a.published_version
-            : 'chưa publish'
+          isNew()
+            ? 'Cấu hình định danh, hành vi, kỹ năng, kết nối dữ liệu và giới hạn vận hành cho Agent mới.'
+            : spec.description ||
+              'Chỉnh sửa cấu hình AgentSpec v2, thử chat bản nháp và xuất bản phiên bản mới.'
         }}
       </p>
-    }
+    </div>
   </div>
 
-  <div class="actions">
+  <div class="hero-actions">
     @if (agent(); as a) {
       <a
         mat-stroked-button
@@ -48,7 +55,14 @@
         [routerLink]="['/agents', a.id, 'chat']"
         [queryParams]="{ draft: 1 }"
       >
-        <mat-icon svgIcon="forum" /> Thử chat (nháp)
+        <mat-icon svgIcon="forum" /> Thử chat
+      </a>
+      <a
+        mat-stroked-button
+        class="pill-btn"
+        [routerLink]="['/agents', a.id, 'publish']"
+      >
+        <mat-icon svgIcon="share" /> Chia sẻ &amp; API
       </a>
       <button
         mat-flat-button
@@ -81,91 +95,85 @@
 
 <div class="editor-card">
   <mat-tab-group
+    class="editor-tabs"
     [selectedIndex]="tabIndex()"
     (selectedIndexChange)="onTab($event)"
     animationDuration="0ms"
     mat-stretch-tabs="false"
   >
+    <!-- TAB 1: TỔNG QUAN -->
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="sm" svgIcon="dashboard" aria-hidden="true" />
         <span>Tổng quan</span>
       </ng-template>
       <div class="tab-pane">
-        <div class="section-intro">
-          <h2 class="sec-title">
-            <mat-icon class="sm" svgIcon="dashboard" aria-hidden="true" />
-            <span>Thông tin định danh &amp; Mô hình</span>
-          </h2>
-          <p class="muted small">
-            Đặt tên, mô tả chức năng và chọn mô hình ngôn ngữ phù hợp với mức độ
-            bảo mật dữ liệu.
-          </p>
-        </div>
-
-        <div class="form">
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="robot_2" />
-            <mat-label>Tên agent</mat-label>
-            <input matInput [(ngModel)]="spec.name" maxlength="80" />
-          </mat-form-field>
-
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="edit" />
-            <mat-label>Mô tả</mat-label>
-            <textarea
-              matInput
-              rows="2"
-              [(ngModel)]="spec.description"
-              maxlength="1000"
-            ></textarea>
-          </mat-form-field>
-
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="forum" />
-            <mat-label>Khi nào ARIES Master nên giao việc cho agent này</mat-label>
-            <input
-              matInput
-              [(ngModel)]="spec.when_to_use"
-              maxlength="300"
-              placeholder="Ví dụ: Khi cần tra cứu đơn hàng, tồn kho trong CSDL bán hàng"
-            />
-          </mat-form-field>
-
-          <mat-checkbox
-            [ngModel]="spec.graph_type === 'supervisor'"
-            (ngModelChange)="setSupervisor($event)"
-          >
-            Agent điều phối (giao việc cho các agent khác, không tự gắn skill/kết nối)
-          </mat-checkbox>
-
-          @if (spec.graph_type === 'supervisor' && spec.team) {
-            <div class="team-box">
-              <mat-form-field appearance="outline">
-                <mat-label>Thành viên</mat-label>
-                <mat-select [(ngModel)]="spec.team.mode">
-                  <mat-option value="auto"
-                    >Tự động — mọi agent người chat được dùng</mat-option
-                  >
-                  <mat-option value="fixed">Cố định — chọn bên dưới</mat-option>
-                </mat-select>
-              </mat-form-field>
-              @if (spec.team.mode === 'fixed') {
-                <div class="team-members">
-                  @for (a of memberChoices(); track a.id) {
-                    <mat-checkbox
-                      [ngModel]="isMember(a.id)"
-                      (ngModelChange)="toggleMember(a.id, $event)"
-                    >
-                      {{ a.name }}
-                    </mat-checkbox>
-                  } @empty {
-                    <p class="muted small">Chưa có agent nào đã publish.</p>
-                  }
-                </div>
-              }
+        <section class="section-block">
+          <div class="section-intro">
+            <span class="sec-badge" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="robot_2" />
+            </span>
+            <div>
+              <h2>Thông tin định danh</h2>
+              <p class="muted small">
+                Đặt tên, mô tả chức năng và hướng dẫn điều phối để ARIES Master
+                hiểu khi nào nên giao việc cho Agent này.
+              </p>
             </div>
-          }
+          </div>
+
+          <div class="form">
+            <mat-form-field appearance="outline">
+              <mat-icon matPrefix class="sm" svgIcon="robot_2" />
+              <mat-label>Tên agent</mat-label>
+              <input
+                matInput
+                [(ngModel)]="spec.name"
+                maxlength="80"
+                placeholder="Ví dụ: Trợ lý CSKH Bảo hành"
+              />
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-icon matPrefix class="sm" svgIcon="edit" />
+              <mat-label>Mô tả chức năng</mat-label>
+              <textarea
+                matInput
+                rows="2"
+                [(ngModel)]="spec.description"
+                maxlength="1000"
+                placeholder="Tóm tắt ngắn gọn nhiệm vụ của Agent…"
+              ></textarea>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-icon matPrefix class="sm" svgIcon="forum" />
+              <mat-label
+                >Khi nào ARIES Master nên giao việc cho agent này</mat-label
+              >
+              <input
+                matInput
+                [(ngModel)]="spec.when_to_use"
+                maxlength="300"
+                placeholder="Ví dụ: Khi cần tra cứu đơn hàng, tồn kho trong CSDL bán hàng"
+              />
+            </mat-form-field>
+          </div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-intro">
+            <span class="sec-badge" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="dns" />
+            </span>
+            <div>
+              <h2>Mô hình ngôn ngữ &amp; Phân loại bảo mật</h2>
+              <p class="muted small">
+                Chọn mô hình xử lý, mức độ suy luận và cấp độ bảo mật dữ liệu
+                tương ứng với chính sách tổ chức.
+              </p>
+            </div>
+          </div>
 
           <div class="form-grid-3">
             <mat-form-field appearance="outline">
@@ -199,391 +207,650 @@
                 }
               </mat-select>
             </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-icon matPrefix class="sm" svgIcon="lock" />
+              <mat-label>Che dữ liệu nhạy cảm (link, API, Telegram)</mat-label>
+              <mat-select [(ngModel)]="spec.dlp">
+                @for (o of dlpOptions; track o.value) {
+                  <mat-option [value]="o.value">{{ o.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
           </div>
-        </div>
+        </section>
+
+        <section
+          class="section-block supervisor-card"
+          [class.is-on]="spec.graph_type === 'supervisor'"
+        >
+          <div class="supervisor-head">
+            <mat-checkbox
+              [ngModel]="spec.graph_type === 'supervisor'"
+              (ngModelChange)="setSupervisor($event)"
+            >
+              <strong
+                >Chế độ Agent điều phối (Supervisor / Master)</strong
+              >
+            </mat-checkbox>
+            <ui-tag
+              [value]="
+                spec.graph_type === 'supervisor'
+                  ? 'Đang bật điều phối'
+                  : 'Agent chuyên trách'
+              "
+              [severity]="
+                spec.graph_type === 'supervisor' ? 'primary' : 'secondary'
+              "
+            />
+          </div>
+          <p class="muted small supervisor-desc">
+            Agent điều phối sẽ phân tích yêu cầu và giao việc cho các Agent
+            chuyên trách khác (không tự gắn trực tiếp skill, kết nối hoặc MCP
+            server).
+          </p>
+
+          @if (spec.graph_type === 'supervisor' && spec.team) {
+            <div class="team-box">
+              <mat-form-field appearance="outline" class="team-mode-field">
+                <mat-icon matPrefix class="sm" svgIcon="hub" />
+                <mat-label>Chế độ chọn thành viên</mat-label>
+                <mat-select [(ngModel)]="spec.team.mode">
+                  <mat-option value="auto"
+                    >Tự động — mọi agent người chat được dùng</mat-option
+                  >
+                  <mat-option value="fixed"
+                    >Cố định — chọn thủ công bên dưới</mat-option
+                  >
+                </mat-select>
+              </mat-form-field>
+
+              @if (spec.team.mode === 'fixed') {
+                <div class="team-members">
+                  @for (a of memberChoices(); track a.id) {
+                    <div
+                      class="member-chip"
+                      [class.selected]="isMember(a.id)"
+                    >
+                      <mat-checkbox
+                        [ngModel]="isMember(a.id)"
+                        (ngModelChange)="toggleMember(a.id, $event)"
+                      >
+                        {{ a.name }}
+                      </mat-checkbox>
+                    </div>
+                  } @empty {
+                    <p class="muted small">
+                      Chưa có agent chuyên trách nào đã publish để thêm vào đội.
+                    </p>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </section>
       </div>
     </mat-tab>
 
+    <!-- TAB 2: PROMPT -->
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
-        <span>Prompt</span>
+        <span>Prompt &amp; Hành vi</span>
       </ng-template>
       <div class="tab-pane">
-        <div class="section-intro">
-          <h2 class="sec-title">
-            <mat-icon class="sm" svgIcon="forum" aria-hidden="true" />
-            <span>Thiết kế hành vi &amp; Prompt</span>
-          </h2>
-          <p class="muted small">
-            Xác định rõ vai trò, quy trình xử lý, ranh giới an toàn và câu gợi ý
-            mở đầu cho người dùng.
-          </p>
-        </div>
+        <section class="section-block">
+          <div class="section-intro">
+            <span class="sec-badge" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="person" />
+            </span>
+            <div>
+              <h2>Vai trò &amp; Hướng dẫn cốt lõi</h2>
+              <p class="muted small">
+                Định hình nhân vật (persona) và quy trình xử lý từng bước, thứ
+                tự ưu tiên khi gọi công cụ.
+              </p>
+            </div>
+          </div>
 
-        <div class="form">
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="person" />
-            <mat-label>Vai trò (persona)</mat-label>
-            <textarea
-              matInput
-              rows="3"
-              [(ngModel)]="spec.persona"
-              placeholder="Bạn là trợ lý CSKH của công ty X…"
-            ></textarea>
-          </mat-form-field>
-
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="code" />
-            <mat-label>Hướng dẫn</mat-label>
-            <textarea
-              matInput
-              rows="8"
-              [(ngModel)]="spec.instructions"
-              placeholder="Việc cần làm, thứ tự ưu tiên, khi nào dùng tool nào…"
-            ></textarea>
-          </mat-form-field>
-
-          <div class="form-grid-2">
+          <div class="form">
             <mat-form-field appearance="outline">
-              <mat-icon matPrefix class="sm" svgIcon="gavel" />
-              <mat-label>Quy tắc (mỗi dòng một quy tắc)</mat-label>
+              <mat-icon matPrefix class="sm" svgIcon="person" />
+              <mat-label>Vai trò (persona)</mat-label>
               <textarea
                 matInput
-                rows="4"
-                [(ngModel)]="rulesText"
-                placeholder="Không hứa hoàn tiền"
+                rows="3"
+                [(ngModel)]="spec.persona"
+                placeholder="Bạn là trợ lý CSKH chuyên nghiệp của công ty X…"
               ></textarea>
             </mat-form-field>
 
             <mat-form-field appearance="outline">
-              <mat-icon matPrefix class="sm" svgIcon="forum" />
-              <mat-label>Câu hỏi gợi ý (mỗi dòng một câu, tối đa 6)</mat-label>
-              <textarea matInput rows="4" [(ngModel)]="startersText"></textarea>
-            </mat-form-field>
-          </div>
-
-          <div class="form-grid-2">
-            <mat-form-field appearance="outline">
-              <mat-icon matPrefix class="sm" svgIcon="tune" />
-              <mat-label>Phong cách trả lời</mat-label>
-              <input
+              <mat-icon matPrefix class="sm" svgIcon="code" />
+              <mat-label>Hướng dẫn chi tiết (instructions)</mat-label>
+              <textarea
                 matInput
-                [(ngModel)]="spec.output_format.style"
-                placeholder="Ngắn gọn, lịch sự, dùng gạch đầu dòng khi liệt kê"
-              />
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-icon matPrefix class="sm" svgIcon="send" />
-              <mat-label>Lời chào mở đầu</mat-label>
-              <input matInput [(ngModel)]="spec.opening_statement" />
+                rows="8"
+                [(ngModel)]="spec.instructions"
+                placeholder="Việc cần làm, thứ tự ưu tiên, khi nào dùng tool nào, cách xử lý ngoại lệ…"
+              ></textarea>
             </mat-form-field>
           </div>
-        </div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-intro">
+            <span class="sec-badge" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="gavel" />
+            </span>
+            <div>
+              <h2>Ranh giới an toàn &amp; Trải nghiệm trò chuyện</h2>
+              <p class="muted small">
+                Thiết lập các quy tắc bắt buộc tuân thủ, câu gợi ý mở đầu và
+                giọng điệu trả lời.
+              </p>
+            </div>
+          </div>
+
+          <div class="form">
+            <div class="form-grid-2">
+              <mat-form-field appearance="outline">
+                <mat-icon matPrefix class="sm" svgIcon="gavel" />
+                <mat-label>Quy tắc (mỗi dòng một quy tắc)</mat-label>
+                <textarea
+                  matInput
+                  rows="4"
+                  [(ngModel)]="rulesText"
+                  placeholder="Không tự ý hứa hoàn tiền&#10;Luôn trích dẫn nguồn khi tra cứu"
+                ></textarea>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-icon matPrefix class="sm" svgIcon="forum" />
+                <mat-label
+                  >Câu hỏi gợi ý (mỗi dòng một câu, tối đa 6)</mat-label
+                >
+                <textarea
+                  matInput
+                  rows="4"
+                  [(ngModel)]="startersText"
+                  placeholder="Chính sách bảo hành áp dụng trong bao lâu?"
+                ></textarea>
+              </mat-form-field>
+            </div>
+
+            <div class="form-grid-2">
+              <mat-form-field appearance="outline">
+                <mat-icon matPrefix class="sm" svgIcon="tune" />
+                <mat-label>Phong cách trả lời</mat-label>
+                <input
+                  matInput
+                  [(ngModel)]="spec.output_format.style"
+                  placeholder="Ngắn gọn, lịch sự, dùng gạch đầu dòng khi liệt kê"
+                />
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-icon matPrefix class="sm" svgIcon="send" />
+                <mat-label>Lời chào mở đầu</mat-label>
+                <input
+                  matInput
+                  [(ngModel)]="spec.opening_statement"
+                  placeholder="Xin chào! Tôi có thể giúp gì cho bạn hôm nay?"
+                />
+              </mat-form-field>
+            </div>
+          </div>
+        </section>
       </div>
     </mat-tab>
 
+    <!-- TAB 3: SKILL & TÀI NGUYÊN -->
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
-        <span>Skill</span>
+        <span>Skill &amp; Tài nguyên</span>
       </ng-template>
       <div class="tab-pane">
-        <div class="section-intro">
-          <h2 class="sec-title">
-            <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
-            <span>Kỹ năng &amp; Quyền gọi Tool</span>
-          </h2>
-          <p class="muted small">
-            Tool có rủi ro "gửi ra ngoài" hoặc "phá hủy" luôn dừng lại chờ người duyệt;
-            thao tác "phá hủy" chỉ Admin/Owner được duyệt.
-          </p>
+        <div class="resource-summary">
+          <span class="flow-chip chip-write">
+            <mat-icon class="sm" svgIcon="bolt" />
+            {{ spec.skills.length }} Skill
+          </span>
+          <span class="flow-chip chip-read">
+            <mat-icon class="sm" svgIcon="cable" />
+            {{ spec.connections.length }} Kết nối
+          </span>
+          <span class="flow-chip chip-warn">
+            <mat-icon class="sm" svgIcon="hub" />
+            {{ spec.mcp_servers.length }} MCP
+          </span>
+          <span class="flow-chip chip-read">
+            <mat-icon class="sm" svgIcon="menu_book" />
+            {{ spec.knowledge_bases.length }} Kho tri thức
+          </span>
         </div>
 
-        <div class="skills-list">
-          @for (s of skills(); track s.id) {
-            <div class="skill-card" [class.enabled]="hasSkill(s.id)">
-              <div class="skill-head">
-                <mat-checkbox
-                  [ngModel]="hasSkill(s.id)"
-                  (ngModelChange)="toggleSkill(s.id, $event)"
-                >
-                  <strong>{{ s.name }}</strong> <code>{{ s.id }}</code>
-                </mat-checkbox>
+        @if (spec.graph_type === 'supervisor') {
+          <div class="flow-info-strip">
+            <mat-icon class="sm" svgIcon="shield" aria-hidden="true" />
+            <span>
+              Agent này đang ở chế độ <strong>Điều phối (Supervisor)</strong> —
+              hãy cấu hình các Agent thành viên ở tab Tổng quan thay vì gắn trực
+              tiếp Skill/Kết nối.
+            </span>
+          </div>
+        }
+
+        <!-- 1. Skills -->
+        <section class="section-block">
+          <div class="section-intro with-action">
+            <div class="section-intro-left">
+              <span class="sec-badge" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="bolt" />
+              </span>
+              <div>
+                <h2>Kỹ năng &amp; Quyền gọi Tool</h2>
+                <p class="muted small">
+                  Tool có rủi ro "gửi ra ngoài" hoặc "phá hủy" luôn tạm dừng chờ
+                  người duyệt (HITL); thao tác "phá hủy" chỉ Admin/Owner được
+                  duyệt.
+                </p>
               </div>
-              <div class="skill-body">
-                <p class="muted small">{{ s.description }}</p>
-                <div class="tools-grid">
-                  @for (t of s.tools; track t.name) {
-                    <div class="tool-item">
-                      <mat-icon
-                        class="sm"
-                        svgIcon="deployed_code"
-                        aria-hidden="true"
-                      />
-                      <code>{{ t.name }}</code>
-                      <ui-tag
-                        [value]="riskLabel[t.risk]"
-                        [severity]="needsApproval(t.risk) ? 'warn' : 'info'"
-                      />
-                      @if (needsApproval(t.risk)) {
-                        <span class="muted small">cần duyệt khi chạy</span>
+            </div>
+            <ui-tag
+              [value]="spec.skills.length + '/' + skills().length + ' đang bật'"
+              severity="secondary"
+            />
+          </div>
+
+          <div class="skills-list">
+            @for (s of skills(); track s.id) {
+              <div class="skill-card" [class.enabled]="hasSkill(s.id)">
+                <div class="skill-head">
+                  <mat-checkbox
+                    [ngModel]="hasSkill(s.id)"
+                    (ngModelChange)="toggleSkill(s.id, $event)"
+                  >
+                    <strong>{{ s.name }}</strong> <code>{{ s.id }}</code>
+                  </mat-checkbox>
+                </div>
+                <div class="skill-body">
+                  <p class="muted small">{{ s.description }}</p>
+                  <div class="tools-grid">
+                    @for (t of s.tools; track t.name) {
+                      <div class="tool-item">
+                        <mat-icon
+                          class="sm"
+                          svgIcon="deployed_code"
+                          aria-hidden="true"
+                        />
+                        <code>{{ t.name }}</code>
+                        <ui-tag
+                          [value]="riskLabel[t.risk]"
+                          [severity]="needsApproval(t.risk) ? 'warn' : 'info'"
+                        />
+                        @if (needsApproval(t.risk)) {
+                          <span class="muted small">cần duyệt khi chạy</span>
+                        }
+                        <span class="muted small tool-desc">{{
+                          t.description
+                        }}</span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              </div>
+            } @empty {
+              <p class="muted small empty-inline">
+                Chưa có skill nào được cài đặt trên hệ thống.
+              </p>
+            }
+          </div>
+        </section>
+
+        <!-- 2. Connections -->
+        <section class="section-block">
+          <div class="section-intro with-action">
+            <div class="section-intro-left">
+              <span class="sec-badge" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="cable" />
+              </span>
+              <div>
+                <h2>Kết nối dữ liệu</h2>
+                <p class="muted small">
+                  Gắn kết nối cơ sở dữ liệu hoặc dịch vụ nội bộ (quản lý ở trang
+                  <a routerLink="/connections">Kết nối</a>). Mặc định chỉ bật
+                  tool đọc.
+                </p>
+              </div>
+            </div>
+            <ui-tag
+              [value]="spec.connections.length + ' đã gắn'"
+              severity="secondary"
+            />
+          </div>
+
+          <div class="skills-list">
+            @for (c of connectionChoices(); track c.id) {
+              <div class="skill-card" [class.enabled]="hasConnection(c.id)">
+                <div class="skill-head">
+                  <mat-checkbox
+                    [ngModel]="hasConnection(c.id)"
+                    (ngModelChange)="toggleConnection(c, $event)"
+                    [disabled]="!c.can_use && !hasConnection(c.id)"
+                  >
+                    <strong>{{ c.name }}</strong>
+                    <code>{{ c.connector_id }}</code>
+                  </mat-checkbox>
+                </div>
+                @if (hasConnection(c.id)) {
+                  <div class="skill-body">
+                    <div class="tools-grid">
+                      @for (t of connectorOf(c)?.tools ?? []; track t.name) {
+                        <div class="tool-item">
+                          <mat-checkbox
+                            [ngModel]="connToolAllowed(c.id, t.name)"
+                            (ngModelChange)="toggleConnTool(c, t.name, $event)"
+                          >
+                            <code>{{ t.name }}</code>
+                          </mat-checkbox>
+                          <ui-tag
+                            [value]="riskLabel[t.risk]"
+                            [severity]="t.risk === 'read' ? 'info' : 'warn'"
+                          />
+                          <span class="muted small tool-desc">{{
+                            t.description
+                          }}</span>
+                        </div>
                       }
-                      <span class="muted small tool-desc">{{
-                        t.description
-                      }}</span>
                     </div>
-                  }
-                </div>
-              </div>
-            </div>
-          } @empty {
-            <p class="muted">Chưa có skill nào được cài.</p>
-          }
-        </div>
-
-        <div class="section-intro conn-intro">
-          <h2 class="sec-title">
-            <mat-icon class="sm" svgIcon="cable" aria-hidden="true" />
-            <span>Kết nối dữ liệu</span>
-          </h2>
-          <p class="muted small">
-            Gắn kết nối bạn được dùng (quản lý ở trang
-            <a routerLink="/connections">Kết nối</a>). Mặc định chỉ bật tool đọc.
-          </p>
-        </div>
-        <div class="skills-list">
-          @for (c of connectionChoices(); track c.id) {
-            <div class="skill-card" [class.enabled]="hasConnection(c.id)">
-              <div class="skill-head">
-                <mat-checkbox
-                  [ngModel]="hasConnection(c.id)"
-                  (ngModelChange)="toggleConnection(c, $event)"
-                  [disabled]="!c.can_use && !hasConnection(c.id)"
-                >
-                  <strong>{{ c.name }}</strong>
-                  <code>{{ c.connector_id }}</code>
-                </mat-checkbox>
-              </div>
-              @if (hasConnection(c.id)) {
-                <div class="skill-body">
-                  <div class="tools-grid">
-                    @for (t of connectorOf(c)?.tools ?? []; track t.name) {
-                      <div class="tool-item">
-                        <mat-checkbox
-                          [ngModel]="connToolAllowed(c.id, t.name)"
-                          (ngModelChange)="toggleConnTool(c, t.name, $event)"
-                        >
-                          <code>{{ t.name }}</code>
-                        </mat-checkbox>
-                        <ui-tag
-                          [value]="riskLabel[t.risk]"
-                          [severity]="t.risk === 'read' ? 'info' : 'warn'"
-                        />
-                        <span class="muted small tool-desc">{{ t.description }}</span>
-                      </div>
-                    }
                   </div>
-                </div>
-              }
-            </div>
-          } @empty {
-            <p class="muted">
-              Chưa có kết nối nào —
-              <a routerLink="/connections">tạo kết nối</a>.
-            </p>
-          }
-        </div>
-
-        <div class="section-intro conn-intro">
-          <h2 class="sec-title">
-            <mat-icon class="sm" svgIcon="hub" aria-hidden="true" />
-            <span>MCP server</span>
-          </h2>
-          <p class="muted small">
-            Tool từ MCP server do Admin đăng ký. Mặc định chỉ bật tool đọc; kết quả luôn được coi là
-            dữ liệu bên ngoài.
-          </p>
-        </div>
-        <div class="skills-list">
-          @for (s of mcpServers(); track s.id) {
-            <div class="skill-card" [class.enabled]="hasMcp(s.id)">
-              <div class="skill-head">
-                <mat-checkbox
-                  [ngModel]="hasMcp(s.id)"
-                  (ngModelChange)="toggleMcp(s.id, $event)"
-                  [disabled]="!s.enabled && !hasMcp(s.id)"
-                >
-                  <strong>{{ s.name }}</strong> <code>{{ s.slug }}</code>
-                </mat-checkbox>
+                }
               </div>
-              @if (hasMcp(s.id)) {
-                <div class="skill-body">
-                  <div class="tools-grid">
-                    @for (t of s.tools; track t.tool) {
-                      <div class="tool-item">
-                        <mat-checkbox
-                          [ngModel]="mcpToolAllowed(s.id, t.tool)"
-                          (ngModelChange)="toggleMcpTool(s.id, t.tool, $event)"
-                        >
-                          <code>{{ t.tool }}</code>
-                        </mat-checkbox>
-                        <ui-tag
-                          [value]="riskLabel[t.risk]"
-                          [severity]="t.risk === 'read' ? 'info' : 'warn'"
-                        />
-                        <span class="muted small tool-desc">{{ t.description }}</span>
-                      </div>
-                    }
+            } @empty {
+              <p class="muted small empty-inline">
+                Chưa có kết nối dữ liệu nào —
+                <a routerLink="/connections">tạo kết nối mới</a>.
+              </p>
+            }
+          </div>
+        </section>
+
+        <!-- 3. MCP Servers -->
+        <section class="section-block">
+          <div class="section-intro with-action">
+            <div class="section-intro-left">
+              <span class="sec-badge" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="hub" />
+              </span>
+              <div>
+                <h2>MCP Server</h2>
+                <p class="muted small">
+                  Công cụ từ MCP server do Admin đăng ký. Mặc định chỉ bật tool
+                  đọc; kết quả luôn được xử lý như dữ liệu bên ngoài.
+                </p>
+              </div>
+            </div>
+            <ui-tag
+              [value]="spec.mcp_servers.length + ' đã gắn'"
+              severity="secondary"
+            />
+          </div>
+
+          <div class="skills-list">
+            @for (s of mcpServers(); track s.id) {
+              <div class="skill-card" [class.enabled]="hasMcp(s.id)">
+                <div class="skill-head">
+                  <mat-checkbox
+                    [ngModel]="hasMcp(s.id)"
+                    (ngModelChange)="toggleMcp(s.id, $event)"
+                    [disabled]="!s.enabled && !hasMcp(s.id)"
+                  >
+                    <strong>{{ s.name }}</strong> <code>{{ s.slug }}</code>
+                  </mat-checkbox>
+                </div>
+                @if (hasMcp(s.id)) {
+                  <div class="skill-body">
+                    <div class="tools-grid">
+                      @for (t of s.tools; track t.tool) {
+                        <div class="tool-item">
+                          <mat-checkbox
+                            [ngModel]="mcpToolAllowed(s.id, t.tool)"
+                            (ngModelChange)="
+                              toggleMcpTool(s.id, t.tool, $event)
+                            "
+                          >
+                            <code>{{ t.tool }}</code>
+                          </mat-checkbox>
+                          <ui-tag
+                            [value]="riskLabel[t.risk]"
+                            [severity]="t.risk === 'read' ? 'info' : 'warn'"
+                          />
+                          <span class="muted small tool-desc">{{
+                            t.description
+                          }}</span>
+                        </div>
+                      }
+                    </div>
                   </div>
-                </div>
-              }
-            </div>
-          } @empty {
-            <p class="muted small">Chưa có MCP server nào được đăng ký.</p>
-          }
-        </div>
-
-        <div class="section-intro conn-intro">
-          <h2 class="sec-title">
-            <mat-icon class="sm" svgIcon="menu_book" aria-hidden="true" />
-            <span>Kho tri thức</span>
-          </h2>
-          <p class="muted small">
-            Agent sẽ tra cứu tài liệu qua tool <code>kb.search</code> và trích dẫn nguồn [n]. Chỉ gắn
-            được kho có mức mật không cao hơn agent (quản lý ở trang
-            <a routerLink="/knowledge">Tri thức</a>).
-          </p>
-        </div>
-        <div class="skills-list">
-          @for (k of knowledgeBases(); track k.id) {
-            <div class="skill-card" [class.enabled]="hasKb(k.id)">
-              <div class="skill-head">
-                <mat-checkbox
-                  [ngModel]="hasKb(k.id)"
-                  (ngModelChange)="toggleKb(k.id, $event)"
-                  [disabled]="!k.can_read && !hasKb(k.id)"
-                >
-                  <strong>{{ k.name }}</strong>
-                </mat-checkbox>
-                <ui-tag [value]="k.data_classification" severity="info" />
-                <span class="muted small">{{ k.doc_count }} tài liệu</span>
+                }
               </div>
-              @if (k.description) {
-                <div class="skill-body">
-                  <p class="muted small">{{ k.description }}</p>
-                </div>
-              }
+            } @empty {
+              <p class="muted small empty-inline">
+                Chưa có MCP server nào được đăng ký.
+              </p>
+            }
+          </div>
+        </section>
+
+        <!-- 4. Knowledge Bases -->
+        <section class="section-block">
+          <div class="section-intro with-action">
+            <div class="section-intro-left">
+              <span class="sec-badge" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="menu_book" />
+              </span>
+              <div>
+                <h2>Kho tri thức</h2>
+                <p class="muted small">
+                  Agent sẽ tra cứu tài liệu qua <code>kb.search</code> và trích
+                  dẫn nguồn [n]. Chỉ gắn được kho có mức mật không cao hơn agent
+                  (quản lý ở trang <a routerLink="/knowledge">Kho tri thức</a>).
+                </p>
+              </div>
             </div>
-          } @empty {
-            <p class="muted small">
-              Chưa có kho tri thức — <a routerLink="/knowledge">tạo kho</a>.
-            </p>
-          }
-        </div>
+            <ui-tag
+              [value]="spec.knowledge_bases.length + ' đã gắn'"
+              severity="secondary"
+            />
+          </div>
+
+          <div class="skills-list">
+            @for (k of knowledgeBases(); track k.id) {
+              <div class="skill-card" [class.enabled]="hasKb(k.id)">
+                <div class="skill-head kb-head">
+                  <mat-checkbox
+                    [ngModel]="hasKb(k.id)"
+                    (ngModelChange)="toggleKb(k.id, $event)"
+                    [disabled]="!k.can_read && !hasKb(k.id)"
+                  >
+                    <strong>{{ k.name }}</strong>
+                  </mat-checkbox>
+                  <ui-tag [value]="k.data_classification" severity="info" />
+                  <span class="flow-chip chip-read"
+                    >{{ k.doc_count }} tài liệu</span
+                  >
+                </div>
+                @if (k.description) {
+                  <div class="skill-body">
+                    <p class="muted small">{{ k.description }}</p>
+                  </div>
+                }
+              </div>
+            } @empty {
+              <p class="muted small empty-inline">
+                Chưa có kho tri thức nào —
+                <a routerLink="/knowledge">tạo kho tri thức</a>.
+              </p>
+            }
+          </div>
+        </section>
       </div>
     </mat-tab>
 
+    <!-- TAB 4: GIỚI HẠN -->
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="sm" svgIcon="tune" aria-hidden="true" />
         <span>Giới hạn</span>
       </ng-template>
       <div class="tab-pane">
-        <div class="section-intro">
-          <h2 class="sec-title">
-            <mat-icon class="sm" svgIcon="tune" aria-hidden="true" />
-            <span>Giới hạn vận hành &amp; Ngân sách Token</span>
-          </h2>
-          <p class="muted small">
-            Kiểm soát số vòng lặp gọi tool, thời gian phản hồi tối đa và hạn mức
-            token cho mỗi lượt chạy.
-          </p>
-        </div>
+        <section class="section-block">
+          <div class="section-intro">
+            <span class="sec-badge" aria-hidden="true">
+              <mat-icon class="sm" svgIcon="tune" />
+            </span>
+            <div>
+              <h2>Giới hạn vận hành &amp; Ngân sách Token</h2>
+              <p class="muted small">
+                Kiểm soát số vòng lặp gọi tool, thời gian phản hồi tối đa và hạn
+                mức token để đảm bảo chi phí và hiệu năng ổn định.
+              </p>
+            </div>
+          </div>
 
-        <div class="form form-grid-2">
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="refresh" />
-            <mat-label>Số vòng tool tối đa</mat-label>
-            <input
-              matInput
-              type="number"
-              min="1"
-              max="50"
-              [(ngModel)]="spec.limits.max_iterations"
-            />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="play_arrow" />
-            <mat-label>Thời gian tối đa mỗi lần chạy (giây)</mat-label>
-            <input
-              matInput
-              type="number"
-              min="5"
-              max="900"
-              [(ngModel)]="spec.limits.timeout_s"
-            />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="database" />
-            <mat-label>Token tối đa mỗi lần chạy</mat-label>
-            <input
-              matInput
-              type="number"
-              min="1000"
-              max="2000000"
-              step="10000"
-              [(ngModel)]="spec.limits.max_tokens_per_run"
-            />
-          </mat-form-field>
-          <mat-form-field appearance="outline">
-            <mat-icon matPrefix class="sm" svgIcon="key" />
-            <mat-label>max_tokens mỗi lượt model</mat-label>
-            <input
-              matInput
-              type="number"
-              min="1024"
-              max="128000"
-              step="1024"
-              [(ngModel)]="spec.model.max_tokens"
-            />
-          </mat-form-field>
-        </div>
+          <div class="limits-grid">
+            <div class="limit-item">
+              <mat-form-field appearance="outline" class="full">
+                <mat-icon matPrefix class="sm" svgIcon="refresh" />
+                <mat-label>Số vòng tool tối đa</mat-label>
+                <input
+                  matInput
+                  type="number"
+                  min="1"
+                  max="50"
+                  [(ngModel)]="spec.limits.max_iterations"
+                />
+              </mat-form-field>
+              <span class="muted small"
+                >Số bước suy luận &amp; gọi công cụ tối đa trong một lượt trả
+                lời (1–50).</span
+              >
+            </div>
+
+            <div class="limit-item">
+              <mat-form-field appearance="outline" class="full">
+                <mat-icon matPrefix class="sm" svgIcon="play_arrow" />
+                <mat-label>Thời gian tối đa mỗi lần chạy (giây)</mat-label>
+                <input
+                  matInput
+                  type="number"
+                  min="5"
+                  max="900"
+                  [(ngModel)]="spec.limits.timeout_s"
+                />
+              </mat-form-field>
+              <span class="muted small"
+                >Tự động ngắt lượt chạy nếu vượt quá ngưỡng thời gian này
+                (5–900s).</span
+              >
+            </div>
+
+            <div class="limit-item">
+              <mat-form-field appearance="outline" class="full">
+                <mat-icon matPrefix class="sm" svgIcon="database" />
+                <mat-label>Token tối đa mỗi lần chạy</mat-label>
+                <input
+                  matInput
+                  type="number"
+                  min="1000"
+                  max="2000000"
+                  step="10000"
+                  [(ngModel)]="spec.limits.max_tokens_per_run"
+                />
+              </mat-form-field>
+              <span class="muted small"
+                >Tổng ngân sách token (vào + ra) cộng dồn trong toàn bộ một lượt
+                xử lý.</span
+              >
+            </div>
+
+            <div class="limit-item">
+              <mat-form-field appearance="outline" class="full">
+                <mat-icon matPrefix class="sm" svgIcon="key" />
+                <mat-label>max_tokens mỗi lượt model</mat-label>
+                <input
+                  matInput
+                  type="number"
+                  min="1024"
+                  max="128000"
+                  step="1024"
+                  [(ngModel)]="spec.model.max_tokens"
+                />
+              </mat-form-field>
+              <span class="muted small"
+                >Độ dài phản hồi tối đa mà mô hình được phép sinh ra trong mỗi
+                lần gọi.</span
+              >
+            </div>
+          </div>
+        </section>
       </div>
     </mat-tab>
 
+    <!-- TAB 5: JSON -->
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="sm" svgIcon="code" aria-hidden="true" />
         <span>JSON</span>
       </ng-template>
       <div class="tab-pane">
-        <div class="section-intro json-head">
-          <div>
-            <h2 class="sec-title">
-              <mat-icon class="sm" svgIcon="code" aria-hidden="true" />
-              <span>Đặc tả AgentSpec v2 (JSON)</span>
-            </h2>
-            <p class="muted small">
-              AgentSpec v2 — sửa trực tiếp rồi bấm Áp dụng. Server kiểm tra lại
-              khi Lưu.
-            </p>
+        <section class="section-block">
+          <div class="section-intro with-action">
+            <div class="section-intro-left">
+              <span class="sec-badge" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="code" />
+              </span>
+              <div>
+                <h2>Đặc tả AgentSpec v2 (JSON)</h2>
+                <p class="muted small">
+                  Chỉnh sửa trực tiếp cấu hình JSON rồi bấm Áp dụng. Máy chủ sẽ
+                  kiểm tra hợp lệ schema khi Lưu.
+                </p>
+              </div>
+            </div>
+            <div class="json-actions">
+              <button
+                mat-stroked-button
+                class="pill-btn"
+                type="button"
+                (click)="copyJson()"
+              >
+                <mat-icon svgIcon="content_copy" /> Sao chép
+              </button>
+              <button
+                mat-flat-button
+                class="btn-aries"
+                type="button"
+                (click)="applyJson()"
+              >
+                <mat-icon svgIcon="check" /> Áp dụng JSON
+              </button>
+            </div>
           </div>
-          <button mat-stroked-button type="button" (click)="applyJson()">
-            <mat-icon svgIcon="check" /> Áp dụng JSON
-          </button>
-        </div>
-        <mat-form-field appearance="outline" class="full">
-          <mat-label>AgentSpec (JSON)</mat-label>
-          <textarea
-            matInput
-            class="json"
-            rows="22"
-            [(ngModel)]="jsonText"
-            spellcheck="false"
-          ></textarea>
-        </mat-form-field>
+
+          <mat-form-field appearance="outline" class="full json-field">
+            <mat-label>AgentSpec (JSON)</mat-label>
+            <textarea
+              matInput
+              class="json"
+              rows="22"
+              [(ngModel)]="jsonText"
+              spellcheck="false"
+            ></textarea>
+          </mat-form-field>
+        </section>
       </div>
     </mat-tab>
   </mat-tab-group>
@@ -595,12 +862,12 @@
       subscriptSizing="dynamic"
     >
       <mat-icon matPrefix class="sm" svgIcon="edit" />
-      <mat-label>Ghi chú thay đổi (tùy chọn)</mat-label>
+      <mat-label>Ghi chú thay đổi cho phiên bản này (tùy chọn)</mat-label>
       <input
         matInput
         [(ngModel)]="note"
         maxlength="500"
-        placeholder="Ví dụ: thêm quy tắc không hứa hoàn tiền"
+        placeholder="Ví dụ: thêm quy tắc không hứa hoàn tiền, gắn kho tri thức CSKH"
       />
     </mat-form-field>
     <button

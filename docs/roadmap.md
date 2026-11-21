@@ -93,9 +93,17 @@ trả lời; thao tác cần duyệt của agent con được duyệt ngay trong
   audit), tổng hợp feedback, lượt chạy/token/chi phí theo ngày, agent, kênh.
 - Còn lại: annotation (sửa câu trả lời mẫu), quota theo phòng ban/tháng, Langfuse/OpenTelemetry.
 
-## Phase 6 — Tự động hóa
-- **Gmail** tool + trigger; `/schedule` (cron, mail mới) — lịch có thể giao cho Master; Plan & Execute nhiều bước dài.
-- Taint tracking (lethal trifecta), DLP output.
+## Phase 6 — Tự động hóa (ADR-0021)
+- ✅ Lịch chạy agent: cron (theo múi giờ, tối thiểu 5 phút) hoặc **mail mới** (Gmail, polling History
+  API); chạy dưới tên chủ lịch nhưng không mang vai trò, thao tác cần duyệt chờ ở trang Duyệt; lịch sử
+  từng lần chạy, chạy ngay, tự tắt sau 5 lỗi liên tiếp. Trang **Tự động**. Lịch có thể giao cho Master
+  (chọn agent Master).
+- ✅ Connector **Gmail**: tìm/đọc mail (dữ liệu không tin cậy), soạn nháp, gửi (luôn duyệt).
+- ✅ Lethal trifecta: nội dung trigger nhiễm taint ngay từ đầu; run đã nhiễm không gọi được URL mới
+  (chống rò qua query string) nếu không duyệt; tham số gửi ra ngoài chứa khóa bí mật bị chặn.
+- ✅ DLP: che khóa bí mật / CCCD / số thẻ (tùy chọn cả email, SĐT) trong câu trả lời qua link công
+  khai, API key, Telegram (`AgentSpec.dlp`).
+- Còn lại (6b): Plan & Execute nhiều bước dài, lệnh `/schedule` trong chat, Gmail push.
 
 ## Phase 7 — Agent-as-code & mở rộng
 - CLI `aiagent` (OAuth Device Flow), import/export YAML, template gallery.

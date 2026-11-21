@@ -10,7 +10,7 @@ const ICONS = [
   'verified', 'cable', 'cancel', 'check_circle', 'database', 'delete', 'gavel', 'key',
   'play_arrow', 'travel_explore', 'warning', 'hub', 'sync', 'login',
   'menu_book', 'upload_file', 'description', 'share', 'link', 'content_copy', 'thumb_up',
-  'thumb_down', 'public',
+  'thumb_down', 'public', 'schedule', 'mail',
 ];
 const src = 'node_modules/@material-symbols/svg-400/outlined';
 const out = 'apps/web/public/assets/icons';

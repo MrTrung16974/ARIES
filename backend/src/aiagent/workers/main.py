@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any, ClassVar
 from uuid import UUID
 
@@ -65,18 +66,33 @@ async def telegram_poll(ctx: dict[str, Any]) -> int:
     return handled
 
 
+async def schedule_tick(ctx: dict[str, Any]) -> int:
+    """Mỗi phút: nhận lịch chạy đến hạn ở mọi tenant và đẩy job `run_schedule` (ADR-0021)."""
+    return len(await ctx["container"].automation.tick())
+
+
+async def run_schedule(ctx: dict[str, Any], tenant_id: str, schedule_id: str, fired_at: str) -> int:
+    """Chạy agent cho một lần kích hoạt lịch (cron) hoặc kiểm tra mail mới (gmail)."""
+    return int(
+        await ctx["container"].automation.execute(
+            tenant_id, UUID(schedule_id), datetime.fromisoformat(fired_at)
+        )
+    )
+
+
 async def heartbeat(ctx: dict[str, Any]) -> None:
     checks = await ctx["container"].readiness()
     logger.info("Worker heartbeat", extra={"checks": checks})
 
 
 class WorkerSettings:
-    functions: ClassVar[list[Any]] = [ping, ingest_document]
+    functions: ClassVar[list[Any]] = [ping, ingest_document, run_schedule]
     job_timeout = 900  # tài liệu lớn trên CPU có thể mất vài phút
-    max_jobs = 3  # ingest ×2 + polling Telegram
+    max_jobs = 4  # ingest, lịch chạy, polling Telegram
     cron_jobs: ClassVar[list[Any]] = [
         cron(heartbeat, minute=set(range(0, 60, 5))),
         cron(telegram_poll, second=0, unique=True, timeout=58),
+        cron(schedule_tick, second=5, unique=True, timeout=50),
     ]
     on_startup = startup
     on_shutdown = shutdown

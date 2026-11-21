@@ -92,6 +92,12 @@ export const appRoutes: Route[] = [
           import('./pages/plugins/plugins').then((m) => m.Plugins),
       },
       {
+        path: 'automation',
+        title: 'Tự động hóa',
+        loadComponent: () =>
+          import('./pages/automation/automation').then((m) => m.Automation),
+      },
+      {
         path: 'ops',
         title: 'Vận hành',
         canActivate: [roleGuard('admin', 'auditor', 'builder')],

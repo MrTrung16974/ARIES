@@ -15,6 +15,7 @@ from aiagent.api.deps import ContainerDep, get_principal
 from aiagent.modules.channels.domain import ApiKey, ShareLink
 from aiagent.modules.identity.domain import Principal
 from aiagent.modules.runtime.domain import RunEvent, RunEventType
+from aiagent.shared_kernel.dlp import StreamMasker, mask
 from aiagent.shared_kernel.errors import ForbiddenError, NotFoundError, UnauthorizedError
 
 router = APIRouter(prefix="/api/v1", tags=["channels"])
@@ -186,6 +187,24 @@ def public_event(event: RunEvent) -> RunEvent | None:
     return None
 
 
+async def _public_stream(events: AsyncIterator[RunEvent], level: str) -> AsyncIterator[str]:
+    """Lọc sự kiện cho người ngoài + che dữ liệu nhạy cảm trong văn bản đang stream (ADR-0021)."""
+    masker = StreamMasker(level)
+    async for event in events:
+        filtered = public_event(event)
+        if filtered is None:
+            continue
+        if filtered.type is RunEventType.TEXT:
+            text = masker.feed(str(filtered.data.get("text", "")))
+            if text:
+                yield RunEvent(RunEventType.TEXT, {**filtered.data, "text": text}).to_sse()
+            continue
+        rest = masker.flush()
+        if rest:
+            yield RunEvent(RunEventType.TEXT, {"text": rest}).to_sse()
+        yield filtered.to_sse()
+
+
 class ShareInfoOut(BaseModel):
     name: str
     description: str
@@ -250,14 +269,10 @@ async def share_chat(
         principal, link.agent_id, body.message, thread_id=body.thread_id, draft=False
     )
 
-    async def events() -> AsyncIterator[str]:
-        async for event in c.runs.stream(prepared):
-            filtered = public_event(event)
-            if filtered is not None:
-                yield filtered.to_sse()
+    events = _public_stream(c.runs.stream(prepared), prepared.version.spec.dlp)
 
     return StreamingResponse(
-        events(),
+        events,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
@@ -274,9 +289,12 @@ async def share_messages(
     link = await c.channels.resolve_share(token)
     viewer = c.channels.viewer_principal(link, x_visitor_id or "")
     messages = await c.conversations.messages(viewer, thread_id)
+    _agent, version = await _share_agent(c, link, viewer)
     out = []
     for m in messages:
         text = "".join(str(b.get("text", "")) for b in m.content if b.get("type") == "text")
+        if m.role == "assistant":
+            text = mask(text, version.spec.dlp)
         if text:
             out.append({"id": m.id, "role": m.role, "text": text})
     return out
@@ -330,15 +348,10 @@ async def api_chat(
         principal, key.agent_id, body.message, thread_id=body.conversation_id, draft=False
     )
     if body.stream:
-
-        async def events() -> AsyncIterator[str]:
-            async for event in c.runs.stream(prepared):
-                filtered = public_event(event)
-                if filtered is not None:
-                    yield filtered.to_sse()
-
         return StreamingResponse(
-            events(), media_type="text/event-stream", headers={"Cache-Control": "no-store"}
+            _public_stream(c.runs.stream(prepared), prepared.version.spec.dlp),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store"},
         )
 
     answer, citations, done, error = "", [], {}, None
@@ -359,7 +372,7 @@ async def api_chat(
         conversation_id=prepared.thread.id,
         message_id=done.get("message_id"),
         status=str(done.get("status", "failed")),
-        answer=answer.strip(),
+        answer=mask(answer.strip(), prepared.version.spec.dlp),
         citations=citations,
         error=error,
     )

@@ -115,6 +115,7 @@ export interface AgentSpec {
   };
   approval: { require_for: RiskLevel[] };
   data_classification: DataClassification;
+  dlp?: 'off' | 'mask' | 'strict';
 }
 
 export interface AgentSummary {
@@ -229,6 +230,7 @@ export function defaultSpec(): AgentSpec {
     limits: { max_iterations: 10, timeout_s: 120, max_tokens_per_run: 200000 },
     approval: { require_for: ['destructive', 'external_send'] },
     data_classification: 'internal',
+    dlp: 'mask',
   };
 }
 
@@ -644,4 +646,49 @@ export interface TelegramBotInfo {
   created_at: string;
   last_used_at: string | null;
   webhook_url: string | null;
+}
+
+// ---------------------------------------------------------------- Tự động hóa (ADR-0021)
+export type ScheduleKind = 'cron' | 'gmail';
+
+export interface ScheduleInfo {
+  id: string;
+  owner_id: string;
+  agent_id: string;
+  name: string;
+  kind: ScheduleKind;
+  cron: string;
+  timezone: string;
+  prompt: string;
+  connection_id: string | null;
+  trigger_config: { from_contains?: string; subject_contains?: string };
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_status: string | null;
+  failure_count: number;
+  created_at: string;
+}
+
+export interface CreateSchedule {
+  name: string;
+  agent_id: string;
+  kind: ScheduleKind;
+  prompt: string;
+  cron?: string;
+  timezone?: string;
+  interval_minutes?: number;
+  connection_id?: string | null;
+  trigger_config?: { from_contains?: string; subject_contains?: string };
+}
+
+export interface ScheduleRunInfo {
+  id: string;
+  thread_id: string | null;
+  status: string;
+  trigger_ref: string;
+  title: string;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
 }

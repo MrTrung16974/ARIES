@@ -77,6 +77,7 @@ _MANIFEST = PluginManifest(
             description="Đọc nội dung văn bản của một trang web công khai (http/https).",
             risk=RiskLevel.READ,
             untrusted_output=True,
+            network=True,
             input_schema={
                 "type": "object",
                 "properties": {"url": {"type": "string", "minLength": 8, "maxLength": 2048}},

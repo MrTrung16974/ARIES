@@ -11,6 +11,7 @@ from aiagent.plugin_sdk.manifest import (
     PluginManifest,
     RiskLevel,
     ToolSpec,
+    TriggerSpec,
 )
 from aiagent.plugin_sdk.plugin import (
     ConnectionContext,
@@ -20,6 +21,7 @@ from aiagent.plugin_sdk.plugin import (
     ToolContext,
     ToolNotFoundError,
     ToolResult,
+    TriggerEvent,
 )
 
 __all__ = [
@@ -36,4 +38,6 @@ __all__ = [
     "ToolNotFoundError",
     "ToolResult",
     "ToolSpec",
+    "TriggerEvent",
+    "TriggerSpec",
 ]

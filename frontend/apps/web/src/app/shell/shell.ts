@@ -78,6 +78,7 @@ export class Shell implements OnInit {
           link: '/plugins',
           visible: this.session.hasAnyRole('admin'),
         },
+        { label: 'Tự động', icon: 'schedule', link: '/automation', visible: true },
         {
           label: 'Vận hành',
           icon: 'dashboard',

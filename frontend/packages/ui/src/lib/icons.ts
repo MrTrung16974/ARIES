@@ -57,6 +57,8 @@ export const APP_ICONS = [
   'thumb_up',
   'thumb_down',
   'public',
+  'schedule',
+  'mail',
 ] as const;
 
 export type AppIcon = (typeof APP_ICONS)[number];

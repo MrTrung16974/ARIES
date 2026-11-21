@@ -64,6 +64,19 @@ class ToolSpec(BaseModel):
     # Kết quả chứa dữ liệu từ nguồn không tin cậy (web, nội dung người dùng nhập vào DB...):
     # core bọc nhãn cảnh báo và đánh dấu run "nhiễm" (taint) — ADR-0016.
     untrusted_output: bool = False
+    # Tool đọc nhưng gọi ra mạng theo URL trong tham số (web.fetch…): khi run đã nhiễm, chỉ được
+    # gọi URL đã có nguyên văn trong hội thoại — chặn rò dữ liệu qua query string (ADR-0021).
+    network: bool = False
+
+
+class TriggerSpec(BaseModel):
+    """Nguồn sự kiện của connector (mail mới…) — core gọi `Plugin.poll_trigger` định kỳ."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(pattern=_TOOL_NAME_PATTERN, max_length=128)
+    description: str = Field(min_length=1, max_length=1024)
+    config_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
 
 
 class PluginManifest(BaseModel):
@@ -83,6 +96,7 @@ class PluginManifest(BaseModel):
     oauth_scopes: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
     tools: tuple[ToolSpec, ...] = ()
+    triggers: tuple[TriggerSpec, ...] = ()
     ui_hints: dict[str, Any] = Field(default_factory=dict)
 
     @property
