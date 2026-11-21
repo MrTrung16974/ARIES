@@ -84,9 +84,14 @@ trả lời; thao tác cần duyệt của agent con được duyệt ngay trong
 - Còn lại: **Google Drive** data source (cần OAuth client thật), OCR cho PDF scan, object storage
   S3-compatible (hiện lưu tệp trên volume qua `BlobStorePort`), lệnh `/kb`.
 
-## Phase 5 — Publish & vận hành
-- Web app link, API key, embed widget, **Telegram** channel.
-- Log hội thoại, feedback/annotation, chi phí, quota, Langfuse.
+## Phase 5 — Publish & vận hành (ADR-0020)
+- ✅ Link chia sẻ `/c/<token>` + widget nhúng `embed.js` (giới hạn origin, rate limit theo khách và
+  theo ngày), API key `ak_…` (`POST /api/v1/public/v1/chat`, JSON hoặc SSE), bot **Telegram**
+  (polling hoặc webhook, danh sách chat được phép). Kênh ngoài không có người duyệt → tool cần
+  duyệt bị từ chối; link công khai không dùng connection/MCP.
+- ✅ Feedback 👍/👎 trên câu trả lời; trang **Vận hành**: hội thoại mọi kênh (mở toàn văn có ghi
+  audit), tổng hợp feedback, lượt chạy/token/chi phí theo ngày, agent, kênh.
+- Còn lại: annotation (sửa câu trả lời mẫu), quota theo phòng ban/tháng, Langfuse/OpenTelemetry.
 
 ## Phase 6 — Tự động hóa
 - **Gmail** tool + trigger; `/schedule` (cron, mail mới) — lịch có thể giao cho Master; Plan & Execute nhiều bước dài.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, ClassVar
 from uuid import UUID
@@ -40,6 +41,30 @@ async def ingest_document(ctx: dict[str, Any], tenant_id: str, doc_id: str) -> s
     return str(status)
 
 
+async def telegram_poll(ctx: dict[str, Any]) -> int:
+    """Long polling cho bot Telegram không nhận được webhook (ADR-0020 §5).
+
+    Cron mỗi phút, chạy ~50 giây: lần lượt getUpdates từng bot (timeout chia đều).
+    """
+    service = ctx["container"].telegram
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 50
+    handled = 0
+    while loop.time() < deadline:
+        bots = await service.polling_bots()
+        if not bots:
+            break
+        wait = max(1, min(20, int(deadline - loop.time()) // len(bots)))
+        for tenant_id, bot_id in bots:
+            if loop.time() >= deadline:
+                break
+            try:
+                handled += await service.poll_once(tenant_id, bot_id, wait_s=wait)
+            except Exception:
+                logger.exception("Polling Telegram lỗi", extra={"bot_id": str(bot_id)})
+    return handled
+
+
 async def heartbeat(ctx: dict[str, Any]) -> None:
     checks = await ctx["container"].readiness()
     logger.info("Worker heartbeat", extra={"checks": checks})
@@ -48,8 +73,11 @@ async def heartbeat(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     functions: ClassVar[list[Any]] = [ping, ingest_document]
     job_timeout = 900  # tài liệu lớn trên CPU có thể mất vài phút
-    max_jobs = 2
-    cron_jobs: ClassVar[list[Any]] = [cron(heartbeat, minute=set(range(0, 60, 5)))]
+    max_jobs = 3  # ingest ×2 + polling Telegram
+    cron_jobs: ClassVar[list[Any]] = [
+        cron(heartbeat, minute=set(range(0, 60, 5))),
+        cron(telegram_poll, second=0, unique=True, timeout=58),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url.get_secret_value())

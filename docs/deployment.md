@@ -113,3 +113,19 @@ API/worker **không có đường ra Internet nào ngoài Squid**:
   `RERANKER_URL=http://reranker` rồi restart api/worker.
 - Tệp gốc nằm ở volume `kbfiles` (`/data/kb` trong api/worker); sao lưu cùng Postgres.
 - Ingest chạy ở `worker` (arq, tối đa 2 job song song, mỗi job ≤ 15 phút).
+
+## 7. Phase 5 — Kênh publish & vận hành (ADR-0020)
+
+- Migration `0008` (API key, link chia sẻ, feedback) và `0009` (bot Telegram): chạy
+  `docker compose run --rm migrate` trước khi khởi động api/worker bản mới.
+- Link chia sẻ/widget: nginx cho phép nhúng iframe **chỉ** ở `/c/*`
+  (`aries-security-headers-embed.conf`: `frame-ancestors *`); phần còn lại giữ `DENY`. Trang của
+  khách có CSP `frame-src` chặt phải cho phép địa chỉ ARIES thì widget mới hiện.
+- `embed.js` cache 1 giờ — sau khi đổi script, chờ hoặc thêm query `?v=` ở thẻ nhúng.
+- Telegram: thêm `api.telegram.org` vào `deploy/squid/allowed-domains.txt` (đã có) rồi
+  `docker compose restart squid`. Chế độ **polling** chạy ở `worker` (cron mỗi phút, ~50 giây long
+  polling, worker tối đa 3 job); **webhook** cần `AIAGENT_PUBLIC_BASE_URL` dạng `https://` mà
+  Telegram gọi tới được (`/api/v1/public/telegram/<tenant>/<bot>`).
+- Danh sách bot polling nằm ở Redis (`aries:telegram:polling`); nếu Redis mất dữ liệu, vào trang
+  Chia sẻ & API bấm Tắt rồi Bật bot — mọi lần cập nhật bot polling đều tự đăng ký lại.
+- Trang **Vận hành** (`/ops`): admin/auditor xem toàn tenant; builder chỉ xem agent mình sở hữu.

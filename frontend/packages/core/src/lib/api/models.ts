@@ -508,3 +508,140 @@ export interface KnowledgeSearchResult {
   citations: Citation[];
   scores: number[];
 }
+
+// ---------------------------------------------------------------- Publish (Phase 5)
+export interface ApiKeyInfo {
+  id: string;
+  agent_id: string;
+  name: string;
+  prefix: string;
+  rate_limit_per_min: number;
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  key?: string; // chỉ có lúc vừa tạo
+}
+
+export interface ShareLinkInfo {
+  id: string;
+  agent_id: string;
+  name: string;
+  prefix: string;
+  enabled: boolean;
+  allowed_origins: string[];
+  rate_limit_per_min: number;
+  daily_message_limit: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+  token?: string; // chỉ có lúc vừa tạo / tạo lại
+}
+
+// ---------------------------------------------------------------- Vận hành (ADR-0020)
+export type OpsChannel = 'app' | 'share' | 'api' | 'telegram';
+
+export interface OpsFilter {
+  agent_id?: string | null;
+  channel?: OpsChannel | null;
+  rating?: 1 | -1 | null;
+  since?: string | null;
+  until?: string | null;
+}
+
+export interface OpsThread {
+  id: string;
+  agent_id: string;
+  user_id: string;
+  channel: OpsChannel;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  cost_usd: number;
+  thumbs_up: number;
+  thumbs_down: number;
+}
+
+export interface OpsPart {
+  type: 'text' | 'tool_use' | 'tool_result';
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: string;
+  tool_use_id?: string;
+  is_error?: boolean;
+}
+
+export interface OpsTranscript {
+  id: string;
+  agent_id: string;
+  agent_version: number;
+  user_id: string;
+  channel: OpsChannel;
+  title: string;
+  created_at: string;
+  messages: {
+    id: number;
+    role: 'user' | 'assistant';
+    created_at: string;
+    parts: OpsPart[];
+  }[];
+  feedback: {
+    message_id: number;
+    user_id: string;
+    rating: 1 | -1;
+    comment: string;
+  }[];
+}
+
+export interface OpsFeedback {
+  id: string;
+  thread_id: string;
+  message_id: number;
+  agent_id: string;
+  user_id: string;
+  channel: OpsChannel;
+  rating: 1 | -1;
+  comment: string;
+  created_at: string;
+  answer: string;
+}
+
+export interface OpsUsageRow {
+  day: string;
+  agent_id: string;
+  channel: OpsChannel;
+  runs: number;
+  failed_runs: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface OpsUsage {
+  since: string;
+  until: string;
+  runs: number;
+  failed_runs: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  rows: OpsUsageRow[];
+}
+
+export interface TelegramBotInfo {
+  id: string;
+  agent_id: string;
+  name: string;
+  bot_username: string;
+  mode: 'polling' | 'webhook';
+  enabled: boolean;
+  allowed_chat_ids: number[];
+  rate_limit_per_min: number;
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+  webhook_url: string | null;
+}

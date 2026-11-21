@@ -25,6 +25,13 @@ class Principal:
     username: str | None
     email: str | None
     roles: frozenset[Role]
+    # Kênh ngoài (ADR-0020): "share:<id>", "apikey:<id>", "telegram:<id>"; None = người dùng nội bộ.
+    channel: str | None = None
+
+    @property
+    def is_public_channel(self) -> bool:
+        """Người dùng ẩn danh qua link công khai — quyền hẹp nhất."""
+        return bool(self.channel and self.channel.startswith("share:"))
 
     def has_any_role(self, *roles: Role) -> bool:
         return Role.OWNER in self.roles or bool(self.roles.intersection(roles))

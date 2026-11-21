@@ -1000,3 +1000,12 @@ mat-icon.sm {
     white-space: nowrap;
   }
 }
+
+// Đánh giá câu trả lời (ADR-0020)
+.rate {
+  display: flex;
+  gap: 0.1rem;
+  margin-top: 0.15rem;
+  button { opacity: 0.45; }
+  button.on, button:hover { opacity: 1; color: var(--app-primary, #e11d74); }
+}

@@ -33,6 +33,18 @@ from aiagent.modules.builder.infrastructure.llm_brain import LlmArchitectBrain
 from aiagent.modules.builder.infrastructure.sql_session_repository import (
     SqlBuilderSessionRepository,
 )
+from aiagent.modules.channels.application import ChannelService
+from aiagent.modules.channels.application.telegram import TelegramService
+from aiagent.modules.channels.infrastructure.adapters import (
+    RedisRateLimiter,
+    SqlChannelRepository,
+)
+from aiagent.modules.channels.infrastructure.telegram import (
+    HttpTelegramClient,
+    RedisPollRegistry,
+    RuntimeAgentRunner,
+    SqlTelegramBotRepository,
+)
 from aiagent.modules.connections.application import ConnectionService, OAuthBroker
 from aiagent.modules.connections.domain import OAuthProvider, SecretVaultPort
 from aiagent.modules.connections.infrastructure.oauth_http import (
@@ -68,6 +80,8 @@ from aiagent.modules.knowledge.infrastructure.sql_knowledge_repository import (
 from aiagent.modules.mcp.application import McpService
 from aiagent.modules.mcp.infrastructure.sdk_client import SdkMcpClient
 from aiagent.modules.mcp.infrastructure.sql_mcp_repository import SqlMcpServerRepository
+from aiagent.modules.ops.application import OpsService
+from aiagent.modules.ops.infrastructure import SqlOpsQuery
 from aiagent.modules.runtime.application import (
     ApprovalService,
     ConnectionRef,
@@ -256,6 +270,9 @@ class Container:
     mcp: McpService
     oauth: OAuthBroker
     knowledge: KnowledgeService
+    channels: ChannelService
+    ops: OpsService
+    telegram: TelegramService
     model_router: ModelRouter
     model_catalog: ModelCatalog
     architect: ArchitectService
@@ -509,6 +526,20 @@ def build_container(settings: Settings) -> Container:
         mcp=mcp,
         oauth=oauth,
         knowledge=knowledge,
+        channels=ChannelService(SqlChannelRepository(db), agents, RedisRateLimiter(redis), audit),
+        ops=OpsService(SqlOpsQuery(db), conversations.repo, agents, audit),
+        telegram=TelegramService(
+            SqlTelegramBotRepository(db),
+            agents,
+            conversations.repo,
+            RuntimeAgentRunner(runs),
+            HttpTelegramClient(egress_http),
+            vault,
+            RedisPollRegistry(redis),
+            RedisRateLimiter(redis),
+            audit,
+            settings.public_base_url,
+        ),
         model_router=router,
         model_catalog=model_catalog,
         architect=architect,

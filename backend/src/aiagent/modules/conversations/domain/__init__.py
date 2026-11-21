@@ -110,6 +110,21 @@ class Delegation:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class Feedback:
+    """Đánh giá một câu trả lời (ADR-0020)."""
+
+    id: UUID
+    tenant_id: str
+    thread_id: UUID
+    message_id: int
+    agent_id: UUID
+    user_id: str
+    rating: int  # 1 | -1
+    comment: str
+    created_at: datetime
+
+
 class ConversationRepositoryPort(Protocol):
     async def create_thread(
         self,
@@ -197,6 +212,19 @@ class ConversationRepositoryPort(Protocol):
 
     async def expire_pending(self, tenant_id: str, thread_id: UUID) -> int: ...
 
+    async def upsert_feedback(
+        self,
+        tenant_id: str,
+        thread_id: UUID,
+        message_id: int,
+        agent_id: UUID,
+        user_id: str,
+        rating: int,
+        comment: str,
+    ) -> Feedback: ...
+
+    async def feedback_for_thread(self, tenant_id: str, thread_id: UUID) -> list[Feedback]: ...
+
     async def create_delegation(
         self,
         tenant_id: str,
@@ -232,6 +260,7 @@ __all__ = [
     "ConversationRepositoryPort",
     "Delegation",
     "DelegationStatus",
+    "Feedback",
     "Message",
     "Run",
     "RunStatus",

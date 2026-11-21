@@ -18,6 +18,7 @@ from aiagent.modules.conversations.domain import (
     ApprovalStatus,
     Delegation,
     DelegationStatus,
+    Feedback,
     Message,
     Run,
     RunStatus,
@@ -219,7 +220,13 @@ class InMemoryConversationRepository:
         model: str,
     ) -> Run:
         run = Run(uuid4(), thread_id, RunStatus.RUNNING, model)
-        self.runs[run.id] = {"status": RunStatus.RUNNING}
+        self.runs[run.id] = {
+            "status": RunStatus.RUNNING,
+            "thread_id": thread_id,
+            "agent_id": agent_id,
+            "user_id": user_id,
+            "started_at": utcnow(),
+        }
         return run
 
     async def finish_run(
@@ -231,7 +238,13 @@ class InMemoryConversationRepository:
         cost_usd: float,
         error: str | None,
     ) -> None:
-        self.runs[run_id] = {"status": status, "usage": usage, "cost": cost_usd, "error": error}
+        self.runs[run_id] = {
+            **self.runs.get(run_id, {}),
+            "status": status,
+            "usage": usage,
+            "cost": cost_usd,
+            "error": error,
+        }
 
     # ------------------------------------------------------------ approvals
     async def create_approvals(
@@ -667,3 +680,46 @@ class FakeOAuthClient:
 
     async def userinfo(self, provider: Any, access_token: str) -> dict[str, Any]:
         return {"sub": "kc-1", "email": "builder@aries.local"}
+
+
+def _add_feedback_methods() -> None:
+    async def upsert_feedback(
+        self: InMemoryConversationRepository,
+        tenant_id: str,
+        thread_id: UUID,
+        message_id: int,
+        agent_id: UUID,
+        user_id: str,
+        rating: int,
+        comment: str,
+    ) -> Feedback:
+        items = self.__dict__.setdefault("feedback", {})
+        f = Feedback(
+            uuid4(), tenant_id, thread_id, message_id, agent_id, user_id, rating, comment, utcnow()
+        )
+        items[(message_id, user_id)] = f
+        return f
+
+    async def feedback_for_thread(
+        self: InMemoryConversationRepository, tenant_id: str, thread_id: UUID
+    ) -> list[Feedback]:
+        return [
+            f for f in self.__dict__.setdefault("feedback", {}).values() if f.thread_id == thread_id
+        ]
+
+    InMemoryConversationRepository.upsert_feedback = upsert_feedback  # type: ignore[attr-defined]
+    InMemoryConversationRepository.feedback_for_thread = feedback_for_thread  # type: ignore[attr-defined]
+
+
+_add_feedback_methods()
+
+
+class MemoryRateLimiter:
+    """Cửa sổ cố định trong RAM (giống RedisRateLimiter nhưng không có thời gian)."""
+
+    def __init__(self) -> None:
+        self.counts: dict[str, int] = {}
+
+    async def hit(self, key: str, limit: int, window_s: int) -> bool:
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key] <= limit

@@ -109,6 +109,14 @@
           >
             <mat-icon svgIcon="edit" /> Cấu hình
           </a>
+          <a
+            mat-stroked-button
+            class="pill-btn"
+            [routerLink]="['/agents', id(), 'publish']"
+            title="Link chia sẻ, widget nhúng, API key"
+          >
+            <mat-icon svgIcon="share" /> Chia sẻ
+          </a>
         }
       </div>
     </header>
@@ -369,6 +377,18 @@
             }
             @if (m.text) {
               <div class="bubble">{{ m.text }}</div>
+              @if (m.role === 'assistant' && m.messageId && !m.streaming) {
+                <div class="rate">
+                  <button mat-icon-button type="button" [class.on]="m.rating === 1"
+                          (click)="rate(m, 1)" aria-label="Câu trả lời hữu ích">
+                    <mat-icon class="sm" svgIcon="thumb_up" />
+                  </button>
+                  <button mat-icon-button type="button" [class.on]="m.rating === -1"
+                          (click)="rate(m, -1)" aria-label="Câu trả lời chưa tốt">
+                    <mat-icon class="sm" svgIcon="thumb_down" />
+                  </button>
+                </div>
+              }
               @if (citations(m).length) {
                 <div class="sources" aria-label="Nguồn trích dẫn">
                   <span class="muted small">Nguồn:</span>

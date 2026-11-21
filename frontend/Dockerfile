@@ -11,5 +11,6 @@ RUN npx nx build web --configuration=production --skip-nx-cache
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx-security-headers.conf /etc/nginx/aries-security-headers.conf
+COPY nginx-security-headers-embed.conf /etc/nginx/aries-security-headers-embed.conf
 COPY --from=build /src/dist/apps/web/browser /usr/share/nginx/html
 EXPOSE 8080

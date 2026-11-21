@@ -9,3 +9,5 @@ openrouter.ai
 # Tải model embedding/rerank (TEI) lần đầu — ADR-0019
 .huggingface.co
 .hf.co
+# Kênh Telegram (Bot API) — ADR-0020
+api.telegram.org

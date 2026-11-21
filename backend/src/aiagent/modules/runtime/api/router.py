@@ -210,3 +210,36 @@ async def master(p: AnyUser, c: ContainerDep) -> MasterOut:
     agent = await c.agents.ensure_master(p, provider=model[0], model=model[1])
     count = len([a for a in await c.agents.list_agents(p) if a.id != agent.id])
     return MasterOut(agent_id=agent.id, name=agent.name, members=count)
+
+
+# ---------------------------------------------------------------- feedback (ADR-0020)
+class FeedbackIn(BaseModel):
+    rating: int = Field(ge=-1, le=1)
+    comment: str = Field(default="", max_length=1000)
+
+
+class FeedbackOut(BaseModel):
+    message_id: int
+    rating: int
+    comment: str
+
+
+@router.post("/threads/{thread_id}/messages/{message_id}/feedback", response_model=FeedbackOut)
+async def give_feedback(
+    thread_id: UUID, message_id: int, body: FeedbackIn, p: AnyUser, c: ContainerDep
+) -> FeedbackOut:
+    f = await c.conversations.give_feedback(
+        p, thread_id, message_id, rating=body.rating, comment=body.comment
+    )
+    return FeedbackOut(message_id=f.message_id, rating=f.rating, comment=f.comment)
+
+
+@router.get("/threads/{thread_id}/feedback", response_model=list[FeedbackOut])
+async def thread_feedback(thread_id: UUID, p: AnyUser, c: ContainerDep) -> list[FeedbackOut]:
+    await c.conversations.owned_thread(p, thread_id)
+    items = await c.conversations.repo.feedback_for_thread(p.tenant_id, thread_id)
+    return [
+        FeedbackOut(message_id=f.message_id, rating=f.rating, comment=f.comment)
+        for f in items
+        if f.user_id == p.subject
+    ]

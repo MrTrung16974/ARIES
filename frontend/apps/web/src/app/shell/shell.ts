@@ -79,6 +79,12 @@ export class Shell implements OnInit {
           visible: this.session.hasAnyRole('admin'),
         },
         {
+          label: 'Vận hành',
+          icon: 'dashboard',
+          link: '/ops',
+          visible: this.session.hasAnyRole('admin', 'auditor', 'builder'),
+        },
+        {
           label: 'Audit',
           icon: 'shield',
           link: '/audit',

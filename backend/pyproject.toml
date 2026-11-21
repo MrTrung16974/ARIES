@@ -139,6 +139,8 @@ source_modules = [
   "aiagent.modules.connections.domain",
   "aiagent.modules.mcp.domain",
   "aiagent.modules.knowledge.domain",
+  "aiagent.modules.channels.domain",
+  "aiagent.modules.ops.domain",
 ]
 forbidden_modules = [
   "fastapi", "sqlalchemy", "httpx", "redis", "arq", "langgraph", "anthropic",
@@ -179,6 +181,8 @@ source_modules = [
   "aiagent.modules.connections",
   "aiagent.modules.mcp",
   "aiagent.modules.knowledge",
+  "aiagent.modules.channels",
+  "aiagent.modules.ops",
   "aiagent.modules.runtime.domain", "aiagent.modules.runtime.application",
   "aiagent.modules.runtime.api",
 ]
@@ -256,4 +260,22 @@ layers = [
   "aiagent.modules.knowledge.api",
   "aiagent.modules.knowledge.application | aiagent.modules.knowledge.infrastructure",
   "aiagent.modules.knowledge.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module channels"
+type = "layers"
+layers = [
+  "aiagent.modules.channels.api",
+  "aiagent.modules.channels.application | aiagent.modules.channels.infrastructure",
+  "aiagent.modules.channels.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module ops"
+type = "layers"
+layers = [
+  "aiagent.modules.ops.api",
+  "aiagent.modules.ops.application | aiagent.modules.ops.infrastructure",
+  "aiagent.modules.ops.domain",
 ]

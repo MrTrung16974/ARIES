@@ -51,6 +51,12 @@ export const APP_ICONS = [
   'menu_book',
   'upload_file',
   'description',
+  'share',
+  'link',
+  'content_copy',
+  'thumb_up',
+  'thumb_down',
+  'public',
 ] as const;
 
 export type AppIcon = (typeof APP_ICONS)[number];

@@ -18,6 +18,7 @@ import {
   Approval,
   ApprovalRequest,
   ApprovalsApi,
+  ChannelsApi,
   ChatStreamError,
   ChatStreamService,
   Citation,
@@ -75,6 +76,8 @@ interface ChatItem {
   delegations?: DelegationView[];
   approvals?: ApprovalCard[];
   canResume?: boolean;
+  messageId?: number;
+  rating?: 1 | -1;
   thinking?: string;
   error?: string;
   streaming?: boolean;
@@ -157,6 +160,7 @@ export class AgentChat implements OnInit, OnDestroy {
   private readonly api = inject(AgentsApi);
   private readonly stream = inject(ChatStreamService);
   private readonly approvalsApi = inject(ApprovalsApi);
+  private readonly channelsApi = inject(ChannelsApi);
   private readonly session = inject(SessionService);
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
 
@@ -376,6 +380,9 @@ export class AgentChat implements OnInit, OnDestroy {
               (d['requests'] as ApprovalRequest[] | undefined) ?? []
             ).map((r) => this.cardFromRequest(r));
             break;
+          case 'done':
+            if (d['message_id']) reply.messageId = Number(d['message_id']);
+            break;
           case 'usage':
             if (!d['partial']) this.usage.set(d as unknown as RunUsage);
             break;
@@ -457,6 +464,19 @@ export class AgentChat implements OnInit, OnDestroy {
   }
 
   /** Ẩn bước tool `delegate__*` khi đã có thẻ giao việc tương ứng. */
+  /** Đánh giá câu trả lời (ADR-0020). */
+  protected rate(m: ChatItem, rating: 1 | -1): void {
+    const thread = this.threadId();
+    if (!thread || !m.messageId) return;
+    this.channelsApi.feedback(thread, m.messageId, rating).subscribe({
+      next: () => {
+        m.rating = rating;
+        this.items.update((l) => [...l]);
+      },
+      error: () => this.error.set('Không gửi được đánh giá.'),
+    });
+  }
+
   /** Nguồn trích dẫn từ kb.search trong tin trả lời (ADR-0019). */
   protected citations(m: ChatItem): Citation[] {
     return m.tools.flatMap((t) => t.citations ?? []);

@@ -18,10 +18,15 @@ from aiagent.bootstrap.settings import Settings, get_settings
 from aiagent.modules.agents.api.router import router as agents_router
 from aiagent.modules.audit.api.router import router as audit_router
 from aiagent.modules.builder.api.router import router as builder_router
+from aiagent.modules.channels.api.router import public_router
+from aiagent.modules.channels.api.router import router as channels_router
+from aiagent.modules.channels.api.telegram_router import public_router as telegram_public
+from aiagent.modules.channels.api.telegram_router import router as telegram_router
 from aiagent.modules.connections.api.router import router as connections_router
 from aiagent.modules.identity.api.router import router as identity_router
 from aiagent.modules.knowledge.api.router import router as knowledge_router
 from aiagent.modules.mcp.api.router import router as mcp_router
+from aiagent.modules.ops.api.router import router as ops_router
 from aiagent.modules.runtime.api.router import router as runtime_router
 
 
@@ -72,4 +77,9 @@ def create_app(
     app.include_router(connections_router)
     app.include_router(mcp_router)
     app.include_router(knowledge_router)
+    app.include_router(channels_router)
+    app.include_router(public_router)
+    app.include_router(ops_router)
+    app.include_router(telegram_router)
+    app.include_router(telegram_public)
     return app

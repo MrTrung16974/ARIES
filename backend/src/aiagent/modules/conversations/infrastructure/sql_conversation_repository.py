@@ -12,6 +12,7 @@ from aiagent.modules.conversations.domain import (
     ApprovalStatus,
     Delegation,
     DelegationStatus,
+    Feedback,
     Message,
     Run,
     RunStatus,
@@ -534,5 +535,76 @@ class _DelegationMixin:
         return [_delegation(r._mapping) for r in rows]
 
 
-class SqlConversationRepository(_BaseConversationRepository, _ApprovalMixin, _DelegationMixin):
+_UPSERT_FEEDBACK = text(
+    """
+    INSERT INTO conversations.feedback (id, tenant_id, thread_id, message_id, agent_id, user_id,
+                                        rating, comment)
+    VALUES (:id, :tenant_id, :thread_id, :message_id, :agent_id, :user_id, :rating, :comment)
+    ON CONFLICT (message_id, user_id)
+    DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = now()
+    RETURNING id, tenant_id, thread_id, message_id, agent_id, user_id, rating, comment, created_at
+    """
+)
+_FEEDBACK_FOR_THREAD = text(
+    """
+    SELECT id, tenant_id, thread_id, message_id, agent_id, user_id, rating, comment, created_at
+      FROM conversations.feedback WHERE thread_id = :thread_id ORDER BY message_id
+    """
+)
+
+
+def _feedback(m: Any) -> Feedback:
+    return Feedback(
+        id=m["id"],
+        tenant_id=m["tenant_id"],
+        thread_id=m["thread_id"],
+        message_id=int(m["message_id"]),
+        agent_id=m["agent_id"],
+        user_id=m["user_id"],
+        rating=int(m["rating"]),
+        comment=m["comment"],
+        created_at=m["created_at"],
+    )
+
+
+class _FeedbackMixin:
+    _db: Database
+
+    async def upsert_feedback(
+        self,
+        tenant_id: str,
+        thread_id: UUID,
+        message_id: int,
+        agent_id: UUID,
+        user_id: str,
+        rating: int,
+        comment: str,
+    ) -> Feedback:
+        async with self._db.tenant_session(tenant_id) as s:
+            row = (
+                await s.execute(
+                    _UPSERT_FEEDBACK,
+                    {
+                        "id": uuid4(),
+                        "tenant_id": tenant_id,
+                        "thread_id": thread_id,
+                        "message_id": message_id,
+                        "agent_id": agent_id,
+                        "user_id": user_id,
+                        "rating": rating,
+                        "comment": comment[:1000],
+                    },
+                )
+            ).one()
+        return _feedback(row._mapping)
+
+    async def feedback_for_thread(self, tenant_id: str, thread_id: UUID) -> list[Feedback]:
+        async with self._db.tenant_session(tenant_id) as s:
+            rows = (await s.execute(_FEEDBACK_FOR_THREAD, {"thread_id": thread_id})).all()
+        return [_feedback(r._mapping) for r in rows]
+
+
+class SqlConversationRepository(
+    _BaseConversationRepository, _ApprovalMixin, _DelegationMixin, _FeedbackMixin
+):
     """Thread, message, run và approval trên Postgres (RLS theo tenant)."""

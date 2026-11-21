@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from jsonschema import Draft202012Validator
@@ -147,13 +147,21 @@ class BoundTools:
             return ToolDecision(Effect.ALLOW, str(tool_use.get("name")), "read")
         if self.dry_run:
             return ToolDecision(Effect.ALLOW, bound.spec.name, bound.spec.risk.value, "sandbox")
-        return policy_decide(
+        decision = policy_decide(
             bound.spec,
             require_for=self.require_for,
             tainted=self.tainted,
             arguments=dict(arguments or {}),
             connection_id=bound.connection.id if bound.connection else None,
         )
+        if decision.effect is Effect.APPROVE and self.principal.channel:
+            # Kênh ngoài không có người duyệt (ADR-0020) → chặn thay vì treo chờ.
+            return replace(
+                decision,
+                effect=Effect.DENY,
+                reason="Thao tác cần người duyệt — không thực hiện được qua kênh này",
+            )
+        return decision
 
     async def execute(
         self, tool_use: ContentBlock, *, approved_by: str | None = None
@@ -337,7 +345,11 @@ class ToolGateway:
                 if not allowed or tool.name in allowed:
                     self._add(bound, plugin, tool, None)
 
-        if spec.connections and self._access is not None:
+        public = principal.is_public_channel  # link công khai: không connection/MCP (ADR-0020)
+        if public:
+            bound.hidden += [f"connection:{c.connection_id}" for c in spec.connections]
+            bound.hidden += [f"mcp:{m.server_id}" for m in spec.mcp_servers]
+        if spec.connections and self._access is not None and not public:
             wanted = [str(c.connection_id) for c in spec.connections]
             usable = {c.id: c for c in await self._access.usable(principal, wanted)}
             for conn in spec.connections:
@@ -366,7 +378,7 @@ class ToolGateway:
                     for tool in kb_plugin.manifest.tools:
                         self._add(bound, kb_plugin, tool, None)
 
-        if spec.mcp_servers:
+        if spec.mcp_servers and not public:
             wanted = [str(m.server_id) for m in spec.mcp_servers]
             found = dict(await self._mcp.plugins(principal, wanted)) if self._mcp else {}
             for mb in spec.mcp_servers:

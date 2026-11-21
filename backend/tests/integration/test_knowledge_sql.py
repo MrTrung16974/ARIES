@@ -46,17 +46,56 @@ async def test_knowledge_repository_vector_keyword_and_rls(db: Database) -> None
     repo = SqlKnowledgeRepository(db)
     now = utcnow()
     kb = await repo.create_kb(
-        KnowledgeBase(uuid4(), "default", f"IT KB {uuid4().hex[:6]}", "", KbScope.PERSONAL,
-                      "it-user", "internal", 0, 0, now, now)
+        KnowledgeBase(
+            uuid4(),
+            "default",
+            f"IT KB {uuid4().hex[:6]}",
+            "",
+            KbScope.PERSONAL,
+            "it-user",
+            "internal",
+            0,
+            0,
+            now,
+            now,
+        )
     )
     doc = await repo.create_document(
-        Document(uuid4(), "default", kb.id, "so-tay.md", "text/markdown", 10, uuid4().hex,
-                 DocStatus.PENDING, None, "", 0, "it-user", now, now)
+        Document(
+            uuid4(),
+            "default",
+            kb.id,
+            "so-tay.md",
+            "text/markdown",
+            10,
+            uuid4().hex,
+            DocStatus.PENDING,
+            None,
+            "",
+            0,
+            "it-user",
+            now,
+            now,
+        )
     )
     with pytest.raises(ConflictError):  # cùng nội dung (sha256) trong một KB
         await repo.create_document(
-            Document(uuid4(), "default", kb.id, "x.md", "text/markdown", 10, doc.sha256,
-                     DocStatus.PENDING, None, "", 0, "it-user", now, now)
+            Document(
+                uuid4(),
+                "default",
+                kb.id,
+                "x.md",
+                "text/markdown",
+                10,
+                doc.sha256,
+                DocStatus.PENDING,
+                None,
+                "",
+                0,
+                "it-user",
+                now,
+                now,
+            )
         )
     n = await repo.replace_chunks(
         "default",

@@ -22,6 +22,9 @@ from aiagent.modules.agents.application import ALLOWED_MODELS, AgentService
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.builder.application import ArchitectService, CommandService
 from aiagent.modules.builder.infrastructure.heuristic_brain import HeuristicArchitectBrain
+from aiagent.modules.channels.application import ChannelService
+from aiagent.modules.channels.application.telegram import TelegramService
+from aiagent.modules.channels.infrastructure.telegram import RuntimeAgentRunner
 from aiagent.modules.connections.application import ConnectionService, OAuthBroker
 from aiagent.modules.connections.domain import OAuthProvider
 from aiagent.modules.conversations.application import ConversationService
@@ -30,6 +33,7 @@ from aiagent.modules.identity.infrastructure.jwks_verifier import JwksTokenVerif
 from aiagent.modules.knowledge.application import KnowledgeAccess, KnowledgeService
 from aiagent.modules.mcp.application import McpService
 from aiagent.modules.mcp.infrastructure.sdk_client import SdkMcpClient
+from aiagent.modules.ops.application import OpsService
 from aiagent.modules.runtime.application import (
     ApprovalService,
     ModelCatalog,
@@ -54,8 +58,15 @@ from tests.fakes import (
     InMemoryMcpServerRepository,
     InMemoryVault,
     MemoryOAuthStates,
+    MemoryRateLimiter,
     NotifySkill,
     source_with,
+)
+from tests.fakes_channels import (
+    FakeTelegramClient,
+    InMemoryChannelRepository,
+    InMemoryTelegramBotRepository,
+    MemoryPollRegistry,
 )
 from tests.fakes_knowledge import (
     HashEmbedder,
@@ -64,6 +75,7 @@ from tests.fakes_knowledge import (
     MemoryBlobs,
     OverlapReranker,
 )
+from tests.fakes_ops import InMemoryOpsQuery
 
 
 @pytest.fixture
@@ -84,6 +96,16 @@ def notify() -> NotifySkill:
 @pytest.fixture
 def fakedb() -> FakeDbConnector:
     return FakeDbConnector()
+
+
+@pytest.fixture
+def tg_client() -> FakeTelegramClient:
+    return FakeTelegramClient()
+
+
+@pytest.fixture
+def tg_registry() -> MemoryPollRegistry:
+    return MemoryPollRegistry()
 
 
 @pytest.fixture
@@ -120,7 +142,17 @@ def ready() -> dict[str, bool]:
 
 @pytest.fixture
 async def client(
-    jwks_transport, audit_log, ready, conv_repo, notify, fakedb, vault, oauth_client, kb_repo
+    jwks_transport,
+    audit_log,
+    ready,
+    conv_repo,
+    notify,
+    fakedb,
+    vault,
+    oauth_client,
+    kb_repo,
+    tg_client,
+    tg_registry,
 ) -> AsyncIterator[httpx.AsyncClient]:  # type: ignore[no-untyped-def]
     transport, _ = jwks_transport
     settings = Settings(env="test", log_json=False, oidc_issuer=ISSUER, oidc_audience=AUDIENCE)
@@ -209,6 +241,22 @@ async def client(
             mcp=mcp,
             oauth=oauth,
             knowledge=knowledge,
+            channels=ChannelService(
+                InMemoryChannelRepository(), agents, MemoryRateLimiter(), audit
+            ),
+            ops=OpsService(InMemoryOpsQuery(conv_repo), conv_repo, agents, audit),
+            telegram=TelegramService(
+                InMemoryTelegramBotRepository(),
+                agents,
+                conv_repo,
+                RuntimeAgentRunner(runs),
+                tg_client,
+                vault,
+                tg_registry,
+                MemoryRateLimiter(),
+                audit,
+                "https://aries.example",
+            ),
             model_router=router,
             model_catalog=model_catalog,
             architect=architect,
@@ -1328,3 +1376,466 @@ async def test_architect_attaches_knowledge_base(
     draft = next(d for n, d in parse_sse(r.text) if n == "spec_draft")
     assert draft["spec"]["knowledge_bases"] == [kb["id"]]
     assert any(p["tool"] == "kb.search" for p in draft["permissions"])
+
+
+# ---------------------------------------------------------------- Publish (Phase 5)
+VISITOR = {"X-Visitor-Id": "visitor-aaaaaaaaaaaa1"}
+
+
+async def test_share_link_public_chat_is_restricted(
+    client: httpx.AsyncClient,
+    make_token,
+    notify,
+    fakedb,  # type: ignore[no-untyped-def]
+) -> None:
+    b1 = make_token(sub="b1", roles=["builder"])
+    admin = auth(make_token(sub="a1", roles=["admin"]))
+    internal = await _publish(client, b1, {**SPEC, "name": "Nội bộ"})
+    r = await client.post(
+        f"/api/v1/agents/{internal}/share-links", headers=auth(b1), json={"name": "x"}
+    )
+    assert r.status_code == 422 and "public" in r.text
+
+    conn = (
+        await client.post(
+            "/api/v1/connections",
+            headers=admin,
+            json={
+                "name": "DB chung",
+                "connector_id": "fakedb",
+                "scope": "workspace",
+                "config": {"host": "h"},
+                "secrets": {"password": "pw"},
+            },
+        )
+    ).json()
+    spec = {
+        **SPEC,
+        "name": "Trợ lý công khai",
+        "data_classification": "public",
+        "opening_statement": "Xin chào!",
+        "starter_prompts": ["Bạn là ai?"],
+        "skills": [{"skill_id": "echo"}, {"skill_id": "notify"}],
+        "connections": [{"connection_id": conn["id"]}],
+    }
+    agent_id = await _publish(client, make_token(sub="a1", roles=["admin"]), spec)
+    other = auth(make_token(sub="b2", roles=["builder"]))
+    assert (
+        await client.post(
+            f"/api/v1/agents/{agent_id}/share-links", headers=other, json={"name": "x"}
+        )
+    ).status_code == 403
+    r = await client.post(
+        f"/api/v1/agents/{agent_id}/share-links",
+        headers=admin,
+        json={"name": "Website", "rate_limit_per_min": 5, "allowed_origins": ["https://aries.vn"]},
+    )
+    assert r.status_code == 201, r.text
+    token = r.json()["token"]
+    assert token.startswith("default.")
+    listed = (await client.get(f"/api/v1/agents/{agent_id}/share-links", headers=admin)).json()
+    assert "token" not in listed[0]  # chỉ hiện một lần
+
+    # Không cần đăng nhập
+    info = (await client.get(f"/api/v1/public/share/{token}")).json()
+    assert info == {
+        "name": "Trợ lý công khai",
+        "description": "",
+        "opening_statement": "Xin chào!",
+        "starter_prompts": ["Bạn là ai?"],
+    }
+    assert (await client.get("/api/v1/public/share/default.sai")).status_code == 404
+    r = await client.post(f"/api/v1/public/share/{token}/chat", json={"message": "hi"})
+    assert r.status_code == 422  # thiếu X-Visitor-Id
+    r = await client.post(
+        f"/api/v1/public/share/{token}/chat",
+        json={"message": "hi"},
+        headers={**VISITOR, "X-Embed-Origin": "https://evil.example"},
+    )
+    assert r.status_code == 403
+
+    async def chat(message: str, thread: str | None = None) -> list[tuple[str, dict]]:  # type: ignore[type-arg]
+        r = await client.post(
+            f"/api/v1/public/share/{token}/chat",
+            headers=VISITOR,
+            json={"message": message, "thread_id": thread},
+        )
+        assert r.status_code == 200, r.text
+        return parse_sse(r.text)
+
+    events = await chat('/tool echo__say {"text": "chào"}')
+    names = [n for n, _ in events]
+    assert "usage" not in names and "thinking" not in names
+    assert events[0][1] == {"thread_id": events[0][1]["thread_id"]}  # không lộ model/tool ẩn
+    tool_end = next(d for n, d in events if n == "tool_end")
+    assert "preview" not in tool_end and tool_end["name"] == "echo.say"
+    done = events[-1][1]
+    thread_id, message_id = done["thread_id"], done["message_id"]
+    assert done["status"] == "completed" and message_id
+
+    # Tool cần duyệt → bị chặn (không có người duyệt), không treo chờ
+    events = await chat('/tool notify__send {"to": "x"}', thread_id)
+    assert "approval_required" not in [n for n, _ in events]
+    assert next(d for n, d in events if n == "tool_end")["is_error"]
+    assert notify.sent == []
+    # Link công khai không thấy connection (kể cả workspace)
+    events = await chat("/tool fakedb__query {}", thread_id)
+    assert "tool_start" not in [n for n, _ in events]
+    assert fakedb.seen_secrets == []
+
+    # Đọc lại + feedback: chỉ đúng visitor
+    msgs = (
+        await client.get(
+            f"/api/v1/public/share/{token}/threads/{thread_id}/messages", headers=VISITOR
+        )
+    ).json()
+    assert msgs[0]["role"] == "user"
+    other_visitor = {"X-Visitor-Id": "visitor-bbbbbbbbbbbb2"}
+    r = await client.get(
+        f"/api/v1/public/share/{token}/threads/{thread_id}/messages", headers=other_visitor
+    )
+    assert r.status_code == 404
+    r = await client.post(
+        f"/api/v1/public/share/{token}/feedback",
+        headers=VISITOR,
+        json={
+            "thread_id": thread_id,
+            "message_id": message_id,
+            "rating": -1,
+            "comment": "chưa đúng",
+        },
+    )
+    assert r.status_code == 204
+
+    # Giới hạn tốc độ: 5/phút/visitor (đã dùng 3 + 2 lần chặn trước không tính lượt)
+    await chat("1", thread_id)
+    await chat("2", thread_id)
+    r = await client.post(
+        f"/api/v1/public/share/{token}/chat", headers=VISITOR, json={"message": "3"}
+    )
+    assert r.status_code == 429
+
+    # Tạo lại token → link cũ hết hiệu lực; tắt link → 404
+    share_id = listed[0]["id"]
+    new_token = (await client.post(f"/api/v1/share-links/{share_id}/rotate", headers=admin)).json()[
+        "token"
+    ]
+    assert (await client.get(f"/api/v1/public/share/{token}")).status_code == 404
+    assert (await client.get(f"/api/v1/public/share/{new_token}")).status_code == 200
+    await client.patch(f"/api/v1/share-links/{share_id}", headers=admin, json={"enabled": False})
+    assert (await client.get(f"/api/v1/public/share/{new_token}")).status_code == 404
+
+
+async def test_api_key_chat(
+    client: httpx.AsyncClient,
+    make_token,
+    audit_log,  # type: ignore[no-untyped-def]
+) -> None:
+    b1 = make_token(sub="b1", roles=["builder"])
+    agent_id = await _publish(client, b1, SPEC)
+    r = await client.post(
+        f"/api/v1/agents/{agent_id}/api-keys",
+        headers=auth(b1),
+        json={"name": "CRM", "rate_limit_per_min": 3},
+    )
+    assert r.status_code == 201
+    key = r.json()["key"]
+    assert key.startswith("ak_default.")
+    assert (
+        "key"
+        not in (await client.get(f"/api/v1/agents/{agent_id}/api-keys", headers=auth(b1))).json()[0]
+    )
+
+    async def call(body: dict, k: str = key) -> httpx.Response:  # type: ignore[type-arg]
+        return await client.post(
+            "/api/v1/public/v1/chat", json=body, headers={"Authorization": f"Bearer {k}"}
+        )
+
+    r = await call({"message": "xin chào", "user": "kh-001"})
+    assert r.status_code == 200, r.text
+    first = r.json()
+    assert first["answer"] == "Bạn vừa nói: xin chào" and first["status"] == "completed"
+    r = await call(
+        {"message": "tiếp", "conversation_id": first["conversation_id"], "user": "kh-001"}
+    )
+    assert r.json()["conversation_id"] == first["conversation_id"]
+    # Người dùng cuối khác không tiếp tục được hội thoại của người khác
+    r = await call({"message": "x", "conversation_id": first["conversation_id"], "user": "kh-002"})
+    assert r.status_code in (404, 429)
+
+    for bad in (key[:-2] + "xx", "ak_default.123.abc", "sai"):
+        assert (await call({"message": "x"}, bad)).status_code == 401
+    assert (await client.post("/api/v1/public/v1/chat", json={"message": "x"})).status_code == 401
+
+    key_id = (await client.get(f"/api/v1/agents/{agent_id}/api-keys", headers=auth(b1))).json()[0][
+        "id"
+    ]
+    await client.delete(f"/api/v1/api-keys/{key_id}", headers=auth(b1))
+    assert (await call({"message": "x"})).status_code == 401
+    assert {"apikey.created", "apikey.revoked"} <= set(audit_log.actions())
+
+
+async def test_app_user_feedback(client: httpx.AsyncClient, make_token) -> None:  # type: ignore[no-untyped-def]
+    agent_id = await _publish(client, make_token(sub="b1", roles=["builder"]), SPEC)
+    user = auth(make_token(sub="u1"))
+    r = await client.post(f"/api/v1/agents/{agent_id}/chat", headers=user, json={"message": "chào"})
+    done = parse_sse(r.text)[-1][1]
+    url = f"/api/v1/threads/{done['thread_id']}/messages/{done['message_id']}/feedback"
+    r = await client.post(url, headers=user, json={"rating": 1, "comment": "tốt"})
+    assert r.json() == {"message_id": done["message_id"], "rating": 1, "comment": "tốt"}
+    r = await client.post(url, headers=user, json={"rating": -1})  # đổi ý → cập nhật
+    fb = (await client.get(f"/api/v1/threads/{done['thread_id']}/feedback", headers=user)).json()
+    assert [f["rating"] for f in fb] == [-1]
+    other = auth(make_token(sub="u2"))
+    assert (await client.post(url, headers=other, json={"rating": 1})).status_code == 404
+
+
+async def test_ops_logs_feedback_usage(
+    client: httpx.AsyncClient,
+    make_token,
+    audit_log,  # type: ignore[no-untyped-def]
+) -> None:
+    b1 = make_token(sub="b1", roles=["builder"])
+    admin = auth(make_token(sub="a1", roles=["admin"]))
+    spec = {**SPEC, "name": "Ops", "data_classification": "public"}
+    agent_id = await _publish(client, make_token(sub="a1", roles=["admin"]), spec)
+    mine = await _publish(client, b1, {**SPEC, "name": "Của b1"})
+
+    # Hội thoại qua app (u1) + qua link công khai + qua API key
+    user = auth(make_token(sub="u1"))
+    done = parse_sse(
+        (
+            await client.post(
+                f"/api/v1/agents/{agent_id}/chat", headers=user, json={"message": "chào"}
+            )
+        ).text
+    )[-1][1]
+    await client.post(
+        f"/api/v1/threads/{done['thread_id']}/messages/{done['message_id']}/feedback",
+        headers=user,
+        json={"rating": -1, "comment": "sai rồi"},
+    )
+    token = (
+        await client.post(
+            f"/api/v1/agents/{agent_id}/share-links", headers=admin, json={"name": "w"}
+        )
+    ).json()["token"]
+    r = await client.post(
+        f"/api/v1/public/share/{token}/chat", headers=VISITOR, json={"message": "hi"}
+    )
+    assert r.status_code == 200
+    key = (
+        await client.post(f"/api/v1/agents/{agent_id}/api-keys", headers=admin, json={"name": "k"})
+    ).json()["key"]
+    r = await client.post(
+        "/api/v1/public/v1/chat",
+        json={"message": "x", "user": "kh"},
+        headers={"Authorization": f"Bearer {key}"},
+    )
+    assert r.status_code == 200
+
+    # Quyền: người dùng thường bị chặn; builder chỉ xem agent của mình, phải lọc agent
+    assert (await client.get("/api/v1/ops/threads", headers=user)).status_code == 403
+    assert (await client.get("/api/v1/ops/threads", headers=auth(b1))).status_code == 403
+    r = await client.get("/api/v1/ops/threads", headers=auth(b1), params={"agent_id": agent_id})
+    assert r.status_code in (403, 404)
+    r = await client.get("/api/v1/ops/threads", headers=auth(b1), params={"agent_id": mine})
+    assert r.status_code == 200 and r.json() == []
+
+    threads = (
+        await client.get("/api/v1/ops/threads", headers=admin, params={"agent_id": agent_id})
+    ).json()
+    assert sorted(t["channel"] for t in threads) == ["api", "app", "share"]
+    app_thread = next(t for t in threads if t["channel"] == "app")
+    assert app_thread["thumbs_down"] == 1 and app_thread["message_count"] == 2
+    only_share = (
+        await client.get("/api/v1/ops/threads", headers=admin, params={"channel": "share"})
+    ).json()
+    assert [t["channel"] for t in only_share] == ["share"]
+    bad = (await client.get("/api/v1/ops/threads", headers=admin, params={"rating": -1})).json()
+    assert [t["id"] for t in bad] == [app_thread["id"]]
+    assert (
+        await client.get("/api/v1/ops/threads", headers=admin, params={"channel": "fax"})
+    ).status_code == 422
+
+    # Xem toàn văn → audit (auditor cũng xem được, không sửa được gì)
+    auditor = auth(make_token(sub="au1", roles=["auditor"]))
+    t = (await client.get(f"/api/v1/ops/threads/{app_thread['id']}", headers=auditor)).json()
+    assert [m["role"] for m in t["messages"]] == ["user", "assistant"]
+    assert t["messages"][1]["parts"][0]["type"] == "text"
+    assert t["feedback"][0]["rating"] == -1
+    assert "ops.conversation_viewed" in audit_log.actions()
+    r = await client.get(f"/api/v1/ops/threads/{app_thread['id']}", headers=auth(b1))
+    assert r.status_code == 404
+
+    fb = (await client.get("/api/v1/ops/feedback", headers=admin)).json()
+    assert fb[0]["comment"] == "sai rồi" and fb[0]["channel"] == "app"
+    assert fb[0]["answer"].startswith("Bạn vừa nói")
+
+    usage = (
+        await client.get("/api/v1/ops/usage", headers=admin, params={"agent_id": agent_id})
+    ).json()
+    assert usage["runs"] == 3
+    assert {row["channel"] for row in usage["rows"]} == {"app", "share", "api"}
+    r = await client.get(
+        "/api/v1/ops/usage",
+        headers=admin,
+        params={"since": "2020-01-01T00:00:00Z", "until": "2026-01-01T00:00:00Z"},
+    )
+    assert r.status_code == 422  # > 366 ngày
+
+
+TG_TOKEN = "123456789:GOOD" + "x" * 30
+
+
+def _tg_update(update_id: int, chat_id: int, text: str | None, chat_type: str = "private") -> dict:  # type: ignore[type-arg]
+    msg: dict = {"message_id": update_id, "chat": {"id": chat_id, "type": chat_type}}  # type: ignore[type-arg]
+    if text is not None:
+        msg["text"] = text
+    return {"update_id": update_id, "message": msg}
+
+
+async def test_telegram_bot_polling_and_webhook(
+    client: httpx.AsyncClient,
+    make_token,
+    tg_client,
+    tg_registry,
+    vault,
+    audit_log,  # type: ignore[no-untyped-def]
+) -> None:
+    b1 = make_token(sub="b1", roles=["builder"])
+    internal = await _publish(client, b1, SPEC)
+    url = f"/api/v1/agents/{internal}/telegram-bots"
+    # Agent nội bộ: bắt buộc giới hạn chat; token sai bị Telegram từ chối
+    r = await client.post(url, headers=auth(b1), json={"token": TG_TOKEN})
+    assert r.status_code == 422 and "chat" in r.text
+    r = await client.post(url, headers=auth(b1), json={"token": "123:bad"})
+    assert r.status_code == 422
+    r = await client.post(
+        url, headers=auth(b1), json={"token": "123456789:" + "y" * 30, "allowed_chat_ids": [42]}
+    )
+    assert r.status_code == 422 and "Telegram" in r.text
+    assert (
+        await client.post(
+            url,
+            headers=auth(make_token(sub="b2", roles=["builder"])),
+            json={"token": TG_TOKEN, "allowed_chat_ids": [42]},
+        )
+    ).status_code == 403
+
+    r = await client.post(
+        url,
+        headers=auth(b1),
+        json={
+            "name": "Hỗ trợ",
+            "token": TG_TOKEN,
+            "allowed_chat_ids": [42, 42],
+            "rate_limit_per_min": 4,
+        },
+    )
+    assert r.status_code == 201, r.text
+    bot = r.json()
+    assert bot["mode"] == "polling" and bot["allowed_chat_ids"] == [42]
+    assert "token" not in bot and TG_TOKEN not in r.text  # token không bao giờ trả lại
+    assert TG_TOKEN in str(vault.data)  # chỉ nằm ở vault
+    assert tg_registry.items and tg_client.webhooks[TG_TOKEN] is None
+
+    service = client._transport.app.state.container.telegram  # type: ignore[attr-defined]
+    tg_client.pending = [
+        _tg_update(1, 42, "xin chào"),
+        _tg_update(2, 42, "tiếp"),
+        _tg_update(3, 99, "tôi là người lạ"),
+        _tg_update(4, 42, None),  # ảnh/sticker
+        _tg_update(5, 7, "nhóm", chat_type="group"),
+    ]
+    tenant, bot_id = next(iter(tg_registry.items))
+    assert await service.poll_once(tenant, bot_id) == 5
+    assert tg_client.sent == [
+        (42, "Bạn vừa nói: xin chào"),
+        (42, "Bạn vừa nói: tiếp"),
+        (99, "Bạn chưa được cấp quyền dùng trợ lý này. Mã chat của bạn: 99"),
+        (42, "Hiện trợ lý chỉ hiểu tin nhắn văn bản."),
+    ]
+    # Offset tăng → lần sau không xử lý lại; update trùng (Telegram gửi lại) bị bỏ qua
+    tg_client.sent.clear()
+    assert await service.poll_once(tenant, bot_id) == 0
+    assert tg_client.offsets[-1] == 6
+    await service.handle_update(
+        service_bot := await service._repo.get(tenant, bot_id), _tg_update(2, 42, "tiếp")
+    )
+    assert tg_client.sent == []
+
+    # Hai tin cùng chat → cùng một hội thoại; /new mở hội thoại mới
+    ops = (
+        await client.get(
+            "/api/v1/ops/threads",
+            headers=auth(make_token(sub="a1", roles=["admin"])),
+            params={"channel": "telegram"},
+        )
+    ).json()
+    assert len(ops) == 1 and ops[0]["message_count"] == 4
+    assert ops[0]["user_id"] == f"telegram:{bot_id}:42"
+    await service.handle_update(service_bot, _tg_update(10, 42, "/new"))
+    await service.handle_update(service_bot, _tg_update(11, 42, "câu mới"))
+    assert tg_client.sent[-2:] == [
+        (42, "Đã bắt đầu cuộc trò chuyện mới."),
+        (42, "Bạn vừa nói: câu mới"),
+    ]
+    ops = (
+        await client.get(
+            "/api/v1/ops/threads",
+            headers=auth(make_token(sub="a1", roles=["admin"])),
+            params={"channel": "telegram"},
+        )
+    ).json()
+    assert len(ops) == 2
+
+    # Giới hạn 4 tin/phút/chat (đã dùng: 1, 2, /new, 11 → tin thứ 5 bị chặn)
+    tg_client.sent.clear()
+    await service.handle_update(service_bot, _tg_update(12, 42, "nữa"))
+    assert tg_client.sent == [(42, "Bạn gửi hơi nhanh — vui lòng đợi một chút rồi thử lại.")]
+
+    # Tắt bot → trả lời "tạm thời không hoạt động"; xoá → gỡ khỏi registry + vault
+    r = await client.patch(
+        f"/api/v1/telegram-bots/{bot_id}",
+        headers=auth(b1),
+        json={"enabled": False, "allowed_chat_ids": []},
+    )
+    assert r.status_code == 422  # agent nội bộ không được mở cho mọi người
+    r = await client.patch(
+        f"/api/v1/telegram-bots/{bot_id}", headers=auth(b1), json={"enabled": False}
+    )
+    assert r.json()["enabled"] is False
+    assert (
+        await client.delete(f"/api/v1/telegram-bots/{bot_id}", headers=auth(b1))
+    ).status_code == 204
+    assert not tg_registry.items and TG_TOKEN not in str(vault.data)
+    assert {"telegram.created", "telegram.updated", "telegram.deleted"} <= set(audit_log.actions())
+
+    # Webhook: kiểm secret token header
+    public = await _publish(
+        client, b1, {**SPEC, "name": "Công khai", "data_classification": "public"}
+    )
+    r = await client.post(
+        f"/api/v1/agents/{public}/telegram-bots",
+        headers=auth(b1),
+        json={"token": TG_TOKEN, "mode": "webhook"},
+    )
+    assert r.status_code == 201, r.text
+    hook = r.json()
+    assert hook["allowed_chat_ids"] == [] and hook["webhook_url"].startswith(
+        "https://aries.example/"
+    )
+    hook_url, secret = tg_client.webhooks[TG_TOKEN]
+    path = hook_url.removeprefix("https://aries.example")
+    tg_client.sent.clear()
+    assert (await client.post(path, json=_tg_update(1, 5, "hi"))).status_code == 401
+    r = await client.post(
+        path, json=_tg_update(1, 5, "hi"), headers={"X-Telegram-Bot-Api-Secret-Token": "sai"}
+    )
+    assert r.status_code == 401
+    r = await client.post(
+        path, json=_tg_update(1, 5, "hi"), headers={"X-Telegram-Bot-Api-Secret-Token": secret}
+    )
+    assert r.status_code == 200
+    assert tg_client.sent == [(5, "Bạn vừa nói: hi")]

@@ -4,6 +4,12 @@ import { autoLoginPartialRoutesGuard } from 'angular-auth-oidc-client';
 import { Shell } from './shell/shell';
 
 export const appRoutes: Route[] = [
+  // Trang chat công khai của link chia sẻ (ADR-0020) — không qua đăng nhập.
+  {
+    path: 'c/:token',
+    title: 'Trợ lý',
+    loadComponent: () => import('./public/share-chat').then((m) => m.ShareChat),
+  },
   {
     path: '',
     component: Shell,
@@ -42,6 +48,13 @@ export const appRoutes: Route[] = [
           import('./pages/agents/agent-editor').then((m) => m.AgentEditor),
       },
       {
+        path: 'agents/:id/publish',
+        title: 'Chia sẻ & API',
+        canActivate: [roleGuard('builder', 'admin')],
+        loadComponent: () =>
+          import('./pages/agents/agent-publish').then((m) => m.AgentPublish),
+      },
+      {
         path: 'agents/:id/chat',
         title: 'Chat',
         loadComponent: () =>
@@ -77,6 +90,12 @@ export const appRoutes: Route[] = [
         canActivate: [roleGuard('admin')],
         loadComponent: () =>
           import('./pages/plugins/plugins').then((m) => m.Plugins),
+      },
+      {
+        path: 'ops',
+        title: 'Vận hành',
+        canActivate: [roleGuard('admin', 'auditor', 'builder')],
+        loadComponent: () => import('./pages/ops/ops').then((m) => m.Ops),
       },
       {
         path: 'audit',

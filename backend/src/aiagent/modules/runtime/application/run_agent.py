@@ -513,6 +513,7 @@ class RunAgentService:
         error: str | None = "Run bị ngắt."
         usage = Usage()
         model_name = spec.model.model
+        last_assistant_id: int | None = None  # để client gửi feedback cho câu trả lời (ADR-0020)
 
         yield RunEvent(
             RunEventType.RUN_STARTED,
@@ -571,9 +572,11 @@ class RunAgentService:
                     if event.type is RunEventType.MESSAGE:
                         content = data.get("content")
                         if isinstance(content, list) and content:
-                            await self._conv.repo.append_message(
+                            saved = await self._conv.repo.append_message(
                                 tenant, p.thread.id, p.run.id, str(data["role"]), content
                             )
+                            if data["role"] == "assistant":
+                                last_assistant_id = saved.id
                         continue
                     if event.type is RunEventType.APPROVAL_REQUIRED:
                         raw = data.get("requests")
@@ -612,7 +615,12 @@ class RunAgentService:
         )
         yield RunEvent(
             RunEventType.DONE,
-            {"status": status.value, "run_id": str(p.run.id), "thread_id": str(p.thread.id)},
+            {
+                "status": status.value,
+                "run_id": str(p.run.id),
+                "thread_id": str(p.thread.id),
+                "message_id": last_assistant_id,
+            },
         )
 
     async def _create_approvals(self, p: PreparedRun, data: dict[str, object]) -> RunEvent:

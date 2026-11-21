@@ -38,5 +38,6 @@ def configure_logging(level: str = "INFO", json: bool = True) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level.upper())
-    for noisy in ("uvicorn.access",):
+    # httpx ghi URL ở mức INFO — URL Bot API Telegram chứa token (ADR-0020) → tắt.
+    for noisy in ("uvicorn.access", "httpx", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
