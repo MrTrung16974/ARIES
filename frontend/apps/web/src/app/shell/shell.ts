@@ -1,5 +1,12 @@
 import { DOCUMENT } from '@angular/common';
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  HostListener,
+  inject,
+  OnInit,
+  signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIcon } from '@angular/material/icon';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -15,6 +22,8 @@ interface NavItem {
 }
 
 const THEME_STORAGE_KEY = 'aries_theme_mode';
+const SIDEBAR_STORAGE_KEY = 'aries_sidebar_collapsed';
+const NARROW_BREAKPOINT = 960;
 
 @Component({
   selector: 'app-shell',
@@ -34,6 +43,8 @@ export class Shell implements OnInit {
   private readonly doc = inject(DOCUMENT);
 
   protected readonly darkMode = signal<boolean>(false);
+  protected readonly isNarrow = signal<boolean>(false);
+  protected readonly collapsed = signal<boolean>(false);
 
   protected readonly userInitial = computed(() => {
     const name = this.session.displayName()?.trim();
@@ -78,7 +89,40 @@ export class Shell implements OnInit {
 
   ngOnInit(): void {
     this.initTheme();
+    this.initSidebar();
     this.session.load().catch(() => undefined);
+  }
+
+  @HostListener('window:resize')
+  protected onResize(): void {
+    const narrow = this.checkNarrow();
+    const prevNarrow = this.isNarrow();
+    if (narrow !== prevNarrow) {
+      this.isNarrow.set(narrow);
+      if (narrow) {
+        this.collapsed.set(true);
+      } else {
+        this.collapsed.set(this.readSavedCollapsed());
+      }
+    }
+  }
+
+  protected toggleSidebar(): void {
+    const next = !this.collapsed();
+    this.collapsed.set(next);
+    if (!this.isNarrow()) {
+      try {
+        localStorage.setItem(SIDEBAR_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }
+
+  protected onNavClick(): void {
+    if (this.isNarrow() && !this.collapsed()) {
+      this.collapsed.set(true);
+    }
   }
 
   protected toggleTheme(): void {
@@ -93,6 +137,25 @@ export class Shell implements OnInit {
 
   protected logout(): void {
     this.session.logout();
+  }
+
+  private initSidebar(): void {
+    const narrow = this.checkNarrow();
+    this.isNarrow.set(narrow);
+    this.collapsed.set(narrow ? true : this.readSavedCollapsed());
+  }
+
+  private checkNarrow(): boolean {
+    const win = this.doc.defaultView;
+    return !!win && win.innerWidth <= NARROW_BREAKPOINT;
+  }
+
+  private readSavedCollapsed(): boolean {
+    try {
+      return localStorage.getItem(SIDEBAR_STORAGE_KEY) === '1';
+    } catch {
+      return false;
+    }
   }
 
   private initTheme(): void {

@@ -17,7 +17,7 @@ import { MatInputModule } from '@angular/material/input';
 import { Tag } from '@aiagent/ui';
 import { catchError, of } from 'rxjs';
 
-type AgentCategory = 'all' | 'master' | 'worker' | 'draft';
+type AgentCategory = 'all' | 'worker' | 'draft';
 
 const MASTER_TASK_PRESETS = [
   'Kiểm tra giờ hệ thống hiện tại và báo cáo tóm tắt các agent chuyên trách đang sẵn sàng',
@@ -190,14 +190,6 @@ const MASTER_TASK_PRESETS = [
       </button>
       <button
         type="button"
-        [class.active]="category() === 'master'"
-        (click)="category.set('master')"
-      >
-        <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
-        Điều phối (Master) · {{ masterCount() }}
-      </button>
-      <button
-        type="button"
         [class.active]="category() === 'worker'"
         (click)="category.set('worker')"
       >
@@ -215,47 +207,57 @@ const MASTER_TASK_PRESETS = [
     </div>
 
     <div class="flow-info-strip">
-      ARIES Master có thể ủy quyền (delegate) cho các Agent thuộc nhóm
-      <strong>Chuyên trách (Đang chạy)</strong>. Để khởi tạo Agent mới, chuyển
-      sang tab <a routerLink="/agents"><strong>Agent</strong></a>.
+      <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
+      <span>
+        ARIES Master có thể ủy quyền (delegate) cho các Agent thuộc nhóm
+        <strong>Chuyên trách (Đang chạy)</strong>. Để khởi tạo Agent mới, chuyển
+        sang tab <a routerLink="/agents">Agent</a>.
+      </span>
     </div>
 
     @if (loadingAgents()) {
       <p class="muted">Đang tải danh sách agent…</p>
     } @else if (filteredAgents().length === 0) {
-      <div class="empty-box">
-        <p class="muted">
-          Chưa có agent nào trong phân loại này.
+      <div class="empty-state-card">
+        <div class="empty-icon-ring" aria-hidden="true">
+          <mat-icon svgIcon="robot_2" />
+        </div>
+        <h2>Chưa có agent nào trong phân loại này</h2>
+        <p>
+          {{
+            query().trim()
+              ? 'Không tìm thấy agent phù hợp với từ khóa tìm kiếm.'
+              : 'Khởi tạo AI Agent chuyên trách mới để ARIES Master có thể điều phối công việc tự động.'
+          }}
         </p>
-        <a mat-flat-button class="btn-aries" routerLink="/agents">
-          <mat-icon svgIcon="add" /> Đi tới trang Tạo Agent
-        </a>
+        <div class="empty-actions">
+          @if (query().trim() || category() !== 'all') {
+            <button
+              mat-stroked-button
+              class="pill-btn"
+              type="button"
+              (click)="query.set(''); category.set('all')"
+            >
+              <mat-icon svgIcon="refresh" /> Xem tất cả
+            </button>
+          }
+          <a mat-flat-button class="btn-aries" routerLink="/agents">
+            <mat-icon svgIcon="add" /> Đi tới trang Tạo Agent
+          </a>
+        </div>
       </div>
     } @else {
       <div class="cards-grid">
         @for (a of filteredAgents(); track a.id) {
-          <article
-            class="flow-card"
-            [class.is-master]="isMasterAgent(a)"
-          >
+          <article class="flow-card">
             <div class="card-top">
-              <span
-                class="icon-badge"
-                [class.accent]="isMasterAgent(a)"
-                aria-hidden="true"
-              >
-                <mat-icon
-                  class="sm"
-                  [svgIcon]="isMasterAgent(a) ? 'bolt' : 'robot_2'"
-                />
+              <span class="icon-badge" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="robot_2" />
               </span>
               <div class="card-body">
                 <div class="title-line">
                   <strong>{{ a.name }}</strong>
-                  <ui-tag
-                    [value]="categoryLabel(a)"
-                    [severity]="isMasterAgent(a) ? 'primary' : 'warn'"
-                  />
+                  <ui-tag [value]="categoryLabel(a)" severity="warn" />
                   <ui-tag
                     [value]="a.published_version ? 'Enabled' : 'Nháp'"
                     [severity]="a.published_version ? 'success' : 'secondary'"
@@ -307,7 +309,7 @@ const MASTER_TASK_PRESETS = [
                   [queryParams]="a.published_version ? {} : { draft: 1 }"
                 >
                   <mat-icon svgIcon="forum" />
-                  {{ isMasterAgent(a) ? 'Giao việc' : 'Chat' }}
+                  Chat
                 </a>
               </div>
             </div>
@@ -479,9 +481,6 @@ const MASTER_TASK_PRESETS = [
       justify-content: space-between;
       gap: 0.95rem;
       transition: all 0.18s ease;
-      &.is-master {
-        border-color: rgba(255, 61, 139, 0.38);
-      }
       &:hover {
         border-color: var(--app-border-strong);
         box-shadow: var(--app-shadow-md);
@@ -562,30 +561,21 @@ export class Home implements OnInit {
       .pipe(catchError(() => of(null))),
   );
 
-  protected readonly masterCount = computed(
-    () => this.agents().filter((a) => this.isMasterAgent(a)).length,
-  );
   protected readonly workerCount = computed(
     () =>
-      this.agents().filter(
-        (a) => !this.isMasterAgent(a) && !!a.published_version,
-      ).length,
+      this.agents().filter((a) => !!a.published_version).length,
   );
   protected readonly draftCount = computed(
     () =>
-      this.agents().filter(
-        (a) => !this.isMasterAgent(a) && !a.published_version,
-      ).length,
+      this.agents().filter((a) => !a.published_version).length,
   );
 
   protected readonly filteredAgents = computed(() => {
     const q = this.query().trim().toLowerCase();
     const cat = this.category();
     return this.agents().filter((a) => {
-      const isMaster = this.isMasterAgent(a);
-      if (cat === 'master' && !isMaster) return false;
-      if (cat === 'worker' && (isMaster || !a.published_version)) return false;
-      if (cat === 'draft' && (isMaster || !!a.published_version)) return false;
+      if (cat === 'worker' && !a.published_version) return false;
+      if (cat === 'draft' && !!a.published_version) return false;
       if (!q) return true;
       return (
         a.name.toLowerCase().includes(q) ||
@@ -612,7 +602,6 @@ export class Home implements OnInit {
   }
 
   protected categoryLabel(a: AgentSummary): string {
-    if (this.isMasterAgent(a)) return 'Điều phối (Master)';
     return a.published_version ? 'Chuyên trách' : 'Đang phát triển';
   }
 
@@ -653,12 +642,8 @@ export class Home implements OnInit {
   private loadAgents(): void {
     this.agentsApi.list().subscribe({
       next: (list) => {
-        // Đưa ARIES Master lên đầu danh sách
-        const sorted = [...list].sort(
-          (a, b) =>
-            Number(this.isMasterAgent(b)) - Number(this.isMasterAgent(a)),
-        );
-        this.agents.set(sorted);
+        // ARIES Master đã có ô chat riêng ở trên — không lặp lại trong danh sách.
+        this.agents.set(list.filter((a) => !this.isMasterAgent(a)));
       },
       complete: () => this.loadingAgents.set(false),
       error: () => this.loadingAgents.set(false),

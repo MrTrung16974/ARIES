@@ -36,6 +36,7 @@
     @if (agent(); as a) {
       <a
         mat-stroked-button
+        class="pill-btn"
         routerLink="/builder"
         [queryParams]="{ agent: a.id }"
       >
@@ -43,6 +44,7 @@
       </a>
       <a
         mat-stroked-button
+        class="pill-btn"
         [routerLink]="['/agents', a.id, 'chat']"
         [queryParams]="{ draft: 1 }"
       >
@@ -50,7 +52,7 @@
       </a>
       <button
         mat-flat-button
-        class="success"
+        class="pill-btn success"
         type="button"
         [disabled]="a.published_version === a.latest_version"
         (click)="publish()"

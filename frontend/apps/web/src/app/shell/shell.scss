@@ -7,23 +7,78 @@
     var(--shell-frame-bg);
   padding: 0.6rem;
   gap: 0.6rem;
+  transition: grid-template-columns 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  &.collapsed {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
+}
+
+.sidebar-backdrop {
+  display: none;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
-  padding: 0.75rem 0.65rem;
+  padding: 0.7rem 0.55rem;
   color: #f6ecf3;
   user-select: none;
+  position: sticky;
+  top: 0.6rem;
+  height: calc(100vh - 1.2rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 30;
+}
+
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.2rem 0.25rem 1rem;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.35rem 0.5rem 1.1rem;
+  gap: 0.6rem;
   text-decoration: none;
   color: #fff;
+  min-width: 0;
+  flex: 1;
+}
+
+.collapse-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 133, 184, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(246, 236, 243, 0.85);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+
+  mat-icon {
+    transition: transform 0.2s ease;
+    &.flipped {
+      transform: rotate(180deg);
+    }
+  }
+
+  &:hover {
+    background: rgba(255, 61, 139, 0.24);
+    border-color: rgba(255, 133, 184, 0.5);
+    color: #fff;
+  }
 }
 
 .brand-logo-wrap {
@@ -281,18 +336,135 @@
   margin: 0 auto;
 }
 
-@media (max-width: 900px) {
-  .studio-shell {
-    grid-template-columns: 1fr;
-    padding: 0;
-  }
+/* Trạng thái thu gọn (Icon Rail) — áp dụng cho cả màn rộng khi ấn thu gọn & màn hẹp */
+.studio-shell.collapsed {
   .sidebar {
+    padding: 0.7rem 0.35rem;
+    align-items: center;
+  }
+
+  .sidebar-top {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.15rem 0 0.9rem;
+    width: 100%;
+  }
+
+  .brand {
+    justify-content: center;
+    flex: none;
+  }
+
+  .brand-text,
+  .nav-label,
+  .btn-label,
+  .side-card-btn kbd,
+  .meter-title,
+  .meter-track,
+  .theme-label,
+  .user-info {
     display: none;
   }
-  .workspace {
-    border-radius: 0;
+
+  .side-nav {
+    width: 100%;
+    align-items: center;
+
+    a {
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      justify-content: center;
+    }
   }
+
+  .side-footer {
+    width: 100%;
+    align-items: center;
+  }
+
+  .side-card-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .side-meter {
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+
+  .meter-row {
+    margin: 0;
+    justify-content: center;
+  }
+
+  .theme-chip {
+    width: 44px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 12px;
+  }
+
+  .user-card {
+    flex-direction: column;
+    padding: 0.45rem 0.3rem;
+    gap: 0.4rem;
+    width: 48px;
+  }
+}
+
+/* Trên màn hình hẹp (<= 960px): mặc định icon rail 68px, khi bấm mở rộng sẽ bung overlay */
+@media (max-width: 960px) {
+  .studio-shell {
+    grid-template-columns: 64px minmax(0, 1fr);
+    padding: 0.4rem;
+    gap: 0.4rem;
+
+    &.collapsed {
+      grid-template-columns: 64px minmax(0, 1fr);
+    }
+
+    &.narrow-expanded {
+      grid-template-columns: 64px minmax(0, 1fr);
+
+      .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(8, 4, 15, 0.55);
+        backdrop-filter: blur(2px);
+        z-index: 25;
+      }
+
+      .sidebar {
+        position: fixed;
+        top: 0.4rem;
+        left: 0.4rem;
+        bottom: 0.4rem;
+        width: 244px;
+        height: auto;
+        border-radius: 18px;
+        background:
+          radial-gradient(circle at 0% 0%, rgba(255, 61, 139, 0.25) 0%, transparent 45%),
+          var(--shell-frame-bg);
+        border: 1px solid rgba(255, 133, 184, 0.25);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+        padding: 0.75rem 0.65rem;
+      }
+    }
+  }
+
+  .workspace {
+    grid-column: 2;
+    border-radius: 16px;
+  }
+
   .content {
-    padding: 1rem;
+    padding: 1rem 1.1rem 1.5rem;
   }
 }

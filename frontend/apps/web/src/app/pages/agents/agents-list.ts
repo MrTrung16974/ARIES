@@ -2,7 +2,6 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -25,23 +24,27 @@ const IDEA_PRESETS = [
     FormsModule,
     RouterLink,
     MatButtonModule,
-    MatCardModule,
     MatFormFieldModule,
     MatIcon,
     MatInputModule,
     Tag,
   ],
   template: `
-    <div class="page-head">
-      <div>
-        <h1>Agent</h1>
-        <p class="muted subtitle">
-          Khởi tạo AI Agent mới bằng mô tả tự nhiên hoặc biểu mẫu, quản lý và
-          xuất bản cho tổ chức.
-        </p>
+    <div class="page-hero">
+      <div class="hero-left">
+        <span class="head-icon accent" aria-hidden="true">
+          <mat-icon class="sm" svgIcon="robot_2" />
+        </span>
+        <div class="hero-copy">
+          <h1>Agent</h1>
+          <p class="subtitle">
+            Khởi tạo AI Agent mới bằng mô tả tự nhiên hoặc biểu mẫu, quản lý và
+            xuất bản cho tổ chức.
+          </p>
+        </div>
       </div>
       @if (canCreate()) {
-        <div class="actions">
+        <div class="hero-actions">
           <a mat-stroked-button class="pill-btn" routerLink="/agents/new">
             <mat-icon svgIcon="add" /> Tạo bằng form
           </a>
@@ -153,42 +156,64 @@ const IDEA_PRESETS = [
       </div>
 
       <div class="flow-info-strip">
-        Mỗi Agent được kiểm soát phiên bản độc lập (AgentSpec v2). Bản nháp có
-        thể thử nghiệm trực tiếp trước khi Publish.
+        <mat-icon class="sm" svgIcon="verified" aria-hidden="true" />
+        <span>
+          Mỗi Agent được kiểm soát phiên bản độc lập (AgentSpec v2). Bản nháp có
+          thể thử nghiệm trực tiếp trước khi Publish.
+        </span>
       </div>
     }
 
     @if (loading()) {
       <p class="muted">Đang tải…</p>
     } @else if (agents().length === 0) {
-      <mat-card appearance="outlined" class="empty-card">
-        <mat-card-content>
-          <div class="empty-avatar">
-            <img
-              src="assets/brand/aries-mark-v3.png?v=aries4"
-              alt="ARIES"
-              width="64"
-              height="64"
-            />
+      <div class="empty-state-card">
+        <div class="empty-avatar">
+          <img
+            src="assets/brand/aries-mark-v3.png?v=aries4"
+            alt="ARIES"
+            width="64"
+            height="64"
+          />
+        </div>
+        <h2>
+          Chưa có agent nào{{ canCreate() ? '' : ' được chia sẻ với bạn' }}
+        </h2>
+        @if (canCreate()) {
+          <p>
+            Nhập mô tả vào khung bên trên hoặc tạo bằng biểu mẫu để bắt đầu.
+          </p>
+          <div class="empty-actions">
+            <a mat-flat-button class="btn-aries" routerLink="/builder">
+              <mat-icon svgIcon="bolt" /> Tạo bằng mô tả
+            </a>
+            <a mat-stroked-button class="pill-btn" routerLink="/agents/new">
+              <mat-icon svgIcon="add" /> Tạo bằng form
+            </a>
           </div>
-          <h2>
-            Chưa có agent nào{{ canCreate() ? '' : ' được chia sẻ với bạn' }}
-          </h2>
-          @if (canCreate()) {
-            <p class="muted">
-              Nhập mô tả vào khung bên trên hoặc tạo bằng biểu mẫu để bắt đầu.
-            </p>
-            <div class="empty-actions">
-              <a mat-flat-button class="btn-aries" routerLink="/builder">
-                <mat-icon svgIcon="bolt" /> Tạo bằng mô tả
-              </a>
-              <a mat-stroked-button class="pill-btn" routerLink="/agents/new">
-                <mat-icon svgIcon="add" /> Tạo bằng form
-              </a>
-            </div>
-          }
-        </mat-card-content>
-      </mat-card>
+        }
+      </div>
+    } @else if (filteredAgents().length === 0) {
+      <div class="empty-state-card">
+        <div class="empty-icon-ring" aria-hidden="true">
+          <mat-icon svgIcon="search" />
+        </div>
+        <h2>Không tìm thấy agent phù hợp</h2>
+        <p>
+          Không có agent nào khớp với từ khóa hoặc bộ lọc hiện tại. Hãy thử thay
+          đổi điều kiện lọc.
+        </p>
+        <div class="empty-actions">
+          <button
+            mat-stroked-button
+            class="pill-btn"
+            type="button"
+            (click)="query.set(''); filter.set('all')"
+          >
+            <mat-icon svgIcon="refresh" /> Xóa bộ lọc
+          </button>
+        </div>
+      </div>
     } @else {
       <div class="grid">
         @for (a of filteredAgents(); track a.id) {

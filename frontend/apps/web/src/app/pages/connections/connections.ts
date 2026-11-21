@@ -101,19 +101,71 @@ function initialValues(
     Tag,
   ],
   template: `
-    <div class="section-head">
-      <div>
-        <h1>Kết nối dữ liệu</h1>
-        <p class="muted subtitle">
-          Kết nối tới hệ thống của bạn (CSDL…) để gắn vào agent. Mật khẩu được lưu
-          trong kho bí mật OpenBao, không bao giờ hiển thị lại.
-        </p>
+    <div class="page-hero">
+      <div class="hero-left">
+        <span class="head-icon accent" aria-hidden="true">
+          <mat-icon class="sm" svgIcon="cable" />
+        </span>
+        <div class="hero-copy">
+          <h1>Kết nối dữ liệu</h1>
+          <p class="subtitle">
+            Kết nối tới cơ sở dữ liệu và dịch vụ nội bộ để gắn vào AI Agent.
+            Thông tin xác thực được mã hóa an toàn trong kho bí mật OpenBao và
+            không bao giờ hiển thị lại.
+          </p>
+        </div>
       </div>
-      @if (canCreate() && !editing()) {
-        <button mat-flat-button class="btn-aries" type="button" (click)="startCreate()">
-          <mat-icon svgIcon="add" /> Thêm kết nối
-        </button>
-      }
+      <div class="hero-actions">
+        @if (canCreate() && !editing()) {
+          <button
+            mat-flat-button
+            class="btn-aries"
+            type="button"
+            (click)="startCreate()"
+          >
+            <mat-icon svgIcon="add" /> Thêm kết nối
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="kpi-strip">
+      <div class="kpi-card">
+        <span class="kpi-icon" aria-hidden="true">
+          <mat-icon class="sm" svgIcon="cable" />
+        </span>
+        <div class="kpi-meta">
+          <span class="kpi-val">{{ connections().length }}</span>
+          <span class="kpi-label">Tổng kết nối</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-icon ok" aria-hidden="true">
+          <mat-icon class="sm" svgIcon="check_circle" />
+        </span>
+        <div class="kpi-meta">
+          <span class="kpi-val">{{ activeCount() }}</span>
+          <span class="kpi-label">Đang hoạt động</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-icon info" aria-hidden="true">
+          <mat-icon class="sm" svgIcon="database" />
+        </span>
+        <div class="kpi-meta">
+          <span class="kpi-val">{{ workspaceCount() }}</span>
+          <span class="kpi-label">Dùng chung tổ chức</span>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-icon warn" aria-hidden="true">
+          <mat-icon class="sm" svgIcon="key" />
+        </span>
+        <div class="kpi-meta">
+          <span class="kpi-val">OpenBao</span>
+          <span class="kpi-label">Kho bí mật mã hóa</span>
+        </div>
+      </div>
     </div>
 
     @if (error()) {
@@ -125,11 +177,40 @@ function initialValues(
 
     @if (editing(); as e) {
       <form class="panel" (ngSubmit)="save()">
-        <h2>{{ e.id ? 'Sửa kết nối' : 'Kết nối mới' }}</h2>
+        <div class="panel-head">
+          <div class="panel-title">
+            <span class="icon-badge" aria-hidden="true">
+              <mat-icon class="sm" [svgIcon]="e.id ? 'edit' : 'add'" />
+            </span>
+            <div>
+              <h2>{{ e.id ? 'Chỉnh sửa kết nối' : 'Tạo kết nối mới' }}</h2>
+              <p class="muted small">
+                Cấu hình thông số và xác thực để kiểm tra kết nối ngay sau khi
+                lưu.
+              </p>
+            </div>
+          </div>
+          <button
+            mat-icon-button
+            type="button"
+            aria-label="Đóng biểu mẫu"
+            (click)="editing.set(null)"
+          >
+            <mat-icon svgIcon="close" />
+          </button>
+        </div>
+
         <div class="grid">
           <mat-form-field appearance="outline">
             <mat-label>Tên kết nối</mat-label>
-            <input matInput name="name" [(ngModel)]="e.name" required maxlength="80" />
+            <input
+              matInput
+              name="name"
+              [(ngModel)]="e.name"
+              placeholder="Ví dụ: PostgreSQL Bán hàng"
+              required
+              maxlength="80"
+            />
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Loại connector</mat-label>
@@ -146,11 +227,13 @@ function initialValues(
           </mat-form-field>
           @if (!e.id) {
             <mat-form-field appearance="outline">
-              <mat-label>Phạm vi</mat-label>
+              <mat-label>Phạm vi chia sẻ</mat-label>
               <mat-select name="scope" [(ngModel)]="e.scope">
                 <mat-option value="personal">Cá nhân (chỉ mình tôi)</mat-option>
                 @if (isAdmin()) {
-                  <mat-option value="workspace">Dùng chung (cả tổ chức)</mat-option>
+                  <mat-option value="workspace"
+                    >Dùng chung (cả tổ chức)</mat-option
+                  >
                 }
               </mat-select>
             </mat-form-field>
@@ -158,13 +241,14 @@ function initialValues(
         </div>
 
         @if (connector(); as c) {
-          <p class="muted small">{{ c.description }}</p>
+          <p class="muted small conn-desc">{{ c.description }}</p>
           @if (c.oauth_provider && !e.id) {
             <div class="oauth-box">
               @if (providerName(c.oauth_provider); as pn) {
                 <p class="small">
-                  Kết nối bằng tài khoản {{ pn }} (OAuth). Bạn sẽ được chuyển sang trang đăng nhập
-                  của {{ pn }}; ARIES chỉ lưu token trong kho bí mật, không thấy mật khẩu.
+                  Kết nối bằng tài khoản <strong>{{ pn }}</strong> (OAuth). Bạn
+                  sẽ được chuyển sang trang đăng nhập của {{ pn }}; ARIES chỉ
+                  lưu token trong kho bí mật, không thấy mật khẩu.
                 </p>
                 <button
                   mat-flat-button
@@ -177,7 +261,8 @@ function initialValues(
                 </button>
               } @else {
                 <ui-notice severity="warn" [compact]="true">
-                  Chưa cấu hình nhà cung cấp OAuth “{{ c.oauth_provider }}” — liên hệ quản trị.
+                  Chưa cấu hình nhà cung cấp OAuth “{{ c.oauth_provider }}” —
+                  liên hệ quản trị.
                 </ui-notice>
               }
             </div>
@@ -220,7 +305,8 @@ function initialValues(
             @for (s of c.secrets; track s) {
               <mat-form-field appearance="outline">
                 <mat-label>
-                  <mat-icon class="sm" svgIcon="key" aria-hidden="true" /> {{ s }}
+                  <mat-icon class="sm" svgIcon="key" aria-hidden="true" />
+                  {{ s }}
                 </mat-label>
                 <input
                   matInput
@@ -238,109 +324,269 @@ function initialValues(
           </div>
         }
 
-        <div class="actions">
+        <div class="panel-actions">
+          <button
+            mat-stroked-button
+            class="pill-btn"
+            type="button"
+            (click)="editing.set(null)"
+          >
+            Hủy
+          </button>
           @if (!(connector()?.oauth_provider && !e.id)) {
-            <button mat-flat-button class="btn-aries" type="submit" [disabled]="saving()">
-              <mat-icon svgIcon="save" /> Lưu
+            <button
+              mat-flat-button
+              class="btn-aries"
+              type="submit"
+              [disabled]="saving()"
+            >
+              <mat-icon svgIcon="save" />
+              {{ saving() ? 'Đang lưu…' : 'Lưu & kiểm tra' }}
             </button>
           }
-          <button mat-stroked-button type="button" (click)="editing.set(null)">Hủy</button>
         </div>
       </form>
     }
 
-    <div class="conn-grid">
-      @for (c of connections(); track c.id) {
-        <article class="conn-card">
-          <div class="title-line">
-            <mat-icon class="sm" svgIcon="database" aria-hidden="true" />
-            <strong>{{ c.name }}</strong>
-            <ui-tag [value]="connectorName(c.connector_id)" severity="primary" />
-            <ui-tag
-              [value]="c.scope === 'workspace' ? 'dùng chung' : 'cá nhân'"
-              severity="secondary"
-            />
-            @if (c.status === 'disabled') {
-              <ui-tag value="đang tắt" severity="warn" />
-            }
-          </div>
-          <div class="muted small cfg">
-            @for (kv of summary(c); track kv) {
-              <span>{{ kv }}</span>
-            }
-          </div>
-          @if (c.last_test_at) {
-            <ui-notice [severity]="c.last_test_ok ? 'success' : 'error'" [compact]="true">
-              {{ c.last_test_note }} · {{ c.last_test_at | date: 'short' }}
-            </ui-notice>
-          }
-          @if (c.can_manage) {
-            <div class="actions">
-              <button mat-stroked-button type="button" (click)="test(c)" [disabled]="busyId() === c.id">
-                <mat-icon svgIcon="play_arrow" /> Kiểm tra
-              </button>
-              <button mat-stroked-button type="button" (click)="startEdit(c)">
-                <mat-icon svgIcon="edit" /> Sửa
-              </button>
-              <button mat-stroked-button type="button" (click)="toggle(c)">
-                {{ c.status === 'active' ? 'Tắt' : 'Bật' }}
-              </button>
-              <button mat-stroked-button type="button" class="danger" (click)="remove(c)">
-                <mat-icon svgIcon="delete" /> Xóa
-              </button>
+    @if (connections().length > 0) {
+      <div class="conn-grid">
+        @for (c of connections(); track c.id) {
+          <article class="conn-card">
+            <div class="card-top">
+              <span class="icon-badge" aria-hidden="true">
+                <mat-icon class="sm" svgIcon="database" />
+              </span>
+              <div class="card-body">
+                <div class="title-line">
+                  <strong>{{ c.name }}</strong>
+                  <ui-tag
+                    [value]="connectorName(c.connector_id)"
+                    severity="primary"
+                  />
+                  <ui-tag
+                    [value]="
+                      c.scope === 'workspace' ? 'Dùng chung' : 'Cá nhân'
+                    "
+                    severity="secondary"
+                  />
+                  <ui-tag
+                    [value]="c.status === 'active' ? 'Đang bật' : 'Đang tắt'"
+                    [severity]="c.status === 'active' ? 'success' : 'warn'"
+                  />
+                </div>
+                @if (summary(c).length) {
+                  <div class="cfg">
+                    @for (kv of summary(c); track kv) {
+                      <span class="flow-chip chip-read">{{ kv }}</span>
+                    }
+                  </div>
+                }
+              </div>
             </div>
-          }
-        </article>
-      } @empty {
-        <div class="empty-box muted">
-          Chưa có kết nối nào.
-          @if (canCreate()) {
-            Bấm “Thêm kết nối” để tạo.
-          }
+
+            @if (c.last_test_at) {
+              <ui-notice
+                [severity]="c.last_test_ok ? 'success' : 'error'"
+                [compact]="true"
+              >
+                {{ c.last_test_note }} ·
+                {{ c.last_test_at | date: 'dd/MM HH:mm' }}
+              </ui-notice>
+            }
+
+            @if (c.can_manage) {
+              <div class="card-foot">
+                <button
+                  mat-stroked-button
+                  class="pill-btn"
+                  type="button"
+                  (click)="test(c)"
+                  [disabled]="busyId() === c.id"
+                >
+                  <mat-icon svgIcon="play_arrow" />
+                  {{ busyId() === c.id ? 'Đang kiểm tra…' : 'Kiểm tra' }}
+                </button>
+                <button
+                  mat-stroked-button
+                  class="pill-btn"
+                  type="button"
+                  (click)="startEdit(c)"
+                >
+                  <mat-icon svgIcon="edit" /> Sửa
+                </button>
+                <button
+                  mat-stroked-button
+                  class="pill-btn"
+                  type="button"
+                  (click)="toggle(c)"
+                >
+                  {{ c.status === 'active' ? 'Tắt' : 'Bật' }}
+                </button>
+                <button
+                  mat-stroked-button
+                  class="pill-btn danger"
+                  type="button"
+                  (click)="remove(c)"
+                >
+                  <mat-icon svgIcon="delete" /> Xóa
+                </button>
+              </div>
+            }
+          </article>
+        }
+      </div>
+    } @else if (!editing()) {
+      <div class="empty-state-card">
+        <div class="empty-icon-ring" aria-hidden="true">
+          <mat-icon svgIcon="cable" />
         </div>
-      }
-    </div>
+        <h2>Chưa có kết nối dữ liệu nào</h2>
+        <p>
+          Thêm kết nối tới PostgreSQL hoặc các hệ thống hỗ trợ OAuth để AI Agent
+          có thể tra cứu và thao tác dữ liệu một cách an toàn theo quyền hạn.
+        </p>
+        <div class="empty-features">
+          <span class="flow-chip chip-read">
+            <mat-icon class="sm" svgIcon="database" aria-hidden="true" />
+            PostgreSQL SQL Guard
+          </span>
+          <span class="flow-chip chip-write">
+            <mat-icon class="sm" svgIcon="key" aria-hidden="true" />
+            Mã hóa OpenBao
+          </span>
+          <span class="flow-chip chip-warn">
+            <mat-icon class="sm" svgIcon="shield" aria-hidden="true" />
+            Phân quyền Cá nhân / Tổ chức
+          </span>
+        </div>
+        @if (canCreate()) {
+          <div class="empty-actions">
+            <button
+              mat-flat-button
+              class="btn-aries"
+              type="button"
+              (click)="startCreate()"
+            >
+              <mat-icon svgIcon="add" /> Thêm kết nối đầu tiên
+            </button>
+          </div>
+        }
+      </div>
+    }
   `,
   styles: `
-    .section-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 1rem;
-      margin-bottom: 0.85rem;
-      h1 { font-size: 1.25rem; margin: 0 0 0.15rem; }
-      .subtitle { margin: 0; font-size: 0.88rem; }
-    }
-    .panel, .conn-card {
+    .panel,
+    .conn-card {
       background: var(--app-surface);
       border: 1px solid var(--app-border);
       border-radius: var(--app-radius-xl);
       box-shadow: var(--app-shadow-sm);
-      padding: 1.1rem 1.2rem;
+      padding: 1.2rem 1.3rem;
     }
-    .panel { margin-bottom: 1.1rem; h2 { font-size: 1.05rem; margin: 0 0 0.8rem; } }
+    .panel {
+      margin-bottom: 1.25rem;
+      border-color: var(--app-border-strong);
+      box-shadow: var(--app-shadow-md);
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.85rem;
+      border-bottom: 1px solid var(--app-border);
+    }
+    .panel-title {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      h2 {
+        font-size: 1.05rem;
+        margin: 0 0 0.1rem;
+      }
+      p {
+        margin: 0;
+      }
+    }
+    .conn-desc {
+      margin: 0.15rem 0 0.85rem;
+    }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 0.2rem 0.9rem;
+      gap: 0.3rem 0.9rem;
       align-items: center;
     }
-    .oauth-box { padding: 0.7rem 0.9rem; border: 1px dashed var(--app-border); border-radius: var(--app-radius-md); margin-bottom: 0.6rem; }
-    .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
+    .oauth-box {
+      padding: 0.85rem 1rem;
+      border: 1px dashed var(--app-border-strong);
+      background: var(--app-surface-2);
+      border-radius: var(--app-radius-md);
+      margin-bottom: 0.85rem;
+      p {
+        margin: 0 0 0.65rem;
+      }
+    }
+    .panel-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--app-border);
+    }
     .conn-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-      gap: 1rem;
+      gap: 1.1rem;
     }
-    .conn-card { display: flex; flex-direction: column; gap: 0.55rem; }
-    .title-line { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
-    .cfg { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; font-family: ui-monospace, monospace; }
-    .danger { color: var(--app-danger, #dc2626); }
-    .empty-box {
-      padding: 2rem;
-      text-align: center;
-      border: 1px dashed var(--app-border);
-      border-radius: var(--app-radius-lg);
+    .conn-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 0.85rem;
+      transition: all 0.18s ease;
+      &:hover {
+        border-color: var(--app-border-strong);
+        box-shadow: var(--app-shadow-md);
+        transform: translateY(-2px);
+      }
+    }
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.8rem;
+    }
+    .card-body {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .title-line {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .cfg {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .card-foot {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+      padding-top: 0.7rem;
+      border-top: 1px solid var(--app-border);
+    }
+    .danger {
+      color: var(--app-danger, #dc2626) !important;
+      border-color: var(--app-danger-border, #fecdd3) !important;
     }
   `,
 })
@@ -375,6 +621,12 @@ export class Connections implements OnInit {
     this.session.me();
     return this.session.hasAnyRole('admin');
   });
+  protected readonly activeCount = computed(
+    () => this.connections().filter((c) => c.status === 'active').length,
+  );
+  protected readonly workspaceCount = computed(
+    () => this.connections().filter((c) => c.scope === 'workspace').length,
+  );
   protected readonly connector = computed(() =>
     this.connectors().find((c) => c.id === this.editing()?.connectorId),
   );

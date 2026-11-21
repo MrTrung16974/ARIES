@@ -5,9 +5,10 @@
   height: calc(100vh - 4.5rem);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 960px) {
   .chat-layout {
     grid-template-columns: 1fr;
+    height: calc(100vh - 3rem);
   }
   .threads {
     display: none;

@@ -53,13 +53,18 @@ const PLUGIN_DESC: Record<string, string> = {
       </div>
     </div>
 
-    <div class="section-head">
-      <div>
-        <h1>Plugin</h1>
-        <p class="muted subtitle">
-          Quản lý các Skill và Connector đã cài đặt, xem danh sách tool và mức
-          độ rủi ro.
-        </p>
+    <div class="page-hero">
+      <div class="hero-left">
+        <span class="head-icon accent" aria-hidden="true">
+          <mat-icon class="sm" svgIcon="deployed_code" />
+        </span>
+        <div class="hero-copy">
+          <h1>Plugin</h1>
+          <p class="subtitle">
+            Quản lý các Skill và Connector đã cài đặt, xem danh sách tool và mức
+            độ rủi ro.
+          </p>
+        </div>
       </div>
     </div>
 
@@ -95,13 +100,34 @@ const PLUGIN_DESC: Record<string, string> = {
     </div>
 
     <div class="flow-info-strip">
-      Plugin mở rộng ARIES với các tool, skill và connector tùy chỉnh. Các
-      plugin lỗi tự động bị cô lập khi khởi động để không làm gián đoạn hệ
-      thống.
+      <mat-icon class="sm" svgIcon="deployed_code" aria-hidden="true" />
+      <span>
+        Plugin mở rộng ARIES với các tool, skill và connector tùy chỉnh. Các
+        plugin lỗi tự động bị cô lập khi khởi động để không làm gián đoạn hệ
+        thống.
+      </span>
     </div>
 
     @if (filteredPlugins().length === 0) {
-      <div class="empty-box muted">Không có plugin nào.</div>
+      <div class="empty-state-card">
+        <div class="empty-icon-ring" aria-hidden="true">
+          <mat-icon svgIcon="deployed_code" />
+        </div>
+        <h2>Không có plugin nào trong mục này</h2>
+        <p>Hãy chuyển sang bộ lọc khác để xem các plugin đã được nạp.</p>
+        @if (filter() !== 'all') {
+          <div class="empty-actions">
+            <button
+              mat-stroked-button
+              class="pill-btn"
+              type="button"
+              (click)="filter.set('all')"
+            >
+              <mat-icon svgIcon="refresh" /> Xem tất cả plugin
+            </button>
+          </div>
+        }
+      </div>
     } @else {
       <div class="plugin-grid">
         @for (p of filteredPlugins(); track p.id) {

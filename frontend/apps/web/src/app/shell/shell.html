@@ -1,19 +1,55 @@
-<div class="studio-shell">
+<div
+  class="studio-shell"
+  [class.collapsed]="collapsed()"
+  [class.narrow-expanded]="isNarrow() && !collapsed()"
+>
+  @if (isNarrow() && !collapsed()) {
+    <div
+      class="sidebar-backdrop"
+      aria-hidden="true"
+      (click)="toggleSidebar()"
+    ></div>
+  }
+
   <aside class="sidebar">
-    <a class="brand" routerLink="/" aria-label="ARIES — trang chủ">
-      <div class="brand-logo-wrap">
-        <img
-          src="assets/brand/aries-mark-v3.png?v=aries4"
-          alt="ARIES"
-          width="38"
-          height="38"
+    <div class="sidebar-top">
+      <a
+        class="brand"
+        routerLink="/"
+        aria-label="ARIES — trang chủ"
+        title="ARIES — AI Agent Studio"
+        (click)="onNavClick()"
+      >
+        <div class="brand-logo-wrap">
+          <img
+            src="assets/brand/aries-mark-v3.png?v=aries4"
+            alt="ARIES"
+            width="36"
+            height="36"
+          />
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">ARIES</span>
+          <span class="brand-sub">AI Agent Studio</span>
+        </div>
+      </a>
+
+      <button
+        type="button"
+        class="collapse-btn"
+        (click)="toggleSidebar()"
+        [title]="collapsed() ? 'Mở rộng menu' : 'Thu gọn menu'"
+        [attr.aria-label]="collapsed() ? 'Mở rộng menu' : 'Thu gọn menu'"
+        [attr.aria-expanded]="!collapsed()"
+      >
+        <mat-icon
+          class="sm"
+          svgIcon="arrow_back"
+          [class.flipped]="collapsed()"
+          aria-hidden="true"
         />
-      </div>
-      <div class="brand-text">
-        <span class="brand-name">ARIES</span>
-        <span class="brand-sub">AI Agent Studio</span>
-      </div>
-    </a>
+      </button>
+    </div>
 
     <nav class="side-nav" aria-label="Điều hướng chính">
       @for (item of nav(); track item.link) {
@@ -21,9 +57,12 @@
           [routerLink]="item.link"
           routerLinkActive="active"
           [routerLinkActiveOptions]="{ exact: item.link === '/' }"
+          [title]="item.label"
+          [attr.aria-label]="item.label"
+          (click)="onNavClick()"
         >
           <mat-icon class="sm" [svgIcon]="item.icon" aria-hidden="true" />
-          <span>{{ item.label }}</span>
+          <span class="nav-label">{{ item.label }}</span>
         </a>
       }
     </nav>
@@ -35,20 +74,26 @@
           class="side-card-btn"
           (click)="bar.toggle()"
           title="Mở bảng lệnh nhanh (Ctrl+K)"
+          aria-label="Lệnh nhanh (Ctrl+K)"
         >
           <mat-icon class="sm" svgIcon="bolt" aria-hidden="true" />
-          <span>Lệnh nhanh</span>
+          <span class="btn-label">Lệnh nhanh</span>
           <kbd>Ctrl K</kbd>
         </button>
       }
 
       <div class="side-meter">
         <div class="meter-row">
-          <span>ARIES Core</span>
+          <span class="meter-title">ARIES Core</span>
           <button
             type="button"
             class="theme-chip"
             (click)="toggleTheme()"
+            [title]="
+              darkMode()
+                ? 'Chuyển sang giao diện sáng'
+                : 'Chuyển sang giao diện đêm sao'
+            "
             [attr.aria-label]="
               darkMode()
                 ? 'Chuyển sang giao diện sáng'
@@ -60,7 +105,9 @@
               [svgIcon]="darkMode() ? 'light_mode' : 'dark_mode'"
               aria-hidden="true"
             />
-            <span>{{ darkMode() ? 'Đêm sao' : 'Sáng' }}</span>
+            <span class="theme-label">{{
+              darkMode() ? 'Đêm sao' : 'Sáng'
+            }}</span>
           </button>
         </div>
         <div class="meter-track">
@@ -69,7 +116,12 @@
       </div>
 
       <div class="user-card">
-        <span class="avatar" aria-hidden="true">{{ userInitial() }}</span>
+        <span
+          class="avatar"
+          aria-hidden="true"
+          [title]="session.displayName() || 'Tài khoản'"
+          >{{ userInitial() }}</span
+        >
         @if (session.me(); as me) {
           <div class="user-info">
             <span class="name">{{ session.displayName() }}</span>
