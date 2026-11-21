@@ -292,10 +292,61 @@ class AutomationService:
             claimed += due
         return claimed
 
+    async def resume_waiting(self) -> int:
+        """Cron mỗi phút: lần chạy vắng mặt đã được duyệt xong → chạy tiếp, không cần ai mở chat.
+
+        Trả số lần chạy được tiếp tục.
+        """
+        resumed = 0
+        for tenant in await self._tenants.tenant_ids():
+            for w in await self._repo.waiting_runs(tenant):
+                principal = run_principal(tenant, w.owner_id)
+                try:
+                    out = await self._runner.resume_once(principal, w.thread_id)
+                except AppError as exc:  # agent bị xóa / có version mới / mất quyền…
+                    await self._repo.finish_run(
+                        tenant, w.run_id, status="failed", thread_id=w.thread_id, error=exc.message
+                    )
+                    continue
+                except Exception:
+                    logger.warning("Chạy tiếp sau duyệt lỗi", extra={"run_id": str(w.run_id)})
+                    continue
+                if out.status == "awaiting_approval":
+                    continue  # chủ lịch chưa quyết định hết
+                status = "completed" if out.status == "stale" else out.status
+                await self._repo.finish_run(
+                    tenant, w.run_id, status=status, thread_id=w.thread_id, error=None
+                )
+                if out.status != "stale":
+                    resumed += 1
+        return resumed
+
+    async def _agent_gone(self, s: Schedule) -> bool:
+        """Agent bị xóa / thôi publish → tắt lịch ngay (không đợi lỗi 5 lần)."""
+        try:
+            await self._check_agent(s.tenant_id, s.owner_id, s.agent_id)
+        except (NotFoundError, ForbiddenError, ValidationError) as exc:
+            await self._repo.record_result(
+                s.tenant_id, s.id, status="agent_unavailable", failed=True, state=None, disable=True
+            )
+            await self._audit.record_safely(
+                tenant_id=s.tenant_id,
+                actor_id=None,
+                action="schedule.auto_disabled",
+                outcome=Outcome.FAILURE,
+                resource_type="schedule",
+                resource_id=str(s.id),
+                details={"reason": "agent_unavailable", "detail": exc.message},
+            )
+            return True
+        return False
+
     async def execute(self, tenant_id: str, schedule_id: UUID, fired_at: datetime) -> int:
         """Job `run_schedule`: chạy agent cho một lần kích hoạt. Trả số lần chạy agent."""
         s = await self._repo.get(tenant_id, schedule_id)
         if s is None or not s.enabled:
+            return 0
+        if await self._agent_gone(s):
             return 0
         principal = run_principal(s.tenant_id, s.owner_id)
         try:

@@ -1,13 +1,15 @@
 """Quản lý kết nối nhà cung cấp LLM (Gemini, Ollama, OpenAI, Claude, Groq, OpenRouter, DeepSeek).
 
 Lưu cấu hình (base_url, models, extra, enabled) ở PostgreSQL (llm.providers) và API key ở
-OpenBao (tenants/{tenant_id}/llm/{provider_id}). Cập nhật nóng ModelRouter & ModelCatalog
+OpenBao (aries/{tenant_id}/llm/{provider_id}). Cập nhật nóng ModelRouter & ModelCatalog
 ngay khi lưu, không cần khởi động lại server.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -23,17 +25,34 @@ from aiagent.modules.runtime.domain import (
     PROVIDER_BY_ID,
     PROVIDER_CATALOG,
     ChatModelPort,
+    ModelRateLimitedError,
+    ModelRequest,
     ProbeResult,
     ProviderDescriptor,
     ProviderFactoryPort,
     ProviderRecord,
     ProviderRepositoryPort,
 )
-from aiagent.shared_kernel.errors import ForbiddenError, NotFoundError, ValidationError
+from aiagent.shared_kernel.errors import (
+    AppError,
+    ForbiddenError,
+    NotFoundError,
+    ValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
 ConfigSource = Literal["db", "env", "none"]
+MAX_MODELS_TO_CHECK = 100
+CHECK_TIMEOUT_S = 30
+
+
+@dataclass(frozen=True)
+class ModelCheck:
+    model: str
+    ok: bool
+    error: str | None
+    latency_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -52,7 +71,8 @@ class ProviderView:
 
 
 def _vault_path(tenant_id: str, provider_id: str) -> str:
-    return f"tenants/{tenant_id}/llm/{provider_id}"
+    # Chính sách AppRole chỉ cho phép secret/data/aries/* (deploy/openbao/init.sh).
+    return f"aries/{tenant_id}/llm/{provider_id}"
 
 
 def _clean_models(models: list[str] | None) -> list[str]:
@@ -152,7 +172,9 @@ class ModelProviderService:
         try:
             records = await self._repo.list_for_tenant(principal.tenant_id)
         except Exception as exc:
-            logger.warning("Không đọc được llm.providers (có thể chưa chạy migration 0011): %s", exc)
+            logger.warning(
+                "Không đọc được llm.providers (có thể chưa chạy migration 0011): %s", exc
+            )
             records = []
         by_id = {r.provider_id: r for r in records}
 
@@ -237,7 +259,9 @@ class ModelProviderService:
         has_api_key = False
 
         if raw_key:
-            await self._vault.put(_vault_path(principal.tenant_id, provider_id), {"api_key": raw_key})
+            await self._vault.put(
+                _vault_path(principal.tenant_id, provider_id), {"api_key": raw_key}
+            )
             effective_key = raw_key
             has_api_key = True
         elif existing is not None and existing.has_api_key:
@@ -295,6 +319,82 @@ class ModelProviderService:
 
         views = await self.list_providers(principal)
         return next(v for v in views if v.descriptor.id == provider_id)
+
+    async def check_models(
+        self,
+        principal: Principal,
+        provider_id: str,
+        models: list[str],
+        *,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> list[ModelCheck]:
+        """Gọi thử từng model một yêu cầu rất ngắn — phát hiện model có trong /models nhưng
+        không dùng được (ngừng cung cấp, hết quota, quá tải…)."""
+        self._require_admin(principal)
+        wanted = _clean_models(models)
+        if not wanted:
+            raise ValidationError("Chưa chọn model nào để kiểm tra.")
+        if len(wanted) > MAX_MODELS_TO_CHECK:
+            raise ValidationError(f"Mỗi lần kiểm tra tối đa {MAX_MODELS_TO_CHECK} model.")
+        url, key, ext = await self._effective(principal, provider_id, base_url, api_key, extra)
+        chat = self._factory.build(provider_id, base_url=url, api_key=key, extra=ext)
+        limit = asyncio.Semaphore(3)
+
+        async def one(model: str) -> ModelCheck:
+            request = ModelRequest(
+                model=model,
+                system="Trả lời đúng một từ.",
+                messages=[{"role": "user", "content": [{"type": "text", "text": "Nói: OK"}]}],
+                max_tokens=16,
+                effort="low",
+            )
+            async with limit:
+                started = time.monotonic()
+                try:
+                    async with asyncio.timeout(CHECK_TIMEOUT_S):
+                        async for _event in chat.stream(request):
+                            break  # có phản hồi đầu tiên là đủ
+                except ModelRateLimitedError:
+                    return ModelCheck(model, False, "Hết quota / đang bị giới hạn tần suất (429).")
+                except AppError as exc:
+                    return ModelCheck(model, False, exc.message)
+                except TimeoutError:
+                    return ModelCheck(model, False, f"Không phản hồi sau {CHECK_TIMEOUT_S}s.")
+                except Exception as exc:  # lỗi lạ của SDK — không làm hỏng cả lượt kiểm tra
+                    return ModelCheck(model, False, f"Lỗi: {type(exc).__name__}")
+                return ModelCheck(model, True, None, int((time.monotonic() - started) * 1000))
+
+        return list(await asyncio.gather(*(one(m) for m in wanted)))
+
+    async def _effective(
+        self,
+        principal: Principal,
+        provider_id: str,
+        base_url: str | None,
+        api_key: str | None,
+        extra: dict[str, Any] | None,
+    ) -> tuple[str, str | None, dict[str, Any]]:
+        """URL/key/extra dùng để kết nối: giá trị đang nhập → đã lưu (DB/OpenBao) → .env → mặc định."""
+        desc = self._require_descriptor(provider_id)
+        existing = await self._repo.get(principal.tenant_id, provider_id)
+        url = (
+            (base_url or "").strip()
+            or (existing.base_url if existing and existing.base_url else None)
+            or self._env_base_urls.get(provider_id)
+            or desc.default_base_url
+        )
+        key = (api_key or "").strip() or None
+        if not key and existing is not None and existing.has_api_key:
+            try:
+                stored = await self._vault.get(_vault_path(principal.tenant_id, provider_id))
+                key = stored.get("api_key")
+            except Exception:
+                key = None
+        key = key or self._env_api_keys.get(provider_id)
+        ext = dict(extra) if extra is not None else (dict(existing.extra) if existing else {})
+        return url, key, ext
 
     async def test_connection(
         self,

@@ -35,7 +35,9 @@ from aiagent.plugin_sdk import (
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 MAX_BODY = 15_000
-MAX_EVENTS = 10
+MAX_EVENTS = 10  # mail xử lý mỗi lần kiểm tra; phần dư xếp hàng ở state["pending"]
+MAX_PENDING = 500
+MAX_HISTORY_PAGES = 20
 _SKIP_LABELS = {"DRAFT", "SENT", "SPAM", "TRASH"}
 _ID = r"^[A-Za-z0-9_-]{6,64}$"
 _EMAIL = {"type": "string", "pattern": r"^[^@\s<>,;\"]+@[^@\s<>,;\"]+\.[^@\s<>,;\"]+$"}
@@ -320,11 +322,12 @@ class GmailConnector(Plugin):
         if not start:  # lần đầu: chỉ ghi mốc, không xử lý mail cũ
             profile = await self._api(connection, "GET", "/profile")
             return [], {"history_id": str(profile.get("historyId", ""))}
+        pending = [str(x) for x in state.get("pending") or []]
         ids: list[str] = []
         latest = str(start)
         page: str | None = None
         try:
-            for _ in range(3):
+            for _ in range(MAX_HISTORY_PAGES):
                 params: dict[str, Any] = {
                     "startHistoryId": start,
                     "historyTypes": "messageAdded",
@@ -338,19 +341,26 @@ class GmailConnector(Plugin):
                 for h in res.get("history") or []:
                     for added in h.get("messagesAdded") or []:
                         mid = str((added.get("message") or {}).get("id", ""))
-                        if mid and mid not in ids:
+                        if mid and mid not in ids and mid not in pending:
                             ids.append(mid)
                 page = res.get("nextPageToken")
                 if not page:
                     break
-        except LookupError:  # historyId quá cũ → đặt lại mốc
+        except LookupError:  # historyId quá cũ → đặt lại mốc (giữ hàng đợi cũ)
             profile = await self._api(connection, "GET", "/profile")
-            return [], {"history_id": str(profile.get("historyId", ""))}
+            reset: dict[str, Any] = {"history_id": str(profile.get("historyId", ""))}
+            if pending:
+                reset["pending"] = pending
+            return [], reset
+
+        # Cũ trước, mới sau; mỗi lần tối đa MAX_EVENTS — phần dư để lần sau (không bỏ sót).
+        queue = pending + ids
+        batch, rest = queue[:MAX_EVENTS], queue[MAX_EVENTS : MAX_EVENTS + MAX_PENDING]
 
         want_from = str(config.get("from_contains") or "").lower()
         want_subject = str(config.get("subject_contains") or "").lower()
         events: list[TriggerEvent] = []
-        for mid in ids[-MAX_EVENTS:]:
+        for mid in batch:
             try:
                 msg = await self._api(
                     connection, "GET", f"/messages/{mid}", params={"format": "full"}
@@ -366,7 +376,10 @@ class GmailConnector(Plugin):
                 continue
             subject, text = _render(msg)
             events.append(TriggerEvent(id=f"gmail:{mid}", title=subject[:200], content=text))
-        return events, {"history_id": latest}
+        new_state: dict[str, Any] = {"history_id": latest}
+        if rest:
+            new_state["pending"] = rest
+        return events, new_state
 
     async def test_connection(self, connection: ConnectionContext) -> HealthStatus:
         try:

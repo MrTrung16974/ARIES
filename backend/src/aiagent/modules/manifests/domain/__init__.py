@@ -62,7 +62,7 @@ def load_manifest(text: str) -> dict[str, Any]:
 
 
 def dump_manifest(doc: dict[str, Any]) -> str:
-    return yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, width=100)
+    return str(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, width=100))
 
 
 def _lookup(kind: str, path: str, value: Any, table: dict[UUID, str]) -> str:

@@ -115,11 +115,7 @@ const IDEA_PRESETS = [
 
     @if (!loading() && agents().length > 0) {
       <div class="filter-bar">
-        <div
-          class="sub-tabs"
-          role="tablist"
-          aria-label="Lọc theo trạng thái"
-        >
+        <div class="sub-tabs" role="tablist" aria-label="Lọc theo trạng thái">
           <button
             type="button"
             [class.active]="filter() === 'all'"
@@ -269,6 +265,17 @@ const IDEA_PRESETS = [
                   >
                     <mat-icon svgIcon="edit" /> Sửa
                   </a>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    class="del-btn"
+                    [disabled]="deleting() === a.id"
+                    [attr.aria-label]="'Xóa agent ' + a.name"
+                    title="Xóa agent"
+                    (click)="remove(a)"
+                  >
+                    <mat-icon svgIcon="delete" />
+                  </button>
                 }
                 <a
                   mat-flat-button
@@ -501,6 +508,13 @@ const IDEA_PRESETS = [
     .foot-actions {
       display: flex;
       gap: 0.45rem;
+      align-items: center;
+    }
+    .del-btn {
+      color: var(--app-muted);
+      &:hover {
+        color: var(--app-danger, #dc2626);
+      }
     }
     .empty-card {
       text-align: center;
@@ -554,6 +568,31 @@ export class AgentsList implements OnInit {
       next: (a) => this.agents.set(a),
       complete: () => this.loading.set(false),
       error: () => this.loading.set(false),
+    });
+  }
+
+  protected readonly deleting = signal<string | null>(null);
+
+  protected remove(a: AgentSummary): void {
+    const live = a.published_version
+      ? ' Agent đang publish: link chia sẻ, API key, Telegram và lịch chạy của nó sẽ ngừng hoạt động.'
+      : '';
+    if (
+      !confirm(
+        `Xóa agent “${a.name}”?${live} Lịch sử hội thoại vẫn được giữ cho mục đích audit.`,
+      )
+    )
+      return;
+    this.deleting.set(a.id);
+    this.api.archive(a.id).subscribe({
+      next: () => {
+        this.deleting.set(null);
+        this.agents.update((list) => list.filter((x) => x.id !== a.id));
+      },
+      error: (e: { error?: { error?: { message?: string } } }) => {
+        this.deleting.set(null);
+        alert(e.error?.error?.message ?? 'Không xóa được agent.');
+      },
     });
   }
 

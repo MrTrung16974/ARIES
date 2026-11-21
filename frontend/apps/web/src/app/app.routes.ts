@@ -79,6 +79,15 @@ export const appRoutes: Route[] = [
           import('./pages/knowledge/knowledge').then((m) => m.Knowledge),
       },
       {
+        path: 'models',
+        title: 'Nhà cung cấp LLM',
+        canActivate: [roleGuard('admin', 'builder')],
+        loadComponent: () =>
+          import('./pages/models/model-providers').then(
+            (m) => m.ModelProviders,
+          ),
+      },
+      {
         path: 'mcp',
         title: 'MCP server',
         canActivate: [roleGuard('admin')],

@@ -18,6 +18,7 @@ from aiagent.modules.automation.domain import (
     Schedule,
     ScheduleRun,
     TriggerItem,
+    WaitingRun,
 )
 from aiagent.modules.connections.application import ConnectionService
 from aiagent.modules.identity.domain import Principal
@@ -86,6 +87,17 @@ _FINISH_RUN = text(
     UPDATE automation.schedule_runs
        SET status = :status, thread_id = :thread_id, error = :error, finished_at = now()
      WHERE id = :id
+    """
+)
+_WAITING = text(
+    """
+    SELECT r.id, r.schedule_id, r.thread_id, s.owner_id
+      FROM automation.schedule_runs r
+      JOIN automation.schedules s ON s.id = r.schedule_id
+     WHERE r.status = 'awaiting_approval' AND r.thread_id IS NOT NULL
+       AND r.started_at > now() - interval '7 days'
+     ORDER BY r.started_at
+     LIMIT 50
     """
 )
 _LIST_RUNS = text(
@@ -282,6 +294,11 @@ class SqlScheduleRepository:
             rows = (await session.execute(_LIST_RUNS, {"sid": schedule_id, "limit": limit})).all()
         return [_run(r._mapping) for r in rows]
 
+    async def waiting_runs(self, tenant_id: str) -> list[WaitingRun]:
+        async with self._db.tenant_session(tenant_id) as session:
+            rows = (await session.execute(_WAITING)).all()
+        return [WaitingRun(r.id, r.schedule_id, r.thread_id, r.owner_id) for r in rows]
+
 
 class SqlTenantList:
     """`identity.tenants` không có RLS (danh mục tenant) — worker duyệt từng tenant."""
@@ -351,4 +368,8 @@ class RuntimeRunner:
         self, principal: Principal, agent_id: UUID, message: str, title: str
     ) -> RunOutcome:
         done = await self._runs.run_once(principal, agent_id, message, title=title)
+        return RunOutcome(done.thread_id, done.status, done.text)
+
+    async def resume_once(self, principal: Principal, thread_id: UUID) -> RunOutcome:
+        done = await self._runs.resume_once(principal, thread_id)
         return RunOutcome(done.thread_id, done.status, done.text)

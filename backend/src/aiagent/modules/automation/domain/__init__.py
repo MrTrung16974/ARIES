@@ -61,6 +61,16 @@ class Due:
 
 
 @dataclass(frozen=True)
+class WaitingRun:
+    """Lần chạy tự động đang dừng chờ duyệt — worker chạy tiếp khi đã có quyết định."""
+
+    run_id: UUID
+    schedule_id: UUID
+    thread_id: UUID
+    owner_id: str
+
+
+@dataclass(frozen=True)
 class TriggerItem:
     """Một sự kiện từ nguồn ngoài (mail mới). `content` là dữ liệu KHÔNG tin cậy."""
 
@@ -130,6 +140,10 @@ class ScheduleRepositoryPort(Protocol):
         self, tenant_id: str, schedule_id: UUID, limit: int
     ) -> list[ScheduleRun]: ...
 
+    async def waiting_runs(self, tenant_id: str) -> list[WaitingRun]:
+        """Lần chạy `awaiting_approval` trong 7 ngày gần đây."""
+        ...
+
 
 class TenantListPort(Protocol):
     async def tenant_ids(self) -> list[str]: ...
@@ -145,6 +159,10 @@ class AgentRunPort(Protocol):
     async def run_once(
         self, principal: Any, agent_id: UUID, message: str, title: str
     ) -> RunOutcome: ...
+
+    async def resume_once(self, principal: Any, thread_id: UUID) -> RunOutcome:
+        """status `awaiting_approval` (chưa duyệt hết) | `stale` (không còn gì chờ) | kết quả."""
+        ...
 
 
 class TriggerSourcePort(Protocol):
@@ -177,6 +195,7 @@ __all__ = [
     "TenantListPort",
     "TriggerItem",
     "TriggerSourcePort",
+    "WaitingRun",
     "validate",
     "zone_of",
 ]

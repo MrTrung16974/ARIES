@@ -274,3 +274,29 @@ def test_tainted_run_cannot_fetch_new_urls_or_send_secrets() -> None:
     assert ok.effect is Effect.APPROVE  # gửi ra ngoài luôn cần duyệt
     leak = tools.decide({"name": "t", "input": {"body": "key sk-ant-" + "x" * 30}})
     assert leak.effect is Effect.DENY and "khóa bí mật" in leak.reason
+
+
+async def test_gmail_trigger_queues_overflow_instead_of_dropping() -> None:
+    ids = [f"msg{i:06d}" for i in range(25)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path.removeprefix("/gmail/v1/users/me")
+        if path == "/history":
+            if request.url.params["startHistoryId"] == "100":
+                added = [{"messagesAdded": [{"message": {"id": m}}]} for m in ids]
+                return httpx.Response(200, json={"history": added, "historyId": "200"})
+            return httpx.Response(200, json={"historyId": "200"})  # không có mail mới
+        mid = path.rsplit("/", 1)[-1]
+        return httpx.Response(
+            200, json=_message(mid, f"Mail {mid}", "a@b.vn", "<p>x</p>", ["INBOX"])
+        )
+
+    gmail = GmailConnector(transport=httpx.MockTransport(handler))
+    seen: list[str] = []
+    state: dict[str, Any] = {"history_id": "100"}
+    for expected in (10, 10, 5, 0):
+        events, state = await gmail.poll_trigger("gmail.new_message", _conn(), state, {})
+        assert len(events) == expected
+        seen += [e.id for e in events]
+    assert seen == [f"gmail:{m}" for m in ids]  # đủ 25 mail, đúng thứ tự cũ → mới
+    assert state == {"history_id": "200"}  # hết hàng đợi

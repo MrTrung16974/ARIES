@@ -4,12 +4,18 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import BaseModel, Field
 
 from aiagent.api.deps import ContainerDep, client_ip, get_principal, require_roles
 from aiagent.bootstrap.container import Container
-from aiagent.modules.agents.domain import Agent, AgentSpec, AgentVersion, CreatedVia
+from aiagent.modules.agents.domain import (
+    Agent,
+    AgentSpec,
+    AgentStatus,
+    AgentVersion,
+    CreatedVia,
+)
 from aiagent.modules.audit.domain import Outcome
 from aiagent.modules.identity.domain import Principal, Role
 
@@ -160,8 +166,16 @@ async def list_models(_: Builder, c: ContainerDep) -> list[ModelOut]:
 
 # ------------------------------------------------------------------ agents
 @router.get("/agents", response_model=list[AgentOut])
-async def list_agents(p: AnyUser, c: ContainerDep) -> list[AgentOut]:
-    return [_agent_out(c, p, a) for a in await c.agents.list_agents(p)]
+async def list_agents(
+    p: AnyUser, c: ContainerDep, include_archived: Annotated[bool, Query()] = False
+) -> list[AgentOut]:
+    """Agent đã xóa (lưu trữ) bị ẩn; `include_archived=true` để xem lại."""
+    agents = await c.agents.list_agents(p)
+    return [
+        _agent_out(c, p, a)
+        for a in agents
+        if include_archived or a.status is not AgentStatus.ARCHIVED
+    ]
 
 
 @router.post("/agents", response_model=AgentDetailOut, status_code=status.HTTP_201_CREATED)

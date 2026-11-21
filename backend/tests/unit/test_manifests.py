@@ -55,3 +55,25 @@ def test_refs_round_trip_and_errors() -> None:
         resolve_refs({"connections": [{"allowed_tools": []}]}, refs)
     with pytest.raises(ManifestError, match="quá lớn"):
         load_manifest("x" * (256 * 1024 + 1))
+
+
+def test_llm_provider_secret_path_is_allowed_by_openbao_policy() -> None:
+    """deploy/openbao/init.sh chỉ cấp quyền secret/data/aries/* cho AppRole của ARIES."""
+    from aiagent.modules.runtime.application.model_providers import _vault_path
+
+    assert _vault_path("default", "gemini") == "aries/default/llm/gemini"
+
+
+def test_provider_error_message_is_surfaced() -> None:
+    from aiagent.modules.runtime.infrastructure.openai_compat_model import provider_message
+
+    gemini = (
+        '[{"error": {"code": 404, "message": "This model models/gemini-2.5-flash-lite is no '
+        'longer available to new users.\\n Please update", "status": "NOT_FOUND"}}]'
+    )
+    assert provider_message(gemini).startswith("This model models/gemini-2.5-flash-lite is no")
+    assert "\n" not in provider_message(gemini)
+    assert provider_message('{"error": {"message": "model not found"}}') == "model not found"
+    assert provider_message('{"error": "boom"}') == "boom"
+    assert provider_message("<html>502</html>") == ""
+    assert len(provider_message('{"error": {"message": "' + "x" * 999 + '"}}')) == 300

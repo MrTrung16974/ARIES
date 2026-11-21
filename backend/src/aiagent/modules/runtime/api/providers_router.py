@@ -125,6 +125,36 @@ async def test_model_provider(
     return ProbeOut(ok=res.ok, latency_ms=res.latency_ms, models=res.models, error=res.error)
 
 
+class CheckModelsIn(TestProviderIn):
+    models: list[str] = Field(min_length=1, max_length=100)
+
+
+class ModelCheckOut(BaseModel):
+    model: str
+    ok: bool
+    error: str | None
+    latency_ms: int | None
+
+
+@router.post("/{provider_id}/check-models", response_model=list[ModelCheckOut])
+async def check_models(
+    provider_id: str, body: CheckModelsIn, p: AdminOnly, c: ContainerDep
+) -> list[ModelCheckOut]:
+    """Gọi thử từng model (yêu cầu rất ngắn) để biết model nào thực sự dùng được."""
+    checks = await c.model_providers.check_models(
+        p,
+        provider_id,
+        body.models,
+        base_url=body.base_url,
+        api_key=body.api_key,
+        extra=body.extra,
+    )
+    return [
+        ModelCheckOut(model=x.model, ok=x.ok, error=x.error, latency_ms=x.latency_ms)
+        for x in checks
+    ]
+
+
 @router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_model_provider(provider_id: str, p: AdminOnly, c: ContainerDep) -> None:
     await c.model_providers.remove(p, provider_id)

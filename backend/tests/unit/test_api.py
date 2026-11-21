@@ -40,10 +40,12 @@ from aiagent.modules.ops.application import OpsService
 from aiagent.modules.runtime.application import (
     ApprovalService,
     ModelCatalog,
+    ModelProviderService,
     ModelRouter,
     RunAgentService,
     ToolGateway,
 )
+from aiagent.modules.runtime.domain import ChatModelPort, ProbeResult, ProviderRecord
 from aiagent.modules.runtime.infrastructure.fake_model import FakeChatModel
 from aiagent.modules.runtime.infrastructure.react_graph import LangGraphReactLoop
 from aiagent.shared_kernel.events import InProcessEventBus
@@ -297,6 +299,16 @@ async def client(
             ),
             model_router=router,
             model_catalog=model_catalog,
+            model_providers=ModelProviderService(
+                _InMemoryProviderRepo(),
+                vault,
+                _FakeProviderFactory(),
+                router,
+                model_catalog,
+                audit,
+                env_providers={"fake": FakeChatModel()},
+                env_allowed=dict(ALLOWED_MODELS),
+            ),
             architect=architect,
             commands=CommandService(architect, agents, audit),
             health_checks={"database": check_db, "redis": check_redis},
@@ -2181,3 +2193,261 @@ async def test_agent_manifest_export_apply_and_templates(
     cfg = (await client.get("/api/v1/cli/config")).json()
     assert cfg["client_id"] == "aiagent-cli" and cfg["issuer"] == ISSUER
     assert {"agent.applied", "agent.created_from_template"} <= set(audit_log.actions())
+
+
+class _InMemoryProviderRepo:
+    def __init__(self) -> None:
+        self._items: dict[tuple[str, str], ProviderRecord] = {}
+
+    async def list_for_tenant(self, tenant_id: str) -> list[ProviderRecord]:
+        return [v for (tid, _), v in self._items.items() if tid == tenant_id]
+
+    async def get(self, tenant_id: str, provider_id: str) -> ProviderRecord | None:
+        return self._items.get((tenant_id, provider_id))
+
+    async def upsert(
+        self,
+        tenant_id: str,
+        provider_id: str,
+        *,
+        enabled: bool,
+        base_url: str | None,
+        models: list[str],
+        extra: dict[str, object],
+        has_api_key: bool,
+        updated_by: str,
+    ) -> ProviderRecord:
+        from datetime import UTC, datetime
+
+        rec = ProviderRecord(
+            tenant_id=tenant_id,
+            provider_id=provider_id,
+            enabled=enabled,
+            base_url=base_url,
+            models=list(models),
+            extra=dict(extra),
+            has_api_key=has_api_key,
+            updated_by=updated_by,
+            updated_at=datetime.now(UTC),
+        )
+        self._items[(tenant_id, provider_id)] = rec
+        return rec
+
+    async def delete(self, tenant_id: str, provider_id: str) -> bool:
+        return self._items.pop((tenant_id, provider_id), None) is not None
+
+
+class _FakeProviderFactory:
+    def build(
+        self,
+        provider_id: str,
+        *,
+        base_url: str | None,
+        api_key: str | None,
+        extra: dict[str, object],
+    ) -> ChatModelPort:
+        return FakeChatModel()
+
+    async def probe(
+        self,
+        provider_id: str,
+        *,
+        base_url: str | None,
+        api_key: str | None,
+        extra: dict[str, object],
+    ) -> ProbeResult:
+        if provider_id == "gemini" and not api_key:
+            return ProbeResult(ok=False, latency_ms=5, error="Thiếu API key")
+        return ProbeResult(
+            ok=True,
+            latency_ms=12,
+            models=["qwen3:8b", "llama3.2"] if provider_id == "ollama" else ["gemini-2.5-flash"],
+        )
+
+
+async def test_model_providers_connect_test_and_remove(
+    client: httpx.AsyncClient,
+    make_token: Callable[..., str],
+) -> None:
+    admin = auth(make_token(sub="admin", roles=["admin"]))
+    builder = auth(make_token(sub="builder", roles=["builder"]))
+
+    # Danh mục mặc định gồm Gemini, Ollama, OpenAI, Anthropic, Groq, OpenRouter, DeepSeek.
+    r = await client.get("/api/v1/model-providers", headers=builder)
+    assert r.status_code == 200, r.text
+    ids = {p["id"] for p in r.json()}
+    assert {"gemini", "ollama", "openai", "anthropic", "groq", "openrouter", "deepseek"} <= ids
+
+    # Builder không được cấu hình; Admin được cấu hình.
+    r_forbid = await client.put(
+        "/api/v1/model-providers/ollama",
+        headers=builder,
+        json={"base_url": "http://localhost:11434", "models": ["qwen3:8b"]},
+    )
+    assert r_forbid.status_code == 403
+
+    # Kết nối Ollama (local, không cần API key).
+    r = await client.put(
+        "/api/v1/model-providers/ollama",
+        headers=admin,
+        json={
+            "enabled": True,
+            "base_url": "http://ollama:11434",
+            "models": ["qwen3:8b", "llama3.2"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["configured"] is True
+    assert body["source"] == "db"
+    assert "qwen3:8b" in body["available_models"]
+
+    # Kết nối Gemini (cloud, có API key lưu trong Vault).
+    r = await client.put(
+        "/api/v1/model-providers/gemini",
+        headers=admin,
+        json={
+            "enabled": True,
+            "api_key": "AIza-demo-secret-key",
+            "models": ["gemini-2.5-flash"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["has_api_key"] is True
+    assert "gemini-2.5-flash" in r.json()["available_models"]
+
+    # Kiểm tra kết nối sống (probe).
+    r_test = await client.post(
+        "/api/v1/model-providers/ollama/test",
+        headers=admin,
+        json={"base_url": "http://ollama:11434"},
+    )
+    assert r_test.status_code == 200, r_test.text
+    assert r_test.json()["ok"] is True
+    assert "qwen3:8b" in r_test.json()["models"]
+
+    # Gỡ kết nối Ollama.
+    r_del = await client.delete("/api/v1/model-providers/ollama", headers=admin)
+    assert r_del.status_code == 204
+
+
+async def test_delete_agent_hides_and_stops_it(
+    client: httpx.AsyncClient,
+    make_token,
+    audit_log,  # type: ignore[no-untyped-def]
+) -> None:
+    b1 = make_token(sub="b1", roles=["builder"])
+    agent_id = await _publish(client, b1, {**SPEC, "name": "Sẽ xóa"})
+    user = auth(make_token(sub="u1"))
+    assert (
+        await client.post(f"/api/v1/agents/{agent_id}/chat", headers=user, json={"message": "hi"})
+    ).status_code == 200
+    other = auth(make_token(sub="b2", roles=["builder"]))
+    assert (await client.delete(f"/api/v1/agents/{agent_id}", headers=other)).status_code == 403
+    assert (await client.delete(f"/api/v1/agents/{agent_id}", headers=user)).status_code == 403
+    r = await client.delete(f"/api/v1/agents/{agent_id}", headers=auth(b1))
+    assert r.status_code == 200 and r.json()["status"] == "archived"
+
+    ids = [a["id"] for a in (await client.get("/api/v1/agents", headers=auth(b1))).json()]
+    assert agent_id not in ids
+    archived = (
+        await client.get("/api/v1/agents", headers=auth(b1), params={"include_archived": True})
+    ).json()
+    assert agent_id in [a["id"] for a in archived]
+    for who in (user, auth(b1)):
+        r = await client.post(
+            f"/api/v1/agents/{agent_id}/chat", headers=who, json={"message": "hi"}
+        )
+        assert r.status_code == 404
+    assert "agent.archived" in audit_log.actions()
+
+
+async def test_unattended_schedule_resumes_after_approval_and_stops_for_deleted_agent(
+    client: httpx.AsyncClient,
+    make_token,
+    sched_repo,
+    notify,
+    audit_log,  # type: ignore[no-untyped-def]
+) -> None:
+    from uuid import UUID
+
+    from aiagent.shared_kernel.clock import utcnow
+
+    b1 = make_token(sub="b1", roles=["builder"])
+    agent_id = await _publish(client, b1, {**SPEC, "skills": [{"skill_id": "notify"}]})
+    u1 = auth(make_token(sub="u1"))
+    r = await client.post(
+        "/api/v1/schedules",
+        headers=u1,
+        json={
+            "name": "Gửi báo cáo",
+            "agent_id": agent_id,
+            "kind": "cron",
+            "cron": "0 8 * * 1",
+            "prompt": '/tool notify__send {"to": "kế toán"}',
+        },
+    )
+    sid = r.json()["id"]
+    service = client._transport.app.state.container.automation  # type: ignore[attr-defined]
+
+    assert await service.execute("default", UUID(sid), utcnow()) == 1
+    run = (await client.get(f"/api/v1/schedules/{sid}/runs", headers=u1)).json()[0]
+    assert run["status"] == "awaiting_approval" and notify.sent == []
+    assert await service.resume_waiting() == 0  # chưa ai duyệt → vẫn chờ
+
+    pending = (await client.get("/api/v1/approvals", headers=u1)).json()
+    assert len(pending) == 1
+    r = await client.post(
+        f"/api/v1/approvals/{pending[0]['id']}/decision", headers=u1, json={"approve": True}
+    )
+    assert r.status_code == 200, r.text
+    assert await service.resume_waiting() == 1  # worker tự chạy tiếp, không cần mở chat
+    assert len(notify.sent) == 1
+    run = (await client.get(f"/api/v1/schedules/{sid}/runs", headers=u1)).json()[0]
+    assert run["status"] == "completed"
+    assert await service.resume_waiting() == 0  # không chạy lại lần hai
+
+    # Agent bị xóa → lịch tự tắt ngay ở lần kích hoạt kế tiếp
+    assert (await client.delete(f"/api/v1/agents/{agent_id}", headers=auth(b1))).status_code == 200
+    assert await service.execute("default", UUID(sid), utcnow()) == 0
+    s = (await client.get(f"/api/v1/schedules/{sid}", headers=u1)).json()
+    assert s["enabled"] is False and s["last_status"] == "agent_unavailable"
+    assert "schedule.auto_disabled" in audit_log.actions()
+
+
+async def test_check_each_provider_model(client: httpx.AsyncClient, make_token) -> None:  # type: ignore[no-untyped-def]
+    from aiagent.modules.runtime.domain import ModelRateLimitedError, ModelUnavailableError
+
+    class _PickyModel:
+        async def stream(self, request):  # type: ignore[no-untyped-def]
+            if request.model == "gemini-2.5-flash":
+                raise ModelUnavailableError(
+                    "Google Gemini không dùng được model 'gemini-2.5-flash'"
+                )
+            if request.model == "gemini-pro-latest":
+                raise ModelRateLimitedError()
+            async for event in FakeChatModel().stream(request):
+                yield event
+
+    class _Factory(_FakeProviderFactory):
+        def build(self, provider_id, *, base_url, api_key, extra):  # type: ignore[no-untyped-def,override]
+            return _PickyModel()
+
+    container = client._transport.app.state.container  # type: ignore[attr-defined]
+    container.model_providers._factory = _Factory()
+    admin = auth(make_token(sub="admin", roles=["admin"]))
+    url = "/api/v1/model-providers/gemini/check-models"
+    models = ["gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-pro-latest"]
+    r = await client.post(url, headers=admin, json={"models": models, "api_key": "k-test"})
+    assert r.status_code == 200, r.text
+    got = {x["model"]: x for x in r.json()}
+    assert (
+        got["gemini-flash-lite-latest"]["ok"] and got["gemini-flash-lite-latest"]["latency_ms"] >= 0
+    )
+    assert (
+        not got["gemini-2.5-flash"]["ok"] and "gemini-2.5-flash" in got["gemini-2.5-flash"]["error"]
+    )
+    assert not got["gemini-pro-latest"]["ok"] and "429" in got["gemini-pro-latest"]["error"]
+    builder = auth(make_token(sub="b1", roles=["builder"]))
+    assert (await client.post(url, headers=builder, json={"models": models})).status_code == 403
+    assert (await client.post(url, headers=admin, json={"models": []})).status_code == 422

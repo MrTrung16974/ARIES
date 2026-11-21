@@ -64,6 +64,12 @@ export class Shell implements OnInit {
           visible: this.session.hasAnyRole('builder', 'admin'),
         },
         { label: 'Kết nối', icon: 'cable', link: '/connections', visible: true },
+        {
+          label: 'Model LLM',
+          icon: 'dns',
+          link: '/models',
+          visible: this.session.hasAnyRole('builder', 'admin'),
+        },
         { label: 'Duyệt', icon: 'gavel', link: '/approvals', visible: true },
         { label: 'Tri thức', icon: 'menu_book', link: '/knowledge', visible: true },
         {

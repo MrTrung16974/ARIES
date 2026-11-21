@@ -154,12 +154,64 @@ export interface SkillInfo {
 }
 
 export type ModelProvider =
-  'anthropic' | 'gemini' | 'groq' | 'openrouter' | 'ollama' | 'fake';
+  | 'anthropic'
+  | 'openai'
+  | 'gemini'
+  | 'groq'
+  | 'openrouter'
+  | 'deepseek'
+  | 'ollama'
+  | 'fake';
 
 export interface ModelInfo {
   provider: ModelProvider;
   model: string;
   available: boolean;
+}
+
+export interface ModelProviderInfo {
+  id: ModelProvider;
+  name: string;
+  vendor: string;
+  description: string;
+  kind: 'cloud' | 'local';
+  requires_api_key: boolean;
+  requires_base_url: boolean;
+  default_base_url: string;
+  docs_url: string;
+  sample_models: string[];
+  supports_free_only: boolean;
+  configured: boolean;
+  enabled: boolean;
+  source: 'db' | 'env' | 'none';
+  base_url: string;
+  has_api_key: boolean;
+  custom_models: string[];
+  available_models: string[];
+  extra: Record<string, unknown>;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+export interface ConfigureModelProviderPayload {
+  enabled: boolean;
+  base_url?: string | null;
+  api_key?: string | null;
+  models?: string[];
+  extra?: Record<string, unknown>;
+}
+
+export interface TestModelProviderPayload {
+  base_url?: string | null;
+  api_key?: string | null;
+  extra?: Record<string, unknown>;
+}
+
+export interface ModelProviderProbeResult {
+  ok: boolean;
+  latency_ms: number;
+  models: string[];
+  error: string | null;
 }
 
 // ---------------------------------------------------------------- conversations
@@ -691,4 +743,12 @@ export interface ScheduleRunInfo {
   error: string | null;
   started_at: string;
   finished_at: string | null;
+}
+
+/** Kết quả gọi thử một model của provider. */
+export interface ModelCheckResult {
+  model: string;
+  ok: boolean;
+  error: string | null;
+  latency_ms: number | null;
 }

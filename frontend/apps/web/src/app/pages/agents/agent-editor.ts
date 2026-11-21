@@ -40,9 +40,11 @@ const TABS = ['overview', 'prompt', 'skills', 'limits', 'json'] as const;
 
 const PROVIDER_LABEL: Record<string, string> = {
   anthropic: 'Claude',
+  openai: 'OpenAI',
   gemini: 'Gemini',
   groq: 'Groq',
   openrouter: 'OpenRouter',
+  deepseek: 'DeepSeek',
   ollama: 'Ollama (local)',
   fake: 'Giả lập',
 };

@@ -274,6 +274,8 @@ class AgentService:
     ) -> tuple[Agent, AgentVersion]:
         """Version để chạy: bản mới nhất (draft, chỉ người sửa được) hoặc bản đã publish."""
         agent = await self.get(principal, agent_id)
+        if agent.status is AgentStatus.ARCHIVED:
+            raise NotFoundError("Agent đã bị xóa.")
         if draft:
             if not self.can_edit(principal, agent):
                 raise ForbiddenError()

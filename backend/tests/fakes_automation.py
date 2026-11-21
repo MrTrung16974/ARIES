@@ -137,3 +137,18 @@ class FakeTriggerSource:
         self.seen_states.append(dict(state))
         batch = self.batches.pop(0) if self.batches else []
         return batch, {"history_id": str(int(state.get("history_id", "0")) + 1)}
+
+
+async def _waiting_runs(self: InMemoryScheduleRepository, tenant_id: str) -> list[Any]:
+    from aiagent.modules.automation.domain import WaitingRun
+
+    return [
+        WaitingRun(r.id, r.schedule_id, r.thread_id, self.items[r.schedule_id].owner_id)
+        for r in self.runs
+        if r.status == "awaiting_approval"
+        and r.thread_id is not None
+        and r.schedule_id in self.items
+    ]
+
+
+InMemoryScheduleRepository.waiting_runs = _waiting_runs  # type: ignore[attr-defined]

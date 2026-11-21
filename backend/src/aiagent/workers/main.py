@@ -67,8 +67,12 @@ async def telegram_poll(ctx: dict[str, Any]) -> int:
 
 
 async def schedule_tick(ctx: dict[str, Any]) -> int:
-    """Mỗi phút: nhận lịch chạy đến hạn ở mọi tenant và đẩy job `run_schedule` (ADR-0021)."""
-    return len(await ctx["container"].automation.tick())
+    """Mỗi phút: nhận lịch đến hạn (đẩy job `run_schedule`) và chạy tiếp các lần chạy vắng mặt
+    đã được duyệt xong (ADR-0021)."""
+    automation = ctx["container"].automation
+    claimed = len(await automation.tick())
+    await automation.resume_waiting()
+    return claimed
 
 
 async def run_schedule(ctx: dict[str, Any], tenant_id: str, schedule_id: str, fired_at: str) -> int:

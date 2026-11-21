@@ -538,6 +538,25 @@ class RunAgentService:
         prepared = await self.prepare(
             principal, agent_id, message, thread_id=thread_id, draft=False, title=title
         )
+        return await self._collect(prepared)
+
+    async def resume_once(self, principal: Principal, thread_id: UUID) -> CompletedRun:
+        """Chạy tiếp hội thoại chờ duyệt khi mọi yêu cầu đã có quyết định (lịch chạy vắng mặt).
+
+        Còn yêu cầu chưa quyết → status `awaiting_approval`; không còn gì để chạy tiếp (đã được
+        chạy tiếp ở nơi khác) → status `stale`. Không ném lỗi cho hai trường hợp này.
+        """
+        state = await self.pending_state(principal, thread_id)
+        if not state.can_resume:
+            status = "awaiting_approval" if state.waiting else "stale"
+            return CompletedRun(thread_id, status, "", [])
+        try:
+            prepared = await self.prepare_resume(principal, thread_id)
+        except ConflictError:  # bị chạy tiếp đồng thời ở nơi khác
+            return CompletedRun(thread_id, "stale", "", [])
+        return await self._collect(prepared)
+
+    async def _collect(self, prepared: PreparedRun) -> CompletedRun:
         text, citations, status = "", [], "failed"
         async for event in self.stream(prepared):
             if event.type is RunEventType.TEXT:

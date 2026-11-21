@@ -493,7 +493,9 @@ export class Automation implements OnInit {
   });
   protected readonly me = computed(() => this.session.me()?.subject ?? '');
   protected readonly publishedAgents = computed(() =>
-    this.agents().filter((a) => a.published_version !== null),
+    this.agents().filter(
+      (a) => a.published_version !== null && a.status !== 'archived',
+    ),
   );
   protected readonly gmailConnections = computed(() =>
     this.connections().filter(
@@ -503,13 +505,11 @@ export class Automation implements OnInit {
 
   ngOnInit(): void {
     void this.session.load().catch(() => undefined);
-    this.agentsApi.list().subscribe((a) => this.agents.set(a));
-    this.connectionsApi
-      .list()
-      .subscribe({
-        next: (c) => this.connections.set(c),
-        error: () => undefined,
-      });
+    this.agentsApi.list(true).subscribe((a) => this.agents.set(a));
+    this.connectionsApi.list().subscribe({
+      next: (c) => this.connections.set(c),
+      error: () => undefined,
+    });
     this.reload();
   }
 

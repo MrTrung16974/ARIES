@@ -72,6 +72,22 @@ class OpenAICompatConfig:
 
 
 # ---------------------------------------------------------------------- chuyển đổi định dạng
+def provider_message(body: str, limit: int = 300) -> str:
+    """Lấy `error.message` từ body lỗi (OpenAI: object; Gemini: list[object]) — gọn, một dòng."""
+    try:
+        data: Any = json.loads(body)
+    except ValueError:
+        return ""
+    if isinstance(data, list) and data:
+        data = data[0]
+    err = data.get("error") if isinstance(data, dict) else None
+    msg = err.get("message") if isinstance(err, dict) else err if isinstance(err, str) else None
+    if not msg:
+        return ""
+    text = " ".join(str(msg).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def _tool_result_text(block: dict[str, Any]) -> str:
     content = block.get("content", "")
     if isinstance(content, list):
@@ -275,12 +291,20 @@ class OpenAICompatChatModel:
             raise ModelRateLimitedError()
         if status in (401, 403):
             raise ModelUnavailableError(f"API key của {self._label} không hợp lệ hoặc thiếu quyền.")
+        detail = provider_message(body)
+        suffix = f" — {self._label}: {detail}" if detail else ""
         if status == 404:
             hint = f" (chạy: ollama pull {model})" if self._cfg.provider == "ollama" else ""
-            raise ModelUnavailableError(f"{self._label} không có model '{model}'{hint}.")
+            # Ví dụ Gemini: model vẫn có trong /models nhưng "no longer available to new users".
+            raise ModelUnavailableError(
+                f"{self._label} không dùng được model '{model}'{hint}{suffix}. "
+                "Hãy chọn model khác trong cấu hình agent."
+            )
         logger.error("%s lỗi %s: %s", self._label, status, body[:2000])
         if status == 400:
-            raise ModelUnavailableError("Yêu cầu gửi tới model không hợp lệ.")
+            raise ModelUnavailableError(f"Yêu cầu gửi tới model không hợp lệ{suffix}.")
+        if status == 503:
+            raise ModelUnavailableError(f"{self._label} đang quá tải, thử lại sau{suffix}.")
         raise ModelUnavailableError()
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:

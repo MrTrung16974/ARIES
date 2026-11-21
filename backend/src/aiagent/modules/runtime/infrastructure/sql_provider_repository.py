@@ -117,4 +117,4 @@ class SqlProviderRepository:
     async def delete(self, tenant_id: str, provider_id: str) -> bool:
         async with self._db.tenant_session(tenant_id) as s:
             res = await s.execute(_DELETE, {"provider_id": provider_id})
-            return bool(res.rowcount)
+            return bool(getattr(res, "rowcount", 0))  # CursorResult (DELETE) có rowcount

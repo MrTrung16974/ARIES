@@ -18,8 +18,11 @@ export class AgentsApi {
   private readonly http = inject(HttpClient);
   private readonly base = inject(APP_CONFIG).apiBaseUrl;
 
-  list(): Observable<AgentSummary[]> {
-    return this.http.get<AgentSummary[]>(`${this.base}/v1/agents`);
+  /** `includeArchived`: kèm agent đã xóa — chỉ để hiện tên trong lịch sử (Vận hành, Tự động). */
+  list(includeArchived = false): Observable<AgentSummary[]> {
+    return this.http.get<AgentSummary[]>(`${this.base}/v1/agents`, {
+      params: includeArchived ? { include_archived: true } : {},
+    });
   }
 
   get(id: string): Observable<AgentDetail> {

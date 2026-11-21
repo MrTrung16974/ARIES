@@ -95,6 +95,7 @@ from aiagent.modules.runtime.application import (
     ApprovalService,
     ConnectionRef,
     ModelCatalog,
+    ModelProviderService,
     ModelRouter,
     RunAgentService,
     ToolGateway,
@@ -106,7 +107,9 @@ from aiagent.modules.runtime.infrastructure.openai_compat_model import (
     OpenAICompatChatModel,
     OpenAICompatConfig,
 )
+from aiagent.modules.runtime.infrastructure.provider_factory import DefaultProviderFactory
 from aiagent.modules.runtime.infrastructure.react_graph import LangGraphReactLoop
+from aiagent.modules.runtime.infrastructure.sql_provider_repository import SqlProviderRepository
 from aiagent.plugin_sdk import ConnectionContext, Plugin, PluginKind, PluginManifest, ToolSpec
 from aiagent.shared_kernel.events import EventBusPort, InProcessEventBus
 
@@ -286,6 +289,7 @@ class Container:
     manifests: ManifestService
     model_router: ModelRouter
     model_catalog: ModelCatalog
+    model_providers: ModelProviderService
     architect: ArchitectService
     commands: CommandService
     health_checks: dict[str, HealthCheck] = field(default_factory=dict)
@@ -293,6 +297,7 @@ class Container:
 
     async def start(self) -> None:
         await self.plugins.start()
+        await self.model_providers.hydrate_all()
 
     async def stop(self) -> None:
         await self.plugins.stop()
@@ -480,17 +485,51 @@ def build_container(settings: Settings) -> Container:
 
     health_checks["embedder"] = embedder_ok
     allowed_models = build_allowed_models(settings)
+    providers = build_model_providers(settings)
+    router = ModelRouter(providers)
+    model_catalog = ModelCatalog(allowed_models, providers)
+    env_base_urls: dict[str, str] = {
+        "gemini": settings.gemini_base_url,
+        "groq": settings.groq_base_url,
+        "openrouter": settings.openrouter_base_url,
+    }
+    if settings.anthropic_base_url:
+        env_base_urls["anthropic"] = settings.anthropic_base_url
+    if settings.ollama_base_url:
+        env_base_urls["ollama"] = settings.ollama_base_url
+    env_api_keys: dict[str, str] = {}
+    for pid, sec in (
+        ("anthropic", settings.anthropic_api_key),
+        ("gemini", settings.gemini_api_key),
+        ("groq", settings.groq_api_key),
+        ("openrouter", settings.openrouter_api_key),
+    ):
+        if val := _secret(sec):
+            env_api_keys[pid] = val
+    model_providers = ModelProviderService(
+        SqlProviderRepository(db),
+        vault,
+        DefaultProviderFactory(
+            app_name=settings.app_name,
+            timeout_s=settings.llm_request_timeout_seconds,
+        ),
+        router,
+        model_catalog,
+        audit,
+        env_providers=dict(providers),
+        env_allowed=dict(allowed_models),
+        env_base_urls=env_base_urls,
+        env_api_keys=env_api_keys,
+        list_tenants=SqlTenantList(db).tenant_ids,
+    )
     agents = AgentService(
         SqlAgentRepository(db),
         PluginSkillCatalog(plugins),
-        allowed_models=allowed_models,
+        allowed_models=model_catalog.allowed,
         connections=ConnectionCatalogAdapter(connections, plugins),
         mcp=mcp,
         knowledge=knowledge_access,
     )
-    providers = build_model_providers(settings)
-    router = ModelRouter(providers)
-    model_catalog = ModelCatalog(allowed_models, providers)
     runs = RunAgentService(
         agents=agents,
         conversations=conversations,
@@ -565,6 +604,7 @@ def build_container(settings: Settings) -> Container:
         ),
         model_router=router,
         model_catalog=model_catalog,
+        model_providers=model_providers,
         architect=architect,
         commands=CommandService(architect, agents, audit),
         health_checks=health_checks,

@@ -32,7 +32,7 @@ PROVIDER_CATALOG: tuple[ProviderDescriptor, ...] = (
         name="Google Gemini",
         vendor="Google AI",
         description=(
-            "Mô hình đa phương thức Gemini (2.5 Pro, 2.5 Flash…) qua API tương thích OpenAI. "
+            "Mô hình đa phương thức Gemini (Flash, Flash-Lite, Pro…) qua API tương thích OpenAI. "
             "Hỗ trợ gói miễn phí từ Google AI Studio."
         ),
         kind="cloud",
@@ -40,7 +40,8 @@ PROVIDER_CATALOG: tuple[ProviderDescriptor, ...] = (
         requires_base_url=False,
         default_base_url="https://generativelanguage.googleapis.com/v1beta/openai",
         docs_url="https://aistudio.google.com/apikey",
-        sample_models=("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"),
+        # Bí danh "-latest" luôn trỏ tới model hiện hành — model 2.x đã ngừng cho tài khoản mới.
+        sample_models=("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest"),
     ),
     ProviderDescriptor(
         id="ollama",
@@ -53,9 +54,11 @@ PROVIDER_CATALOG: tuple[ProviderDescriptor, ...] = (
         kind="local",
         requires_api_key=False,
         requires_base_url=True,
-        default_base_url="http://localhost:11434",
+        # Trong Docker: cầu nối tới Ollama trên máy host (service ollama-host); Ollama dạng
+        # container (profile ollama) thì dùng http://ollama:11434.
+        default_base_url="http://ollama-host:11434",
         docs_url="https://ollama.com/library",
-        sample_models=("qwen3:8b", "llama3.2", "deepseek-r1:8b", "gemma3:12b"),
+        sample_models=("qwen3:4b", "qwen2.5:3b", "qwen2.5:7b", "qwen3:8b"),
     ),
     ProviderDescriptor(
         id="openai",
@@ -85,7 +88,10 @@ PROVIDER_CATALOG: tuple[ProviderDescriptor, ...] = (
         id="groq",
         name="Groq",
         vendor="Groq Cloud",
-        description="Suy luận tốc độ siêu cao trên phần cứng LPU cho Llama, Qwen, Mixtral với hạn mức miễn phí.",
+        description=(
+            "Suy luận tốc độ siêu cao trên phần cứng LPU cho Llama, Qwen, Mixtral "
+            "với hạn mức miễn phí."
+        ),
         kind="cloud",
         requires_api_key=True,
         requires_base_url=False,
@@ -97,7 +103,10 @@ PROVIDER_CATALOG: tuple[ProviderDescriptor, ...] = (
         id="openrouter",
         name="OpenRouter",
         vendor="OpenRouter",
-        description="Cổng kết nối hợp nhất hàng trăm mô hình LLM, hỗ trợ chế độ chỉ lọc các model miễn phí (:free).",
+        description=(
+            "Cổng kết nối hợp nhất hàng trăm mô hình LLM, hỗ trợ chế độ chỉ lọc "
+            "các model miễn phí (:free)."
+        ),
         kind="cloud",
         requires_api_key=True,
         requires_base_url=False,

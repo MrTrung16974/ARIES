@@ -230,7 +230,8 @@ interface Group {
             </span>
             <div class="kpi-meta">
               <span class="kpi-val"
-                >{{ threadThumbsUpTotal() }} / {{ threadThumbsDownTotal() }}</span
+                >{{ threadThumbsUpTotal() }} /
+                {{ threadThumbsDownTotal() }}</span
               >
               <span class="kpi-label">Hữu ích / Chưa tốt</span>
             </div>
@@ -383,9 +384,7 @@ interface Group {
                         <span class="tr-role">
                           <mat-icon
                             class="xs"
-                            [svgIcon]="
-                              m.role === 'user' ? 'person' : 'robot_2'
-                            "
+                            [svgIcon]="m.role === 'user' ? 'person' : 'robot_2'"
                           />
                           {{ m.role === 'user' ? 'Người dùng' : 'Agent' }}
                         </span>
@@ -444,9 +443,7 @@ interface Group {
                         >
                           <mat-icon
                             class="xs"
-                            [svgIcon]="
-                              f.rating > 0 ? 'thumb_up' : 'thumb_down'
-                            "
+                            [svgIcon]="f.rating > 0 ? 'thumb_up' : 'thumb_down'"
                           />
                           <span>{{
                             f.comment || (f.rating > 0 ? 'Hữu ích' : 'Chưa tốt')
@@ -538,9 +535,7 @@ interface Group {
                 </header>
 
                 @if (f.comment) {
-                  <blockquote class="fb-comment">
-                    “{{ f.comment }}”
-                  </blockquote>
+                  <blockquote class="fb-comment">“{{ f.comment }}”</blockquote>
                 }
 
                 <div class="fb-answer">
@@ -687,8 +682,16 @@ interface Group {
           <div class="groups">
             @for (
               section of [
-                { title: 'Phân bổ theo Agent', icon: 'robot_2', rows: byAgent() },
-                { title: 'Phân bổ theo Kênh', icon: 'public', rows: byChannel() }
+                {
+                  title: 'Phân bổ theo Agent',
+                  icon: 'robot_2',
+                  rows: byAgent(),
+                },
+                {
+                  title: 'Phân bổ theo Kênh',
+                  icon: 'public',
+                  rows: byChannel(),
+                },
               ];
               track section.title
             ) {
@@ -709,7 +712,9 @@ interface Group {
                 </div>
 
                 @if (section.rows.length === 0) {
-                  <p class="muted small table-empty">Chưa có dữ liệu phát sinh.</p>
+                  <p class="muted small table-empty">
+                    Chưa có dữ liệu phát sinh.
+                  </p>
                 } @else {
                   <div class="table-wrap">
                     <table class="aries-table">
@@ -1297,7 +1302,9 @@ export class Ops implements OnInit {
     return this.session.hasAnyRole('admin', 'auditor');
   });
   protected readonly agentOptions = computed(() =>
-    this.seeAll() ? this.agents() : this.agents().filter((a) => a.can_edit),
+    this.agents().filter(
+      (a) => a.status !== 'archived' && (this.seeAll() || a.can_edit),
+    ),
   );
 
   protected readonly threadMessagesTotal = computed(() =>
@@ -1353,7 +1360,7 @@ export class Ops implements OnInit {
   );
 
   ngOnInit(): void {
-    this.agentsApi.list().subscribe({
+    this.agentsApi.list(true).subscribe({
       next: (list) => {
         this.agents.set(list);
         void this.session
