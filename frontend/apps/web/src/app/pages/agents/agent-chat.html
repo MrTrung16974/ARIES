@@ -369,6 +369,16 @@
             }
             @if (m.text) {
               <div class="bubble">{{ m.text }}</div>
+              @if (citations(m).length) {
+                <div class="sources" aria-label="Nguồn trích dẫn">
+                  <span class="muted small">Nguồn:</span>
+                  @for (c of citations(m); track $index) {
+                    <span class="source" [title]="c.filename">
+                      [{{ c.n }}] {{ c.title }}@if (c.page) {, tr. {{ c.page }}}@if (c.heading) { · {{ c.heading }}}
+                    </span>
+                  }
+                </div>
+              }
             } @else if (m.streaming && !m.tools.length) {
               <div class="bubble typing"><mat-spinner diameter="16" /></div>
             }

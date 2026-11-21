@@ -45,12 +45,23 @@ class CatalogConnection:
 
 
 @dataclass(frozen=True)
+class CatalogKnowledgeBase:
+    """Kho tri thức người tạo đọc được (ADR-0019)."""
+
+    id: str
+    name: str
+    description: str
+    doc_count: int
+
+
+@dataclass(frozen=True)
 class Catalog:
     """Những gì người tạo ĐƯỢC PHÉP dùng — Architect chỉ chọn trong đây (chống bịa, chống leo thang)."""
 
     skills: list[CatalogSkill]
     models: list[str]  # model khả dụng, model đầu tiên là mặc định
     connections: list[CatalogConnection] = field(default_factory=list)
+    knowledge_bases: list[CatalogKnowledgeBase] = field(default_factory=list)
     # model → provider (anthropic, gemini, ollama…). Thiếu → suy từ tên model.
     model_providers: dict[str, str] = field(default_factory=dict)
 
@@ -59,6 +70,9 @@ class Catalog:
 
     def tool_names(self) -> list[str]:
         return [t.name for s in self.skills for t in s.tools]
+
+    def knowledge_base_ids(self) -> list[str]:
+        return [k.id for k in self.knowledge_bases]
 
     def connection_ids(self) -> list[str]:
         return [c.id for c in self.connections]
@@ -150,6 +164,7 @@ __all__ = [
     "BuilderSessionRepositoryPort",
     "Catalog",
     "CatalogConnection",
+    "CatalogKnowledgeBase",
     "CatalogSkill",
     "CatalogTool",
     "SessionStatus",

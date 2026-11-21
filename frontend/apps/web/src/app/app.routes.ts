@@ -60,6 +60,12 @@ export const appRoutes: Route[] = [
           import('./pages/approvals/approvals').then((m) => m.Approvals),
       },
       {
+        path: 'knowledge',
+        title: 'Kho tri thức',
+        loadComponent: () =>
+          import('./pages/knowledge/knowledge').then((m) => m.Knowledge),
+      },
+      {
         path: 'mcp',
         title: 'MCP server',
         canActivate: [roleGuard('admin')],

@@ -24,6 +24,7 @@ from aiagent.modules.builder.domain import (
     ArchitectBrainPort,
     Catalog,
     CatalogConnection,
+    CatalogKnowledgeBase,
     CatalogSkill,
     CatalogTool,
 )
@@ -54,6 +55,16 @@ from aiagent.modules.identity.application import IdentityService
 from aiagent.modules.identity.domain import Principal, TokenVerifierPort
 from aiagent.modules.identity.infrastructure.jwks_verifier import JwksTokenVerifier
 from aiagent.modules.identity.infrastructure.sql_user_repository import SqlUserRepository
+from aiagent.modules.knowledge.application import KnowledgeAccess, KnowledgeService
+from aiagent.modules.knowledge.infrastructure.adapters import (
+    ArqIngestQueue,
+    FileBlobStore,
+    TeiEmbedder,
+    TeiReranker,
+)
+from aiagent.modules.knowledge.infrastructure.sql_knowledge_repository import (
+    SqlKnowledgeRepository,
+)
 from aiagent.modules.mcp.application import McpService
 from aiagent.modules.mcp.infrastructure.sdk_client import SdkMcpClient
 from aiagent.modules.mcp.infrastructure.sql_mcp_repository import SqlMcpServerRepository
@@ -151,10 +162,21 @@ class PluginCatalogProvider:
         plugins: PluginRegistry,
         models: ModelCatalog,
         connections: ConnectionService | None = None,
+        knowledge: KnowledgeService | None = None,
     ) -> None:
         self._plugins = plugins
         self._models = models
         self._connections = connections
+        self._knowledge = knowledge
+
+    async def _knowledge_for(self, principal: Principal) -> list[CatalogKnowledgeBase]:
+        if self._knowledge is None:
+            return []
+        return [
+            CatalogKnowledgeBase(str(k.id), k.name, k.description, k.doc_count)
+            for k in await self._knowledge.list_kbs(principal)
+            if self._knowledge.can_read(principal, k)
+        ]
 
     async def _connections_for(self, principal: Principal) -> list[CatalogConnection]:
         if self._connections is None:
@@ -189,6 +211,7 @@ class PluginCatalogProvider:
             models=list(model_providers),
             model_providers=model_providers,
             connections=await self._connections_for(principal),
+            knowledge_bases=await self._knowledge_for(principal),
         )
 
 
@@ -232,6 +255,7 @@ class Container:
     connections: ConnectionService
     mcp: McpService
     oauth: OAuthBroker
+    knowledge: KnowledgeService
     model_router: ModelRouter
     model_catalog: ModelCatalog
     architect: ArchitectService
@@ -409,6 +433,23 @@ def build_container(settings: Settings) -> Container:
         audit,
         settings.mcp_stdio_commands,
     )
+    ingest_queue = ArqIngestQueue(settings.redis_url.get_secret_value())
+    embedder = TeiEmbedder(settings.embedder_url, http)
+    knowledge = KnowledgeService(
+        SqlKnowledgeRepository(db),
+        FileBlobStore(settings.kb_storage_path),
+        embedder,
+        TeiReranker(settings.reranker_url, http) if settings.reranker_url else None,
+        ingest_queue,
+        audit,
+    )
+    knowledge_access = KnowledgeAccess(knowledge)
+
+    async def embedder_ok() -> bool:
+        r = await http.get(f"{settings.embedder_url.rstrip('/')}/health", timeout=3.0)
+        return r.status_code == 200
+
+    health_checks["embedder"] = embedder_ok
     allowed_models = build_allowed_models(settings)
     agents = AgentService(
         SqlAgentRepository(db),
@@ -416,6 +457,7 @@ def build_container(settings: Settings) -> Container:
         allowed_models=allowed_models,
         connections=ConnectionCatalogAdapter(connections, plugins),
         mcp=mcp,
+        knowledge=knowledge_access,
     )
     providers = build_model_providers(settings)
     router = ModelRouter(providers)
@@ -429,6 +471,7 @@ def build_container(settings: Settings) -> Container:
             timeout_s=settings.tool_timeout_seconds,
             access=ConnectionAccessAdapter(connections),
             mcp=mcp,
+            knowledge=knowledge_access,
         ),
         router=router,
         loop=LangGraphReactLoop(),
@@ -439,7 +482,7 @@ def build_container(settings: Settings) -> Container:
         brain=build_architect_brain(settings, providers),
         agents=agents,
         runs=runs,
-        catalog=PluginCatalogProvider(plugins, model_catalog, connections),
+        catalog=PluginCatalogProvider(plugins, model_catalog, connections, knowledge),
         audit=audit,
         cost_model=settings.architect_model,
     )
@@ -465,12 +508,14 @@ def build_container(settings: Settings) -> Container:
         connections=connections,
         mcp=mcp,
         oauth=oauth,
+        knowledge=knowledge,
         model_router=router,
         model_catalog=model_catalog,
         architect=architect,
         commands=CommandService(architect, agents, audit),
         health_checks=health_checks,
         closers=[
+            ingest_queue.close,
             db.dispose,
             redis.aclose,
             http.aclose,

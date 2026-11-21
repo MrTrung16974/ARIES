@@ -65,6 +65,7 @@ export class Shell implements OnInit {
         },
         { label: 'Kết nối', icon: 'cable', link: '/connections', visible: true },
         { label: 'Duyệt', icon: 'gavel', link: '/approvals', visible: true },
+        { label: 'Tri thức', icon: 'menu_book', link: '/knowledge', visible: true },
         {
           label: 'MCP',
           icon: 'hub',

@@ -22,6 +22,9 @@ dependencies = [
   "jsonschema>=4.23",
   "sqlglot>=27",
   "mcp>=1.20",
+  "pypdf>=5",
+  "python-docx>=1.1",
+  "python-multipart>=0.0.20",
 ]
 
 [dependency-groups]
@@ -135,6 +138,7 @@ source_modules = [
   "aiagent.modules.builder.domain",
   "aiagent.modules.connections.domain",
   "aiagent.modules.mcp.domain",
+  "aiagent.modules.knowledge.domain",
 ]
 forbidden_modules = [
   "fastapi", "sqlalchemy", "httpx", "redis", "arq", "langgraph", "anthropic",
@@ -174,6 +178,7 @@ source_modules = [
   "aiagent.modules.conversations", "aiagent.modules.builder",
   "aiagent.modules.connections",
   "aiagent.modules.mcp",
+  "aiagent.modules.knowledge",
   "aiagent.modules.runtime.domain", "aiagent.modules.runtime.application",
   "aiagent.modules.runtime.api",
 ]
@@ -243,3 +248,12 @@ source_modules = [
 ]
 forbidden_modules = ["mcp"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Phân lớp trong module knowledge"
+type = "layers"
+layers = [
+  "aiagent.modules.knowledge.api",
+  "aiagent.modules.knowledge.application | aiagent.modules.knowledge.infrastructure",
+  "aiagent.modules.knowledge.domain",
+]

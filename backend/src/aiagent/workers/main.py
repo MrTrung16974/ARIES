@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, ClassVar
+from uuid import UUID
 
 from arq import cron, run_worker
 from arq.connections import RedisSettings
@@ -33,13 +34,21 @@ async def ping(ctx: dict[str, Any]) -> str:
     return "pong"
 
 
+async def ingest_document(ctx: dict[str, Any], tenant_id: str, doc_id: str) -> str:
+    """Parse → chunk → embed → lưu chunk cho một tài liệu (ADR-0019)."""
+    status = await ctx["container"].knowledge.ingest(tenant_id, UUID(doc_id))
+    return str(status)
+
+
 async def heartbeat(ctx: dict[str, Any]) -> None:
     checks = await ctx["container"].readiness()
     logger.info("Worker heartbeat", extra={"checks": checks})
 
 
 class WorkerSettings:
-    functions: ClassVar[list[Any]] = [ping]
+    functions: ClassVar[list[Any]] = [ping, ingest_document]
+    job_timeout = 900  # tài liệu lớn trên CPU có thể mất vài phút
+    max_jobs = 2
     cron_jobs: ClassVar[list[Any]] = [cron(heartbeat, minute=set(range(0, 60, 5)))]
     on_startup = startup
     on_shutdown = shutdown

@@ -979,3 +979,24 @@ mat-icon.sm {
     border-color: var(--app-danger-border);
   }
 }
+
+// ---------------------------------------------------------------- Nguồn trích dẫn (kb.search)
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+
+  .source {
+    font-size: 0.76rem;
+    padding: 0.12rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-2);
+    max-width: 28rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

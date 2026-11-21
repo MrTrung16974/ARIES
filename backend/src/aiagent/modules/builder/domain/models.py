@@ -86,6 +86,9 @@ class CapabilityPlan(_Out):
     connections: list[ConnectionChoice] = Field(
         default_factory=list, description="Kết nối dữ liệu cần dùng (chỉ chọn trong catalog)"
     )
+    knowledge_bases: list[str] = Field(
+        default_factory=list, description="Id kho tri thức cần tra cứu (chỉ chọn trong catalog)"
+    )
     model: str
     effort: Literal["low", "medium", "high"]
     missing: list[MissingItem] = Field(description="Thứ cần nhưng chưa có trong catalog")

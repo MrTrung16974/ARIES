@@ -70,7 +70,7 @@ def test_system_prompt_is_deterministic_and_has_safety_rules() -> None:
         ({"skills": [{"skill_id": "nope"}]}, "không tồn tại"),
         ({"skills": [{"skill_id": "echo", "allowed_tools": ["echo.fly"]}]}, "không có tool"),
         ({"model": {"provider": "anthropic", "model": "gpt-4"}}, "không được phép"),
-        ({"knowledge_bases": ["kb1"]}, "Knowledge base"),
+        ({"knowledge_bases": ["kb1"]}, "Kho tri thức"),
     ],
 )
 async def test_create_validates_references(

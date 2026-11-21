@@ -87,6 +87,14 @@ class ConnectionAccessPort(Protocol):
         ...
 
 
+class KnowledgeAccessPort(Protocol):
+    """Kho tri thức nhìn từ runtime (hiện thực ở module knowledge, ADR-0019)."""
+
+    async def plugin_for(
+        self, principal: Principal, kb_ids: list[str]
+    ) -> tuple[Plugin | None, list[str]]: ...
+
+
 class McpAccessPort(Protocol):
     """MCP server nhìn từ runtime (hiện thực ở module mcp, ADR-0018)."""
 
@@ -190,6 +198,7 @@ class BoundTools:
             }
 
         ctx = self.ctx
+        citations: object = None
         try:
             if bound.connection is not None:
                 if self.access is None:
@@ -206,6 +215,8 @@ class BoundTools:
             async with asyncio.timeout(self.timeout_s):
                 result = await bound.plugin.call_tool(name, arguments, ctx)
             content, is_error = result.content, result.is_error
+            if result.data and not is_error:
+                citations = result.data.get("citations")
         except TimeoutError:
             content, is_error = f"Tool quá thời gian ({self.timeout_s:.0f}s).", True
         except AppError as exc:
@@ -238,12 +249,15 @@ class BoundTools:
                 "arguments": arguments,
             },
         )
-        return self._result(tool_use_id, content, is_error), {
+        info: dict[str, object] = {
             "name": name,
             "is_error": is_error,
             "duration_ms": duration_ms,
             "preview": content[:500],
         }
+        if citations:
+            info["citations"] = citations  # nguồn trích dẫn cho UI (kb.search)
+        return self._result(tool_use_id, content, is_error), info
 
     @staticmethod
     def _result(tool_use_id: str, content: str, is_error: bool) -> ContentBlock:
@@ -265,12 +279,14 @@ class ToolGateway:
         timeout_s: float = 30.0,
         access: ConnectionAccessPort | None = None,
         mcp: McpAccessPort | None = None,
+        knowledge: KnowledgeAccessPort | None = None,
     ):
         self._plugins = plugins
         self._audit = audit
         self._timeout_s = timeout_s
         self._access = access
         self._mcp = mcp
+        self._knowledge = knowledge
 
     def _add(
         self, bound: BoundTools, plugin: Plugin, tool: ToolSpec, connection: ConnectionRef | None
@@ -337,6 +353,18 @@ class ToolGateway:
                 for tool in plugin.manifest.tools:
                     if not allowed or tool.name in allowed:
                         self._add(bound, plugin, tool, ref)
+
+        if spec.knowledge_bases:
+            if self._knowledge is None:
+                bound.hidden += [f"kb:{k}" for k in spec.knowledge_bases]
+            else:
+                kb_plugin, kb_hidden = await self._knowledge.plugin_for(
+                    principal, list(spec.knowledge_bases)
+                )
+                bound.hidden += kb_hidden
+                if kb_plugin is not None:
+                    for tool in kb_plugin.manifest.tools:
+                        self._add(bound, kb_plugin, tool, None)
 
         if spec.mcp_servers:
             wanted = [str(m.server_id) for m in spec.mcp_servers]

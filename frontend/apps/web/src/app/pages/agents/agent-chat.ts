@@ -20,6 +20,7 @@ import {
   ApprovalsApi,
   ChatStreamError,
   ChatStreamService,
+  Citation,
   Role,
   RunEventMessage,
   SessionService,
@@ -39,6 +40,7 @@ interface ToolStep {
   status: 'running' | 'ok' | 'error';
   preview?: string;
   durationMs?: number;
+  citations?: Citation[];
 }
 
 export interface ApprovalCard {
@@ -326,6 +328,7 @@ export class AgentChat implements OnInit, OnDestroy {
               step.name = String(d['name'] ?? step.name);
               step.preview = d['preview'] as string | undefined;
               step.durationMs = d['duration_ms'] as number | undefined;
+              step.citations = d['citations'] as Citation[] | undefined;
             }
             break;
           }
@@ -454,6 +457,11 @@ export class AgentChat implements OnInit, OnDestroy {
   }
 
   /** Ẩn bước tool `delegate__*` khi đã có thẻ giao việc tương ứng. */
+  /** Nguồn trích dẫn từ kb.search trong tin trả lời (ADR-0019). */
+  protected citations(m: ChatItem): Citation[] {
+    return m.tools.flatMap((t) => t.citations ?? []);
+  }
+
   protected visibleTools(m: ChatItem): ToolStep[] {
     const shown = new Set((m.delegations ?? []).map((x) => x.toolUseId));
     return m.tools.filter((t) => !shown.has(t.id));

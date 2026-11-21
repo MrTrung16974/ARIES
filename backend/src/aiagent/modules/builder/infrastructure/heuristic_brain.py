@@ -102,12 +102,17 @@ class HeuristicArchitectBrain:
         ]
 
         questions: list[ClarifyQuestion] = []
-        if allow_questions and sources and not re.search(r"upload|drive|chưa có", text, re.I):
+        if (
+            allow_questions
+            and sources
+            and not re.search(r"upload|drive|chưa có|kho tri thức|đã tải", text, re.I)
+        ):
             questions.append(
                 ClarifyQuestion(
                     id="q1",
                     question="Tài liệu cho agent tra cứu nằm ở đâu?",
                     options=[
+                        ClarifyOption(label="Kho tri thức đã có", value="kho tri thức"),
                         ClarifyOption(label="Google Drive", value="drive"),
                         ClarifyOption(label="Tải file lên", value="upload"),
                         ClarifyOption(label="Chưa có", value="chưa có"),
@@ -185,15 +190,31 @@ class HeuristicArchitectBrain:
                         description="Kết nối PostgreSQL (tạo ở trang Kết nối rồi gắn vào agent)",
                     )
                 )
-        missing = [
-            MissingItem(kind="knowledge_base", description=f"Nguồn {s.hint} (Phase 4)")
-            for s in brief.data_sources
-        ]
+        # Tài liệu: chọn kho tri thức có tên khớp nhiều từ nhất với yêu cầu, không có thì báo thiếu.
+        kb_ids: list[str] = []
+        missing: list[MissingItem] = []
+        if brief.data_sources:
+            if catalog.knowledge_bases:
+                words = set(re.findall(r"\w+", f"{brief.goal} {joined}".lower()))
+                best = max(
+                    catalog.knowledge_bases,
+                    key=lambda k: len(words & set(re.findall(r"\w+", k.name.lower()))),
+                )
+                kb_ids.append(best.id)
+            else:
+                missing += [
+                    MissingItem(
+                        kind="knowledge_base",
+                        description=f"Kho tri thức cho {s.hint} (tạo ở trang Tri thức)",
+                    )
+                    for s in brief.data_sources
+                ]
         missing += db_missing
         missing += [MissingItem(kind="connection", description=a) for a in brief.actions]
         return CapabilityPlan(
             skills=skills,
             connections=connections,
+            knowledge_bases=kb_ids,
             model=catalog.models[0],
             effort="medium",
             missing=missing,

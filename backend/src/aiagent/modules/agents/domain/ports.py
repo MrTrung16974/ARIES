@@ -52,3 +52,9 @@ class ConnectionCatalogPort(Protocol):
     async def tools_for(self, principal: Principal, connection_id: str) -> list[ToolSpec] | None:
         """Tool của connection nếu người này được dùng nó; None nếu không tồn tại/không có quyền."""
         ...
+
+
+class KnowledgeCatalogPort(Protocol):
+    async def classification_of(self, principal: Principal, kb_id: str) -> str | None:
+        """Phân loại dữ liệu của KB nếu người này đọc được; None nếu không."""
+        ...

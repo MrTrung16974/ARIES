@@ -461,3 +461,50 @@ export interface CreateMcpServer {
   command_key?: string | null;
   secrets: Record<string, string>;
 }
+
+// ---------------------------------------------------------------- Knowledge (Phase 4)
+export interface KnowledgeBaseInfo {
+  id: string;
+  name: string;
+  description: string;
+  scope: 'personal' | 'workspace';
+  owner_id: string;
+  data_classification: DataClassification;
+  doc_count: number;
+  chunk_count: number;
+  created_at: string;
+  updated_at: string;
+  can_manage: boolean;
+  can_read: boolean;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  kb_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  status: 'pending' | 'processing' | 'ready' | 'failed';
+  error: string | null;
+  title: string;
+  chunk_count: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Citation {
+  n: number;
+  title: string;
+  filename: string;
+  page: number | null;
+  heading: string;
+  document_id: string;
+  kb_id: string;
+}
+
+export interface KnowledgeSearchResult {
+  text: string;
+  citations: Citation[];
+  scores: number[];
+}

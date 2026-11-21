@@ -20,5 +20,6 @@
 | [0016](0016-hitl-policy-connections.md) | HITL, Policy, Connection (Phase 3a) |
 | [0017](0017-master-agent-delegation.md) | Master agent giao việc cho các agent khác (Phase 3c) |
 | [0018](0018-phase3b-openbao-egress-mcp-oauth.md) | OpenBao bền + AppRole, egress proxy, MCP bridge, OAuth broker (Phase 3b) |
+| [0019](0019-knowledge-rag.md) | Kho tri thức (RAG): TEI bge-m3 tự host, pgvector + từ khóa, RRF, ACL (Phase 4) |
 
 Mẫu ADR mới: Bối cảnh → Quyết định → Phương án khác → Hệ quả.

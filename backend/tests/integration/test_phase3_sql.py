@@ -227,10 +227,23 @@ async def test_mcp_repository_roundtrip(db: Database) -> None:
     now = utcnow()
     slug = f"it_{uuid4().hex[:8]}"
     s = McpServer(
-        id=uuid4(), tenant_id="default", name="IT MCP", slug=slug, transport=McpTransport.STDIO,
-        url=None, command_key="aries_demo", secret_keys=["T"], enabled=True, deleted=False,
-        tools=[], risk_overrides={}, last_sync_at=None, last_error=None, created_by="it",
-        created_at=now, updated_at=now,
+        id=uuid4(),
+        tenant_id="default",
+        name="IT MCP",
+        slug=slug,
+        transport=McpTransport.STDIO,
+        url=None,
+        command_key="aries_demo",
+        secret_keys=["T"],
+        enabled=True,
+        deleted=False,
+        tools=[],
+        risk_overrides={},
+        last_sync_at=None,
+        last_error=None,
+        created_by="it",
+        created_at=now,
+        updated_at=now,
     )
     created = await repo.create(s)
     with pytest.raises(ConflictError):

@@ -34,6 +34,8 @@ WORKDIR /app
 COPY --from=build /opt/venv /opt/venv
 COPY alembic.ini ./
 COPY migrations ./migrations
+# Tệp gốc của kho tri thức (volume kbfiles) — app ghi được.
+RUN mkdir -p /data/kb && chown app:app /data/kb
 USER app
 EXPOSE 8000
 CMD ["uvicorn", "aiagent.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

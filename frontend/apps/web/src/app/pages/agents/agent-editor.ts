@@ -17,6 +17,8 @@ import {
   ConnectionInfo,
   ConnectionsApi,
   ConnectorInfo,
+  KnowledgeApi,
+  KnowledgeBaseInfo,
   McpApi,
   McpServerInfo,
   defaultSpec,
@@ -93,6 +95,7 @@ export class AgentEditor implements OnInit {
   private readonly api = inject(AgentsApi);
   private readonly connectionsApi = inject(ConnectionsApi);
   private readonly mcpApi = inject(McpApi);
+  private readonly knowledgeApi = inject(KnowledgeApi);
   private readonly router = inject(Router);
 
   protected spec: AgentSpec = defaultSpec();
@@ -111,6 +114,7 @@ export class AgentEditor implements OnInit {
   );
   protected readonly connectors = signal<ConnectorInfo[]>([]);
   protected readonly mcpServers = signal<McpServerInfo[]>([]);
+  protected readonly knowledgeBases = signal<KnowledgeBaseInfo[]>([]);
   protected readonly models = signal<ModelInfo[]>([]);
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -156,6 +160,10 @@ export class AgentEditor implements OnInit {
     this.api.list().subscribe((a) => this.agents.set(a));
     this.connectionsApi.connectors().subscribe((c) => this.connectors.set(c));
     this.mcpApi.list().subscribe({ next: (m) => this.mcpServers.set(m), error: () => undefined });
+    this.knowledgeApi.list().subscribe({
+      next: (k) => this.knowledgeBases.set(k),
+      error: () => undefined,
+    });
     this.api.models().subscribe((m) => this.models.set(m));
     if (!this.isNew()) {
       this.api.get(this.id() as string).subscribe({
@@ -191,6 +199,16 @@ export class AgentEditor implements OnInit {
           { skill_id: id, allowed_tools: [], config: {} },
         ]
       : this.spec.skills.filter((s) => s.skill_id !== id);
+  }
+
+  // ---------------------------------------------------------------- kho tri thức
+  protected hasKb(id: string): boolean {
+    return this.spec.knowledge_bases.includes(id);
+  }
+
+  protected toggleKb(id: string, on: boolean): void {
+    const others = this.spec.knowledge_bases.filter((k) => k !== id);
+    this.spec.knowledge_bases = on ? [...others, id] : others;
   }
 
   // ---------------------------------------------------------------- MCP

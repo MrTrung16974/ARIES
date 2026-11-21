@@ -31,6 +31,15 @@ _SUPERVISOR_GUIDE = (
 )
 
 
+_KNOWLEDGE_GUIDE = (
+    "# Tài liệu nội bộ\n"
+    "- Câu hỏi về quy định, chính sách, quy trình, sản phẩm… của tổ chức: gọi `kb.search` trước khi "
+    "trả lời.\n"
+    "- Chỉ khẳng định điều có trong đoạn tìm được; ghi nguồn bằng [số] ngay sau ý tương ứng.\n"
+    "- Không tìm thấy: nói rõ là tài liệu hiện có không đề cập, không tự bịa."
+)
+
+
 def render_system_prompt(spec: AgentSpec) -> str:
     parts: list[str] = []
     if spec.persona.strip():
@@ -44,6 +53,8 @@ def render_system_prompt(spec: AgentSpec) -> str:
 
     if spec.graph_type == "supervisor":
         parts.append(_SUPERVISOR_GUIDE)
+    if spec.knowledge_bases:
+        parts.append(_KNOWLEDGE_GUIDE)
 
     rules = [*spec.rules, *_BASE_RULES]
     parts.append("# Quy tắc\n" + "\n".join(f"- {r}" for r in rules))

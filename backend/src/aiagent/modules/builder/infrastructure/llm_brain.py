@@ -52,6 +52,10 @@ def _catalog_text(catalog: Catalog) -> str:
             lines.append(f"    - tool `{t.name}` [risk={t.risk}]: {t.description}")
     if not catalog.connections:
         lines.append("Không có kết nối dữ liệu nào (người dùng có thể tạo ở trang Kết nối).")
+    for k in catalog.knowledge_bases:
+        lines.append(
+            f'- kho tri thức `{k.id}` "{k.name}" ({k.doc_count} tài liệu): {k.description}'
+        )
     lines.append("Model khả dụng: " + ", ".join(catalog.models))
     return "\n".join(lines)
 
@@ -153,6 +157,8 @@ class LlmArchitectBrain:
         if catalog.skills:
             _with_enums(schema, "SkillChoice", "skill_id", catalog.skill_ids())
             _with_enums(schema, "SkillChoice", "allowed_tools", catalog.tool_names())
+        if catalog.knowledge_bases:
+            _with_enums(schema, "", "knowledge_bases", catalog.knowledge_base_ids())
         if catalog.connections:
             _with_enums(schema, "ConnectionChoice", "connection_id", catalog.connection_ids())
             _with_enums(
@@ -163,7 +169,9 @@ class LlmArchitectBrain:
             "Chọn skill thật sự cần (có thể rỗng), giới hạn allowed_tools ở mức tối thiểu "
             "(rỗng = mọi tool). Nếu cần dữ liệu từ hệ thống có trong danh sách kết nối, chọn "
             "connection tương ứng, ưu tiên tool chỉ đọc; nếu cần nhưng chưa có thì ghi vào missing "
-            "(kind connection). Chọn model đầu tiên trong danh sách trừ khi yêu cầu rất đơn giản "
+            "(kind connection). Cần tra cứu tài liệu nội bộ thì chọn kho tri thức phù hợp trong "
+            "catalog (knowledge_bases); chưa có thì ghi missing kind knowledge_base. "
+            "Chọn model đầu tiên trong danh sách trừ khi yêu cầu rất đơn giản "
             "(khi đó có thể chọn model nhỏ hơn). effort: low cho hỏi đáp đơn giản, medium mặc định."
         )
         plan = await self._call(
@@ -172,7 +180,9 @@ class LlmArchitectBrain:
             meter,
             model=self._architect,
             effort="medium",
-            schema=schema if catalog.skills or catalog.connections else None,
+            schema=(
+                schema if catalog.skills or catalog.connections or catalog.knowledge_bases else None
+            ),
         )
         if plan.model not in catalog.models:
             plan.model = catalog.models[0]

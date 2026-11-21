@@ -444,6 +444,44 @@
             <p class="muted small">Chưa có MCP server nào được đăng ký.</p>
           }
         </div>
+
+        <div class="section-intro conn-intro">
+          <h2 class="sec-title">
+            <mat-icon class="sm" svgIcon="menu_book" aria-hidden="true" />
+            <span>Kho tri thức</span>
+          </h2>
+          <p class="muted small">
+            Agent sẽ tra cứu tài liệu qua tool <code>kb.search</code> và trích dẫn nguồn [n]. Chỉ gắn
+            được kho có mức mật không cao hơn agent (quản lý ở trang
+            <a routerLink="/knowledge">Tri thức</a>).
+          </p>
+        </div>
+        <div class="skills-list">
+          @for (k of knowledgeBases(); track k.id) {
+            <div class="skill-card" [class.enabled]="hasKb(k.id)">
+              <div class="skill-head">
+                <mat-checkbox
+                  [ngModel]="hasKb(k.id)"
+                  (ngModelChange)="toggleKb(k.id, $event)"
+                  [disabled]="!k.can_read && !hasKb(k.id)"
+                >
+                  <strong>{{ k.name }}</strong>
+                </mat-checkbox>
+                <ui-tag [value]="k.data_classification" severity="info" />
+                <span class="muted small">{{ k.doc_count }} tài liệu</span>
+              </div>
+              @if (k.description) {
+                <div class="skill-body">
+                  <p class="muted small">{{ k.description }}</p>
+                </div>
+              }
+            </div>
+          } @empty {
+            <p class="muted small">
+              Chưa có kho tri thức — <a routerLink="/knowledge">tạo kho</a>.
+            </p>
+          }
+        </div>
       </div>
     </mat-tab>
 

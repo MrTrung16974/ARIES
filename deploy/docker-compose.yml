@@ -50,7 +50,11 @@ x-backend-env: &backend-env
   # Mọi lưu lượng ra Internet đi qua Squid (ADR-0018); dịch vụ nội bộ đi thẳng.
   HTTPS_PROXY: http://squid:3128
   HTTP_PROXY: http://squid:3128
-  NO_PROXY: localhost,127.0.0.1,keycloak,openbao,postgres,redis,searxng,squid,traefik,web,mcp-demo,ollama
+  NO_PROXY: localhost,127.0.0.1,keycloak,openbao,postgres,redis,searxng,squid,traefik,web,mcp-demo,embedder,reranker,ollama
+  # Kho tri thức (ADR-0019)
+  AIAGENT_EMBEDDER_URL: http://embedder
+  AIAGENT_RERANKER_URL: ${RERANKER_URL:-}  # đặt http://reranker khi bật profile rerank
+  AIAGENT_KB_STORAGE_PATH: /data/kb
 
 services:
   # ------------------------------------------------------------------ edge
@@ -190,6 +194,50 @@ services:
     networks: [app, edge]
     restart: "no"
 
+  # ------------------------------------------------------------------ knowledge (ADR-0019)
+  # TEI bản CPU, chỉ trong mạng nội bộ; tải model lần đầu qua egress proxy (allowlist HF).
+  embedder:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    # Batch nhỏ + 2 luồng: giới hạn RAM/CPU trên máy không GPU (ADR-0019).
+    # --max-batch-tokens 2048 + --auto-truncate ⇒ max input length cũng = 2048 (chunk ~800 token).
+    # Để 8192 thì warmup chạy chuỗi 8192 token → attention O(n²) vượt mem_limit → OOM-kill lặp.
+    command: ["--model-id", "BAAI/bge-m3", "--port", "80", "--auto-truncate",
+              "--max-client-batch-size", "16", "--max-batch-tokens", "2048",
+              "--tokenization-workers", "2"]
+    environment: &tei-env
+      HUGGINGFACE_HUB_CACHE: /data
+      HTTPS_PROXY: http://squid:3128
+      HTTP_PROXY: http://squid:3128
+      NO_PROXY: localhost,127.0.0.1
+      OMP_NUM_THREADS: "2"
+    volumes:
+      - hfmodels:/data
+    mem_limit: 5g
+    cpus: 2
+    depends_on:
+      squid: { condition: service_started }
+    networks: [app]
+    # Không crash-loop vô hạn: OOM lặp lại làm Docker engine treo.
+    restart: on-failure:3
+
+  reranker:
+    # Tùy chọn (tốn thêm ~3–4 GB RAM): docker compose --profile rerank up -d reranker
+    # Không bật thì tìm kiếm vẫn chạy (vector + từ khóa + RRF), chỉ không có bước rerank.
+    profiles: [rerank]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    command: ["--model-id", "BAAI/bge-reranker-v2-m3", "--port", "80", "--auto-truncate",
+              "--max-client-batch-size", "32", "--max-batch-tokens", "4096",
+              "--tokenization-workers", "2"]
+    environment: *tei-env
+    mem_limit: 5g
+    cpus: 2
+    volumes:
+      - hfmodels:/data
+    depends_on:
+      squid: { condition: service_started }
+    networks: [app]
+    restart: on-failure:3
+
   # ------------------------------------------------------------------ identity
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
@@ -242,6 +290,7 @@ services:
     pull_policy: never  # image do service migrate build
     volumes:
       - baoapprole:/run/openbao:ro
+      - kbfiles:/data/kb
     environment:
       <<: *backend-env
       FORWARDED_ALLOW_IPS: "*"  # api chỉ nhận traffic qua Traefik trong mạng nội bộ
@@ -272,6 +321,7 @@ services:
     pull_policy: never
     volumes:
       - baoapprole:/run/openbao:ro
+      - kbfiles:/data/kb
     command: ["aiagent-worker"]
     environment: *backend-env
     depends_on:
@@ -372,3 +422,5 @@ volumes:
   baodata:
   baoinit:
   baoapprole:
+  hfmodels:
+  kbfiles:

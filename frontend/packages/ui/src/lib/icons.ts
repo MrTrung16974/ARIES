@@ -48,6 +48,9 @@ export const APP_ICONS = [
   'hub',
   'sync',
   'login',
+  'menu_book',
+  'upload_file',
+  'description',
 ] as const;
 
 export type AppIcon = (typeof APP_ICONS)[number];

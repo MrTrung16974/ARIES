@@ -11,6 +11,8 @@ from aiagent.modules.agents.domain import (
     AgentVersion,
     ConnectionCatalogPort,
     CreatedVia,
+    DataClassification,
+    KnowledgeCatalogPort,
     SkillCatalogPort,
 )
 from aiagent.modules.identity.domain import Principal, Role
@@ -35,12 +37,14 @@ class AgentService:
         allowed_models: Mapping[str, frozenset[str] | None] = ALLOWED_MODELS,
         connections: ConnectionCatalogPort | None = None,
         mcp: ConnectionCatalogPort | None = None,  # cùng hình dạng: tools_for(principal, id)
+        knowledge: KnowledgeCatalogPort | None = None,
     ) -> None:
         self._repo = repo
         self._catalog = catalog
         self._allowed_models = allowed_models
         self._connections = connections
         self._mcp = mcp
+        self._knowledge = knowledge
 
     # ----------------------------------------------------------- validation
     def validate(self, spec: AgentSpec) -> None:
@@ -61,8 +65,6 @@ class AgentService:
             unknown = sorted(set(binding.allowed_tools) - names)
             if unknown:
                 errors.append(f"Skill '{binding.skill_id}' không có tool: {', '.join(unknown)}")
-        if spec.knowledge_bases:
-            errors.append("Knowledge base chưa được hỗ trợ (Phase 4)")
         if errors:
             raise ValidationError("; ".join(errors))
 
@@ -90,6 +92,26 @@ class AgentService:
             unknown = sorted(set(binding.allowed_tools) - {t.name for t in tools})
             if unknown:
                 errors.append(f"Kết nối {cid} không có tool: {', '.join(unknown)}")
+        if errors:
+            raise ValidationError("; ".join(errors))
+
+    async def check_knowledge(self, principal: Principal, spec: AgentSpec) -> None:
+        """KB gắn vào agent: người lưu phải đọc được, và mức mật không cao hơn agent (ADR-0019)."""
+        order = [c.value for c in DataClassification]
+        errors: list[str] = []
+        for kb_id in spec.knowledge_bases:
+            level = (
+                await self._knowledge.classification_of(principal, kb_id)
+                if self._knowledge is not None
+                else None
+            )
+            if level is None:
+                errors.append(f"Kho tri thức {kb_id} không tồn tại hoặc bạn không được dùng")
+            elif order.index(level) > order.index(spec.data_classification.value):
+                errors.append(
+                    f"Kho tri thức {kb_id} có dữ liệu mức '{level}' — cao hơn mức của agent "
+                    f"('{spec.data_classification.value}')"
+                )
         if errors:
             raise ValidationError("; ".join(errors))
 
@@ -180,6 +202,7 @@ class AgentService:
         await self.check_connections(principal, spec)
         await self.check_team(principal, spec)
         await self.check_mcp(principal, spec)
+        await self.check_knowledge(principal, spec)
         return await self._repo.create(principal.tenant_id, principal.subject, spec, via, note)
 
     async def update(
@@ -201,6 +224,7 @@ class AgentService:
         await self.check_connections(principal, spec, already=already)
         await self.check_team(principal, spec)
         await self.check_mcp(principal, spec)
+        await self.check_knowledge(principal, spec)
         return await self._repo.add_version(
             principal.tenant_id, agent_id, spec, principal.subject, via, note, expected_version
         )

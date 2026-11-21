@@ -2,6 +2,7 @@ from aiagent.modules.agents.domain.models import Agent, AgentStatus, AgentVersio
 from aiagent.modules.agents.domain.ports import (
     AgentRepositoryPort,
     ConnectionCatalogPort,
+    KnowledgeCatalogPort,
     SkillCatalogPort,
 )
 from aiagent.modules.agents.domain.prompt import render_system_prompt
@@ -29,6 +30,7 @@ __all__ = [
     "CreatedVia",
     "DataClassification",
     "Effort",
+    "KnowledgeCatalogPort",
     "McpBinding",
     "SkillBinding",
     "SkillCatalogPort",

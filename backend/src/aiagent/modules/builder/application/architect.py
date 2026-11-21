@@ -94,12 +94,27 @@ def permissions_of(spec: AgentSpec, catalog: Catalog) -> list[dict[str, Any]]:
                     "status": status,
                 }
             )
+    kbs = {k.id: k for k in catalog.knowledge_bases}
+    for kb_id in spec.knowledge_bases:
+        kb = kbs.get(kb_id)
+        if kb is not None:
+            out.append(
+                {
+                    "skill": "knowledge",
+                    "connection": kb.name,
+                    "tool": "kb.search",
+                    "risk": "read",
+                    "status": "active",
+                }
+            )
     return out
 
 
 def summarize(spec: AgentSpec) -> str:
     skills = ", ".join(s.skill_id for s in spec.skills) or "không có"
     conns = f" · {len(spec.connections)} kết nối" if spec.connections else ""
+    if spec.knowledge_bases:
+        conns += f" · {len(spec.knowledge_bases)} kho tri thức"
     return (
         f"{spec.name} — {spec.description or 'chưa có mô tả'}\n"
         f"Model: {spec.model.model} (effort {spec.model.effort.value}) · Skill: {skills}{conns} · "
@@ -385,6 +400,10 @@ class ArchitectService:
             if cc.connection_id not in {k.connection_id for k in kept_conns}:
                 kept_conns.append(cc)
         plan.connections = kept_conns
+        known_kbs = set(catalog.knowledge_base_ids())
+        plan.knowledge_bases = list(
+            dict.fromkeys(k for k in plan.knowledge_bases if k in known_kbs)
+        )
         if plan.model not in catalog.models:
             plan.model = catalog.models[0]
         return plan
@@ -434,6 +453,7 @@ class ArchitectService:
                 {"connection_id": c.connection_id, "allowed_tools": c.allowed_tools}
                 for c in plan.connections
             ],
+            "knowledge_bases": list(plan.knowledge_bases),
         }
         try:
             spec = AgentSpec.model_validate(raw)

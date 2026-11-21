@@ -74,9 +74,15 @@ tức mới về công ty này") → Master giao song song, hiển thị tiến 
 trả lời; thao tác cần duyệt của agent con được duyệt ngay trong hội thoại với Master; tỉ lệ giao
 đúng ≥ 90% trên bộ eval định tuyến.
 
-## Phase 4 — Knowledge
-- `/kb`, upload, ingest (parse → chunk → bge-m3), hybrid search + rerank, ACL, trích dẫn.
-- **Google Drive** data source; chọn object storage S3-compatible.
+## Phase 4 — Knowledge (ADR-0019)
+- ✅ Kho tri thức: tải tài liệu (PDF, Word, Markdown, HTML, TXT, CSV — nhận diện theo nội dung),
+  ingest nền ở worker (parse → chunk theo cấu trúc → bge-m3 qua TEI CPU tự host).
+- ✅ Tìm lai vector + từ khóa (bỏ dấu tiếng Việt) → RRF → rerank tùy chọn; tool `kb.search` có
+  trích dẫn `[n]`, output không tin cậy (taint).
+- ✅ ACL: KB cá nhân/dùng chung, kiểm quyền theo người chạy, chặn KB mật hơn agent; Architect tự chọn
+  KB; trang Tri thức + nguồn trích dẫn trong chat.
+- Còn lại: **Google Drive** data source (cần OAuth client thật), OCR cho PDF scan, object storage
+  S3-compatible (hiện lưu tệp trên volume qua `BlobStorePort`), lệnh `/kb`.
 
 ## Phase 5 — Publish & vận hành
 - Web app link, API key, embed widget, **Telegram** channel.

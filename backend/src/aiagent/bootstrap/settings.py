@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # Cấu hình KHÔNG bí mật theo plugin, ví dụ {"web": {"searxng_url": "http://searxng:8080"}}.
     plugin_config: dict[str, dict[str, Any]] = Field(default_factory=dict)
     # MCP stdio (ADR-0018): tên lệnh → dòng lệnh, do NGƯỜI VẬN HÀNH cài/cho phép. UI chỉ chọn tên.
+    # Knowledge (ADR-0019): TEI nội bộ + nơi lưu tệp gốc.
+    embedder_url: str = "http://localhost:8081"
+    reranker_url: str | None = None
+    kb_storage_path: Path = Path("/data/kb")
+
     # URL công khai của ARIES (trình duyệt thấy) — dùng cho redirect_uri của OAuth.
     public_base_url: str = "http://localhost"
     # Nhà cung cấp OAuth: {"keycloak": {...}}. Google chỉ cần client id/secret bên dưới.

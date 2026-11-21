@@ -101,3 +101,15 @@ API/worker **không có đường ra Internet nào ngoài Squid**:
 - Google: đặt `OAUTH_GOOGLE_CLIENT_ID`/`OAUTH_GOOGLE_CLIENT_SECRET`.
 - SSO nội bộ (Keycloak, để thử luồng đầy đủ): đặt `OAUTH_KEYCLOAK_CLIENT_SECRET` rồi
   `docker compose --profile demo run --rm keycloak-setup`.
+
+## 6. Phase 4 — Kho tri thức (ADR-0019)
+
+- `embedder` (TEI CPU, `BAAI/bge-m3`) tải model ~2,3 GB lần đầu vào volume `hfmodels` qua Squid
+  (`.huggingface.co`, `.hf.co` trong allowlist). Môi trường không có Internet: nạp sẵn volume.
+- RAM: embedder giới hạn 5 GB, `--max-batch-tokens 2048` (đặt 8192 thì bước warmup vượt giới hạn
+  bộ nhớ → bị OOM-kill lặp và có thể làm Docker engine treo). Docker Desktop mặc định dùng tối đa
+  50% RAM máy cho VM — chỉnh `.wslconfig` nếu cần.
+- Reranker (`bge-reranker-v2-m3`) tùy chọn: `docker compose --profile rerank up -d reranker`, đặt
+  `RERANKER_URL=http://reranker` rồi restart api/worker.
+- Tệp gốc nằm ở volume `kbfiles` (`/data/kb` trong api/worker); sao lưu cùng Postgres.
+- Ingest chạy ở `worker` (arq, tối đa 2 job song song, mỗi job ≤ 15 phút).

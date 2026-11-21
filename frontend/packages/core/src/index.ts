@@ -8,3 +8,4 @@ export * from './lib/api/agents-api.service';
 export * from './lib/api/chat-stream.service';
 export * from './lib/api/builder-api.service';
 export * from './lib/api/connections-api.service';
+export * from './lib/api/knowledge-api.service';

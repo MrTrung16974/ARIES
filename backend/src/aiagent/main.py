@@ -20,6 +20,7 @@ from aiagent.modules.audit.api.router import router as audit_router
 from aiagent.modules.builder.api.router import router as builder_router
 from aiagent.modules.connections.api.router import router as connections_router
 from aiagent.modules.identity.api.router import router as identity_router
+from aiagent.modules.knowledge.api.router import router as knowledge_router
 from aiagent.modules.mcp.api.router import router as mcp_router
 from aiagent.modules.runtime.api.router import router as runtime_router
 
@@ -70,4 +71,5 @@ def create_app(
     app.include_router(builder_router)
     app.include_router(connections_router)
     app.include_router(mcp_router)
+    app.include_router(knowledge_router)
     return app
