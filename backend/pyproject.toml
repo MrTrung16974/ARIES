@@ -26,6 +26,11 @@ dependencies = [
   "python-docx>=1.1",
   "python-multipart>=0.0.20",
   "pyyaml>=6.0.2",
+  "aiokafka>=0.12",
+  "grpcio>=1.68",
+  "grpcio-reflection>=1.68",
+  "protobuf>=5.28",
+  "grpcio-tools>=1.68",
 ]
 
 [dependency-groups]
@@ -41,6 +46,7 @@ dev = [
   "bandit>=1.8",
   "pip-audit>=2.7",
   "types-jsonschema>=4.26.0.20261006",
+  "fakeredis>=2.26",
 ]
 
 # Plugin built-in: đăng ký qua entry points, giống hệt plugin bên thứ ba.
@@ -55,6 +61,9 @@ google = "aiagent_plugins.connector_oidc:GoogleAccountConnector"
 sso = "aiagent_plugins.connector_oidc:SsoProfileConnector"
 gmail = "aiagent_plugins.connector_gmail:GmailConnector"
 http_api = "aiagent_plugins.connector_http:HttpApiConnector"
+redis = "aiagent_plugins.connector_redis:RedisConnector"
+kafka = "aiagent_plugins.connector_kafka:KafkaConnector"
+grpc = "aiagent_plugins.connector_grpc:GrpcConnector"
 
 [project.scripts]
 aiagent-worker = "aiagent.workers.main:run"
@@ -93,7 +102,7 @@ packages = ["aiagent", "aiagent_plugins"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["arq.*", "asyncpg.*"]
+module = ["arq.*", "asyncpg.*", "aiokafka.*", "grpc.*", "grpc_reflection.*", "google.protobuf.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------- pytest
