@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+
 from aiagent.modules.agents.application import AgentService
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.audit.domain import Outcome
 from aiagent.modules.automation.domain import (
+    CRON,
     DEFAULT_TZ,
-    GMAIL_INTERVALS,
-    KINDS,
     MAX_FAILURES,
     MAX_SCHEDULES_PER_USER,
+    TRIGGER_INTERVALS,
     AgentRunPort,
     CronError,
     CronExpr,
@@ -32,13 +36,14 @@ from aiagent.modules.automation.domain import (
 from aiagent.modules.connections.application import ConnectionService
 from aiagent.modules.identity.domain import Principal, Role
 from aiagent.modules.runtime.application.tool_gateway import wrap_untrusted
+from aiagent.plugin_sdk import TriggerSpec
 from aiagent.shared_kernel.clock import utcnow
 from aiagent.shared_kernel.errors import AppError, ForbiddenError, NotFoundError, ValidationError
 
 logger = logging.getLogger(__name__)
 
 MAX_PROMPT = 4000
-MAX_FILTER = 100
+MAX_TRIGGER_CONFIG_CHARS = 2000
 FAILED = ("failed",)
 
 
@@ -54,7 +59,13 @@ def run_principal(tenant_id: str, owner_id: str) -> Principal:
 
 
 def gmail_cron(minutes: int) -> str:
-    return "0 * * * *" if minutes == 60 else f"*/{minutes} * * * *"
+    """Chu kỳ kiểm tra nguồn sự kiện (phút) → biểu thức cron."""
+    if minutes == 60:
+        return "0 * * * *"
+    return "* * * * *" if minutes == 1 else f"*/{minutes} * * * *"
+
+
+trigger_cron = gmail_cron
 
 
 class AutomationService:
@@ -92,22 +103,46 @@ class AutomationService:
             run_principal(tenant_id, owner_id), agent_id, draft=False
         )
 
-    async def _check_connection(self, tenant_id: str, owner_id: str, cid: UUID | None) -> None:
-        if cid is None:
-            raise ValidationError("Trigger Gmail cần chọn một kết nối Gmail.")
-        usable = await self._connections.usable(run_principal(tenant_id, owner_id), [str(cid)])
-        if not usable or usable[0].connector_id != "gmail":
-            raise ValidationError("Kết nối Gmail không tồn tại hoặc bạn không được dùng.")
+    def _trigger(self, kind: str) -> TriggerSpec:
+        """Kiểu kích hoạt ngoài cron = connector có trigger (gmail, kafka…)."""
+        spec = self._connections.trigger_of(kind) if kind != CRON else None
+        if spec is None:
+            raise ValidationError(
+                "Kiểu kích hoạt phải là cron hoặc một connector có trigger (gmail, kafka…)."
+            )
+        return spec
 
-    @staticmethod
-    def _clean_filters(config: dict[str, Any] | None) -> dict[str, Any]:
+    async def _check_connection(
+        self, tenant_id: str, owner_id: str, kind: str, cid: UUID | None
+    ) -> None:
+        if cid is None:
+            raise ValidationError(f"Trigger {kind} cần chọn một kết nối {kind}.")
+        usable = await self._connections.usable(run_principal(tenant_id, owner_id), [str(cid)])
+        if not usable or usable[0].connector_id != kind:
+            raise ValidationError(f"Kết nối {kind} không tồn tại hoặc bạn không được dùng.")
+
+    def _clean_trigger_config(self, kind: str, config: dict[str, Any] | None) -> dict[str, Any]:
+        """Bỏ giá trị trống rồi kiểm theo config_schema mà connector khai báo cho trigger."""
         out: dict[str, Any] = {}
-        for key in ("from_contains", "subject_contains"):
-            value = str((config or {}).get(key) or "").strip()
-            if len(value) > MAX_FILTER:
-                raise ValidationError(f"Bộ lọc {key} tối đa {MAX_FILTER} ký tự.")
-            if value:
-                out[key] = value
+        for key, value in (config or {}).items():
+            if isinstance(value, str):
+                value = value.strip()
+            if value not in ("", None, [], {}):
+                out[str(key)] = value
+        if len(json.dumps(out, ensure_ascii=False, default=str)) > MAX_TRIGGER_CONFIG_CHARS:
+            raise ValidationError("Bộ lọc của trigger quá dài.")
+        schema = self._trigger(kind).config_schema or {"type": "object"}
+        try:
+            errors = sorted(
+                Draft202012Validator(schema).iter_errors(out), key=lambda e: list(e.path)
+            )
+        except SchemaError as exc:
+            raise AppError("Connector có config_schema trigger không hợp lệ.") from exc
+        if errors:
+            detail = "; ".join(
+                f"{'/'.join(map(str, e.path)) or '(root)'}: {e.message}" for e in errors[:3]
+            )
+            raise ValidationError(f"Bộ lọc trigger không hợp lệ: {detail}")
         return out
 
     def _owned(self, principal: Principal, s: Schedule | None, *, manage: bool = False) -> Schedule:
@@ -155,22 +190,22 @@ class AutomationService:
             raise ValidationError("Hãy đặt tên cho lịch chạy.")
         if not prompt or len(prompt) > MAX_PROMPT:
             raise ValidationError(f"Lời nhắn cho agent phải có 1–{MAX_PROMPT} ký tự.")
-        if kind not in KINDS:
-            raise ValidationError("Kiểu kích hoạt phải là cron hoặc gmail.")
+        if kind != CRON:
+            self._trigger(kind)
         if await self._repo.count_for_owner(tenant, owner) >= MAX_SCHEDULES_PER_USER:
             raise ValidationError(f"Mỗi người tối đa {MAX_SCHEDULES_PER_USER} lịch chạy.")
         await self._check_agent(tenant, owner, agent_id)
         config: dict[str, Any] = {}
-        if kind == "gmail":
-            if interval_minutes not in GMAIL_INTERVALS:
-                raise ValidationError("Chu kỳ kiểm tra mail không hợp lệ.")
-            cron = gmail_cron(interval_minutes)
-            await self._check_connection(tenant, owner, connection_id)
-            config = self._clean_filters(trigger_config)
+        if kind != CRON:
+            if interval_minutes not in TRIGGER_INTERVALS:
+                raise ValidationError("Chu kỳ kiểm tra không hợp lệ.")
+            cron = trigger_cron(interval_minutes)
+            await self._check_connection(tenant, owner, kind, connection_id)
+            config = self._clean_trigger_config(kind, trigger_config)
         else:
             connection_id = None
         try:
-            expr = validate(cron, timezone, max_per_hour=60 if kind == "gmail" else 12)
+            expr = validate(cron, timezone, max_per_hour=60 if kind != CRON else 12)
         except CronError as exc:
             raise ValidationError(str(exc)) from None
         now = utcnow()
@@ -226,21 +261,21 @@ class AutomationService:
             if not prompt.strip() or len(prompt) > MAX_PROMPT:
                 raise ValidationError(f"Lời nhắn cho agent phải có 1–{MAX_PROMPT} ký tự.")
             changes["prompt"] = prompt.strip()
-        if s.kind == "cron" and (cron is not None or timezone is not None):
+        if s.kind == CRON and (cron is not None or timezone is not None):
             new_cron, new_tz = cron or s.cron, timezone or s.timezone
             try:
                 validate(new_cron, new_tz)
             except CronError as exc:
                 raise ValidationError(str(exc)) from None
             changes.update(cron=new_cron.strip(), timezone=new_tz)
-        if trigger_config is not None and s.kind == "gmail":
-            changes["trigger_config"] = self._clean_filters(trigger_config)
+        if trigger_config is not None and s.kind != CRON:
+            changes["trigger_config"] = self._clean_trigger_config(s.kind, trigger_config)
         if enabled is not None:
             changes["enabled"] = enabled
             if enabled:
                 await self._check_agent(s.tenant_id, s.owner_id, s.agent_id)
-                if s.kind == "gmail":
-                    await self._check_connection(s.tenant_id, s.owner_id, s.connection_id)
+                if s.kind != CRON:
+                    await self._check_connection(s.tenant_id, s.owner_id, s.kind, s.connection_id)
                 changes["failure_count"] = 0
         updated = replace(s, **changes)
         updated = replace(
@@ -350,8 +385,8 @@ class AutomationService:
             return 0
         principal = run_principal(s.tenant_id, s.owner_id)
         try:
-            if s.kind == "gmail":
-                return await self._execute_gmail(s, principal)
+            if s.kind != CRON:
+                return await self._execute_trigger(s, principal)
             ref = fired_at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M")
             ok = await self._run(s, principal, ref, s.name, s.prompt)
             await self._finish(s, ok, state=None)
@@ -361,16 +396,17 @@ class AutomationService:
             await self._finish(s, "failed", state=None)
             return 0
 
-    async def _execute_gmail(self, s: Schedule, principal: Principal) -> int:
+    async def _execute_trigger(self, s: Schedule, principal: Principal) -> int:
         if s.connection_id is None:
-            raise AppError("Thiếu kết nối Gmail.")
+            raise AppError(f"Thiếu kết nối {s.kind}.")
+        label = s.kind.capitalize()
         items, state = await self._triggers.poll(
             principal, s.connection_id, dict(s.state), dict(s.trigger_config)
         )
         status: str | None = "idle"
         count = 0
         for item in items:
-            message = f"{s.prompt}\n\n{wrap_untrusted('Gmail', item.content)}"
+            message = f"{s.prompt}\n\n{wrap_untrusted(label, item.content)}"
             result = await self._run(s, principal, item.ref, item.title, message)
             if result is not None:
                 count += 1

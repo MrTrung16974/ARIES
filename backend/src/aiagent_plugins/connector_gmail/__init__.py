@@ -179,8 +179,16 @@ class GmailConnector(Plugin):
                     config_schema={
                         "type": "object",
                         "properties": {
-                            "from_contains": {"type": "string", "maxLength": 100},
-                            "subject_contains": {"type": "string", "maxLength": 100},
+                            "from_contains": {
+                                "type": "string",
+                                "maxLength": 100,
+                                "title": "Chỉ mail từ (chứa)",
+                            },
+                            "subject_contains": {
+                                "type": "string",
+                                "maxLength": 100,
+                                "title": "Tiêu đề chứa",
+                            },
                         },
                         "additionalProperties": False,
                     },

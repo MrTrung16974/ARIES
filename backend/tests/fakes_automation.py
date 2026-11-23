@@ -127,6 +127,7 @@ class FakeTriggerSource:
     def __init__(self) -> None:
         self.batches: list[list[TriggerItem]] = []
         self.seen_states: list[dict[str, Any]] = []
+        self.seen_configs: list[dict[str, Any]] = []
         self.fail = False
 
     async def poll(
@@ -135,6 +136,7 @@ class FakeTriggerSource:
         if self.fail:
             raise ConnectionError("Gmail lỗi")
         self.seen_states.append(dict(state))
+        self.seen_configs.append(dict(config))
         batch = self.batches.pop(0) if self.batches else []
         return batch, {"history_id": str(int(state.get("history_id", "0")) + 1)}
 

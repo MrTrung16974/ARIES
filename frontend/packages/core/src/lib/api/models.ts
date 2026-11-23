@@ -372,6 +372,14 @@ export interface ConnectorInfo {
   oauth_provider: string | null;
   /** Tool khám phá theo từng kết nối (OpenAPI, gRPC…) — ADR-0023. */
   dynamic_tools: boolean;
+  /** Nguồn sự kiện cho lịch chạy tự động (mail mới, message Kafka mới…). */
+  triggers?: ConnectorTrigger[];
+}
+
+export interface ConnectorTrigger {
+  name: string;
+  description: string;
+  config_schema: JsonSchema;
 }
 
 export interface JsonSchema {
@@ -712,7 +720,8 @@ export interface TelegramBotInfo {
 }
 
 // ---------------------------------------------------------------- Tự động hóa (ADR-0021)
-export type ScheduleKind = 'cron' | 'gmail';
+/** 'cron' hoặc id connector có trigger ('gmail', 'kafka'…) — ADR-0023. */
+export type ScheduleKind = string;
 
 export interface ScheduleInfo {
   id: string;
@@ -724,7 +733,7 @@ export interface ScheduleInfo {
   timezone: string;
   prompt: string;
   connection_id: string | null;
-  trigger_config: { from_contains?: string; subject_contains?: string };
+  trigger_config: Record<string, unknown>;
   enabled: boolean;
   next_run_at: string | null;
   last_run_at: string | null;
@@ -742,7 +751,7 @@ export interface CreateSchedule {
   timezone?: string;
   interval_minutes?: number;
   connection_id?: string | null;
-  trigger_config?: { from_contains?: string; subject_contains?: string };
+  trigger_config?: Record<string, unknown>;
 }
 
 export interface ScheduleRunInfo {

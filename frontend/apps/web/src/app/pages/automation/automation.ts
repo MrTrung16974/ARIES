@@ -10,12 +10,21 @@ import {
   AutomationApi,
   ConnectionInfo,
   ConnectionsApi,
+  ConnectorInfo,
   CreateSchedule,
   ScheduleInfo,
   ScheduleRunInfo,
   SessionService,
 } from '@aiagent/core';
 import { Notice } from '@aiagent/ui';
+import { fieldsOf, toConfig } from '../connections/connections';
+
+/** Icon theo kiểu kích hoạt (connector có trigger) — ADR-0023. */
+const KIND_ICON: Record<string, string> = {
+  cron: 'schedule',
+  gmail: 'mail',
+  kafka: 'hub',
+};
 
 const PRESETS = [
   { label: '8:00 sáng mỗi ngày làm việc', cron: '0 8 * * 1-5' },
@@ -32,7 +41,7 @@ const STATUS: Record<string, string> = {
   refused: 'Bị từ chối',
   awaiting_approval: 'Chờ duyệt',
   running: 'Đang chạy',
-  idle: 'Không có mail mới',
+  idle: 'Không có sự kiện mới',
   cancelled: 'Đã hủy',
 };
 
@@ -55,7 +64,8 @@ const STATUS: Record<string, string> = {
         <div class="hero-copy">
           <h1>Tự động hóa</h1>
           <p class="subtitle">
-            Cho agent tự chạy theo lịch hoặc khi có mail mới. Chạy dưới tên bạn
+            Cho agent tự chạy theo lịch hoặc khi có sự kiện mới (mail, message
+            Kafka…). Chạy dưới tên bạn
             nhưng không mang quyền quản trị; thao tác cần duyệt sẽ chờ bạn ở
             trang Duyệt — không có gì tự gửi đi.
           </p>
@@ -110,9 +120,17 @@ const STATUS: Record<string, string> = {
           </label>
           <label
             >Kích hoạt khi
-            <select name="kind" [(ngModel)]="form.kind">
+            <select
+              name="kind"
+              [ngModel]="form.kind"
+              (ngModelChange)="pickKind($event)"
+            >
               <option value="cron">Đến giờ (lịch)</option>
-              <option value="gmail">Có mail mới (Gmail)</option>
+              @for (t of triggerConnectors(); track t.id) {
+                <option [value]="t.id">
+                  {{ t.name }} — {{ t.triggers?.[0]?.description }}
+                </option>
+              }
             </select>
           </label>
         </div>
@@ -148,9 +166,9 @@ const STATUS: Record<string, string> = {
         } @else {
           <div class="grid">
             <label
-              >Kết nối Gmail
+              >Kết nối {{ triggerConnector()?.name }}
               <select name="conn" [(ngModel)]="form.connection_id" required>
-                @for (c of gmailConnections(); track c.id) {
+                @for (c of kindConnections(); track c.id) {
                   <option [value]="c.id">{{ c.name }}</option>
                 }
               </select>
@@ -163,34 +181,49 @@ const STATUS: Record<string, string> = {
                 }
               </select>
             </label>
-            <label
-              >Chỉ mail từ (chứa)
-              <input
-                name="from"
-                [(ngModel)]="filters.from_contains"
-                placeholder="ncc.vn"
-              />
-            </label>
-            <label
-              >Tiêu đề chứa
-              <input
-                name="subject"
-                [(ngModel)]="filters.subject_contains"
-                placeholder="Hóa đơn"
-              />
-            </label>
+            @for (f of triggerFields(); track f.key) {
+              @if (f.kind === 'boolean') {
+                <label class="check"
+                  ><input
+                    type="checkbox"
+                    [name]="'tf_' + f.key"
+                    [(ngModel)]="filterValues[f.key]"
+                  />
+                  {{ f.label }}</label
+                >
+              } @else if (f.kind === 'select') {
+                <label
+                  >{{ f.label }}
+                  <select [name]="'tf_' + f.key" [(ngModel)]="filterValues[f.key]">
+                    <option value=""></option>
+                    @for (o of f.options; track o) {
+                      <option [value]="o">{{ o }}</option>
+                    }
+                  </select>
+                </label>
+              } @else {
+                <label
+                  >{{ f.label }}{{ f.required ? ' *' : '' }}
+                  <input
+                    [name]="'tf_' + f.key"
+                    [type]="f.kind === 'number' ? 'number' : 'text'"
+                    [(ngModel)]="filterValues[f.key]"
+                    [required]="f.required"
+                  />
+                </label>
+              }
+            }
           </div>
-          @if (gmailConnections().length === 0) {
+          @if (kindConnections().length === 0) {
             <ui-notice severity="info">
-              Chưa có kết nối Gmail — vào
-              <a routerLink="/connections">Kết nối</a> để kết nối tài khoản
-              Google.
+              Chưa có kết nối {{ triggerConnector()?.name }} — vào
+              <a routerLink="/connections">Kết nối</a> để tạo.
             </ui-notice>
           }
           <p class="muted small">
-            Nội dung mail được đưa cho agent dưới dạng
+            Nội dung sự kiện (mail, message…) được đưa cho agent dưới dạng
             <strong>dữ liệu không tin cậy</strong>: agent không làm theo chỉ dẫn
-            trong mail, và mọi thao tác ghi/gửi đều phải duyệt.
+            trong đó, và mọi thao tác ghi/gửi đều phải duyệt.
           </p>
         }
 
@@ -205,7 +238,9 @@ const STATUS: Record<string, string> = {
             [placeholder]="
               form.kind === 'gmail'
                 ? 'Phân loại mail, tóm tắt 3 dòng và soạn nháp trả lời nếu là yêu cầu báo giá.'
-                : 'Tổng hợp các việc cần làm trong tuần và gửi cho tôi.'
+                : form.kind === 'cron'
+                  ? 'Tổng hợp các việc cần làm trong tuần và gửi cho tôi.'
+                  : 'Đọc sự kiện, kiểm tra dữ liệu liên quan và tóm tắt cho tôi.'
             "
           ></textarea>
         </label>
@@ -232,7 +267,7 @@ const STATUS: Record<string, string> = {
             <span class="kind" [attr.data-kind]="s.kind">
               <mat-icon
                 class="xs"
-                [svgIcon]="s.kind === 'gmail' ? 'mail' : 'schedule'"
+                [svgIcon]="kindIcon(s.kind)"
               />
             </span>
             <div class="title">
@@ -472,7 +507,8 @@ export class Automation implements OnInit {
   private readonly session = inject(SessionService);
 
   protected readonly presets = PRESETS;
-  protected readonly intervals = [2, 5, 10, 15, 30, 60];
+  protected readonly intervals = [1, 2, 5, 10, 15, 30, 60];
+  protected readonly connectors = signal<ConnectorInfo[]>([]);
   protected readonly schedules = signal<ScheduleInfo[]>([]);
   protected readonly agents = signal<AgentSummary[]>([]);
   protected readonly connections = signal<ConnectionInfo[]>([]);
@@ -485,7 +521,7 @@ export class Automation implements OnInit {
 
   protected preset = PRESETS[0].cron;
   protected form: CreateSchedule = this.blank();
-  protected filters = { from_contains: '', subject_contains: '' };
+  protected filterValues: Record<string, unknown> = {};
 
   protected readonly seeAll = computed(() => {
     this.session.me();
@@ -497,15 +533,31 @@ export class Automation implements OnInit {
       (a) => a.published_version !== null && a.status !== 'archived',
     ),
   );
-  protected readonly gmailConnections = computed(() =>
+  /** Connector có trigger → thành kiểu kích hoạt (gmail, kafka…). */
+  protected readonly triggerConnectors = computed(() =>
+    this.connectors().filter((c) => (c.triggers ?? []).length > 0),
+  );
+  private readonly kind = signal('cron');
+  protected readonly triggerConnector = computed(() =>
+    this.connectors().find((c) => c.id === this.kind()),
+  );
+  protected readonly triggerFields = computed(() => {
+    const schema = this.triggerConnector()?.triggers?.[0]?.config_schema;
+    return schema ? fieldsOf(schema) : [];
+  });
+  protected readonly kindConnections = computed(() =>
     this.connections().filter(
-      (c) => c.connector_id === 'gmail' && c.status === 'active',
+      (c) => c.connector_id === this.kind() && c.status === 'active',
     ),
   );
 
   ngOnInit(): void {
     void this.session.load().catch(() => undefined);
     this.agentsApi.list(true).subscribe((a) => this.agents.set(a));
+    this.connectionsApi.connectors().subscribe({
+      next: (c) => this.connectors.set(c),
+      error: () => undefined,
+    });
     this.connectionsApi.list().subscribe({
       next: (c) => this.connections.set(c),
       error: () => undefined,
@@ -528,20 +580,30 @@ export class Automation implements OnInit {
     return this.agents().find((a) => a.id === id)?.name ?? id.slice(0, 8);
   }
 
+  protected kindIcon(kind: string): string {
+    return KIND_ICON[kind] ?? 'bolt';
+  }
+
   protected describe(s: ScheduleInfo): string {
-    if (s.kind === 'gmail') {
+    if (s.kind !== 'cron') {
+      const head = s.cron.split(' ')[0];
       const every =
-        s.cron === '0 * * * *'
-          ? 60
-          : Number(s.cron.split(' ')[0].replace('*/', ''));
-      const filters = [
-        s.trigger_config.from_contains,
-        s.trigger_config.subject_contains,
-      ].filter(Boolean);
-      return `Mail mới · mỗi ${every} phút${filters.length ? ' · lọc: ' + filters.join(', ') : ''}`;
+        s.cron === '0 * * * *' ? 60 : head === '*' ? 1 : Number(head.replace('*/', ''));
+      const name = this.connectors().find((c) => c.id === s.kind)?.name ?? s.kind;
+      const filters = Object.values(s.trigger_config ?? {})
+        .filter((v) => v !== '' && v !== null && v !== undefined)
+        .map(String);
+      return `${name} · mỗi ${every} phút${filters.length ? ' · lọc: ' + filters.join(', ') : ''}`;
     }
     const preset = PRESETS.find((p) => p.cron === s.cron);
     return `${preset ? preset.label : s.cron} (${s.timezone})`;
+  }
+
+  protected pickKind(kind: string): void {
+    this.form.kind = kind;
+    this.kind.set(kind);
+    this.form.connection_id = null;
+    this.filterValues = {};
   }
 
   protected pickPreset(cron: string): void {
@@ -553,15 +615,8 @@ export class Automation implements OnInit {
     this.saving.set(true);
     this.error.set(null);
     const body: CreateSchedule = { ...this.form };
-    if (body.kind === 'gmail') {
-      body.trigger_config = {
-        ...(this.filters.from_contains.trim()
-          ? { from_contains: this.filters.from_contains.trim() }
-          : {}),
-        ...(this.filters.subject_contains.trim()
-          ? { subject_contains: this.filters.subject_contains.trim() }
-          : {}),
-      };
+    if (body.kind !== 'cron') {
+      body.trigger_config = toConfig(this.triggerFields(), this.filterValues);
       delete body.cron;
     } else {
       delete body.connection_id;
@@ -571,7 +626,8 @@ export class Automation implements OnInit {
         this.saving.set(false);
         this.formOpen.set(false);
         this.form = this.blank();
-        this.filters = { from_contains: '', subject_contains: '' };
+        this.kind.set('cron');
+        this.filterValues = {};
         this.reload();
       },
       error: (e) => {

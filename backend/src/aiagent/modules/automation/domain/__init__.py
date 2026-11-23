@@ -10,8 +10,11 @@ from uuid import UUID
 
 from aiagent.modules.automation.domain.cron import CronError, CronExpr, validate, zone_of
 
-KINDS = ("cron", "gmail")
-GMAIL_INTERVALS = (2, 5, 10, 15, 30, 60)
+CRON = "cron"
+# Ngoài "cron", kind = id của connector có khai báo trigger (gmail, kafka…) — ADR-0023.
+KINDS = (CRON, "gmail")  # giữ để tương thích; kiểu trigger thật lấy từ manifest connector
+TRIGGER_INTERVALS = (1, 2, 5, 10, 15, 30, 60)
+GMAIL_INTERVALS = TRIGGER_INTERVALS
 MAX_SCHEDULES_PER_USER = 20
 MAX_FAILURES = 5  # lỗi liên tiếp → tự tắt
 DEFAULT_TZ = "Asia/Ho_Chi_Minh"
@@ -24,7 +27,7 @@ class Schedule:
     owner_id: str
     agent_id: UUID
     name: str
-    kind: str  # "cron" | "gmail"
+    kind: str  # "cron" | id connector có trigger ("gmail", "kafka"…)
     cron: str
     timezone: str
     prompt: str
@@ -178,11 +181,13 @@ class TriggerSourcePort(Protocol):
 
 
 __all__ = [
+    "CRON",
     "DEFAULT_TZ",
     "GMAIL_INTERVALS",
     "KINDS",
     "MAX_FAILURES",
     "MAX_SCHEDULES_PER_USER",
+    "TRIGGER_INTERVALS",
     "AgentRunPort",
     "CronError",
     "CronExpr",

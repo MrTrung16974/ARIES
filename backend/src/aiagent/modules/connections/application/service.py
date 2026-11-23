@@ -47,6 +47,7 @@ from aiagent.plugin_sdk import (
     PluginManifest,
     RiskLevel,
     ToolSpec,
+    TriggerSpec,
 )
 from aiagent.shared_kernel.clock import utcnow
 from aiagent.shared_kernel.errors import (
@@ -118,6 +119,14 @@ class ConnectionService:
         if plugin is None or plugin.manifest.kind is not PluginKind.CONNECTOR:
             raise ValidationError(f"Connector '{connector_id}' không tồn tại hoặc đang tắt.")
         return plugin.manifest
+
+    def trigger_of(self, connector_id: str) -> TriggerSpec | None:
+        """Trigger (sự kiện mới) của connector, nếu có — dùng cho lịch chạy tự động."""
+        plugin = self._connectors.get(connector_id)
+        if plugin is None or plugin.manifest.kind is not PluginKind.CONNECTOR:
+            return None
+        triggers = plugin.manifest.triggers
+        return triggers[0] if triggers else None
 
     def tools_of(self, c: Connection) -> list[ToolSpec]:
         """Tool hiệu lực của connection (tĩnh + động); [] nếu connector đang tắt."""

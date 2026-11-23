@@ -2532,3 +2532,78 @@ async def test_check_each_provider_model(client: httpx.AsyncClient, make_token) 
     assert (await client.post(url, headers=builder, json={"models": models})).status_code == 403
     assert (await client.post(url, headers=admin, json={"models": []})).status_code == 422
 
+
+async def test_schedule_kafka_trigger_kind(
+    client: httpx.AsyncClient,
+    make_token,
+    sched_repo,
+    trigger_source,
+    conv_repo,  # type: ignore[no-untyped-def]
+) -> None:
+    """Kiểu kích hoạt lấy từ connector có trigger (ADR-0023): kafka dùng chung đường ống gmail."""
+    from uuid import UUID
+    from uuid import uuid4 as new_id
+
+    from aiagent.modules.automation.domain import TriggerItem
+    from aiagent.modules.connections.domain import Connection, ConnectionScope, ConnectionStatus
+    from aiagent.shared_kernel.clock import utcnow
+
+    connectors = (await client.get("/api/v1/connectors", headers=auth(make_token()))).json()
+    kafka = next(c for c in connectors if c["id"] == "kafka")
+    assert kafka["triggers"][0]["name"] == "kafka.new_message"
+    assert "topic" in kafka["triggers"][0]["config_schema"]["required"]
+
+    agent_id = await _publish(client, make_token(sub="b1", roles=["builder"]), SPEC)
+    u1 = auth(make_token(sub="u1"))
+    container = client._transport.app.state.container  # type: ignore[attr-defined]
+    now = utcnow()
+    kconn = Connection(
+        id=new_id(),
+        tenant_id="default",
+        name="Kafka u1",
+        connector_id="kafka",
+        scope=ConnectionScope.PERSONAL,
+        owner_id="u1",
+        config={"bootstrap_servers": ["kafka:9092"], "allowed_topics": ["orders.*"]},
+        secret_keys=[],
+        status=ConnectionStatus.ACTIVE,
+        last_test_ok=None,
+        last_test_note=None,
+        last_test_at=None,
+        created_at=now,
+        updated_at=now,
+    )
+    container.connections._repo.items[kconn.id] = kconn
+    body = {
+        "name": "Đơn mới",
+        "agent_id": agent_id,
+        "kind": "kafka",
+        "interval_minutes": 1,
+        "prompt": "Xử lý đơn hàng sau",
+        "connection_id": str(kconn.id),
+        "trigger_config": {"topic": "orders.created", "contains": "  "},
+    }
+    for bad in (
+        {**body, "trigger_config": {}},  # thiếu topic
+        {**body, "trigger_config": {"topic": "đơn hàng!"}},  # sai mẫu
+        {**body, "trigger_config": {"topic": "orders.created", "x": 1}},  # khóa lạ
+        {**body, "kind": "postgres"},  # connector không có trigger
+        {**body, "kind": "gmail"},  # connection không phải gmail
+    ):
+        r = await client.post("/api/v1/schedules", headers=u1, json=bad)
+        assert r.status_code == 422, (bad, r.text)
+    r = await client.post("/api/v1/schedules", headers=u1, json=body)
+    assert r.status_code == 201, r.text
+    s = r.json()
+    assert s["cron"] == "* * * * *" and s["trigger_config"] == {"topic": "orders.created"}
+
+    trigger_source.batches = [
+        [TriggerItem("kafka:orders.created:0:7", "orders.created · p0 #7", "value: {}")]
+    ]
+    service = container.automation
+    assert await service.execute("default", UUID(s["id"]), utcnow()) == 1
+    assert trigger_source.seen_configs[-1] == {"topic": "orders.created"}
+    run = (await client.get(f"/api/v1/schedules/{s['id']}/runs", headers=u1)).json()[0]
+    assert run["trigger_ref"] == "kafka:orders.created:0:7"
+    first = next(m for m in conv_repo.messages if m.thread_id == UUID(run["thread_id"]))
+    assert "DỮ LIỆU BÊN NGOÀI" in first.content[0]["text"] and "Kafka" in first.content[0]["text"]

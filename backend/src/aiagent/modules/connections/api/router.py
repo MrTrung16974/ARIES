@@ -27,6 +27,12 @@ class ConnectorToolOut(BaseModel):
     risk: str
 
 
+class ConnectorTriggerOut(BaseModel):
+    name: str
+    description: str
+    config_schema: dict[str, Any]
+
+
 class ConnectorOut(BaseModel):
     id: str
     name: str
@@ -38,6 +44,7 @@ class ConnectorOut(BaseModel):
     tools: list[ConnectorToolOut]
     oauth_provider: str | None = None
     dynamic_tools: bool = False
+    triggers: list[ConnectorTriggerOut] = []
     ui_hints: dict[str, Any]
 
 
@@ -124,6 +131,12 @@ async def list_connectors(_: AnyUser, c: ContainerDep) -> list[ConnectorOut]:
             ui_hints=m.ui_hints,
             oauth_provider=m.oauth_provider,
             dynamic_tools=m.dynamic_tools,
+            triggers=[
+                ConnectorTriggerOut(
+                    name=t.name, description=t.description, config_schema=t.config_schema
+                )
+                for t in m.triggers
+            ],
         )
         for m in c.connections.connectors()
     ]
