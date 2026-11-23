@@ -24,5 +24,6 @@
 | [0020](0020-publish-channels.md) | Publish: link chia sẻ, widget nhúng, API key, Telegram (Phase 5) |
 | [0021](0021-automation-triggers.md) | Tự động hóa: lịch chạy, trigger Gmail, taint/DLP (Phase 6) |
 | [0022](0022-agent-as-code.md) | Agent-as-code: manifest YAML, thư viện mẫu, CLI `aiagent` (Phase 7) |
+| [0023](0023-dynamic-connector-tools-network-policy.md) | Tool động theo connection + chính sách đích mạng cho connector |
 
 Mẫu ADR mới: Bối cảnh → Quyết định → Phương án khác → Hệ quả.
