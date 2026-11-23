@@ -59,6 +59,8 @@ from aiagent.shared_kernel.errors import (
 logger = logging.getLogger(__name__)
 
 _TOKEN_MARGIN_S = 60
+# Khóa cấu hình do OAuth broker đặt — người dùng không được sửa qua PATCH config (ADR-0018).
+_OAUTH_CONFIG_KEYS = ("oauth_provider", "account", "userinfo_url")
 _NAME_RE = re.compile(r"^[\w][\w .\-()]{0,79}$", re.UNICODE)
 MAX_SECRET_CHARS = 8192
 TEST_TIMEOUT_S = 15.0
@@ -84,7 +86,8 @@ class ConnectionService:
         self._audit = audit
         self._oauth = oauth
         self.providers: dict[str, OAuthProvider] = dict(providers or {})
-        self._refresh_lock = asyncio.Lock()
+        # Mỗi connection một khóa: hai tool call đồng thời không cùng đổi refresh token.
+        self._refresh_locks: dict[UUID, asyncio.Lock] = {}
         # None = không kiểm đích mạng (chỉ dùng trong test); container luôn truyền chính sách.
         self._network = network
 
@@ -313,6 +316,11 @@ class ConnectionService:
         if name is not None:
             changes["name"] = self.check_name(name)
         if config is not None:
+            if manifest.oauth_provider:
+                # Giữ nguyên khóa OAuth: xóa/sửa chúng làm lộ refresh token cho plugin hoặc
+                # gửi access token tới URL khác.
+                config = {k: v for k, v in config.items() if k not in _OAUTH_CONFIG_KEYS}
+                config |= {k: c.config[k] for k in _OAUTH_CONFIG_KEYS if k in c.config}
             changes["config"] = self._check_config(manifest, config)
             self._check_targets_syntax(c.connector_id, config)
         if secrets:
@@ -530,14 +538,24 @@ class ConnectionService:
         refresh = secrets.get("refresh_token")
         if provider is None or self._oauth is None or not refresh:
             raise AppError(f"Kết nối '{c.name}' đã hết hạn — hãy kết nối lại với {provider_id}.")
-        async with self._refresh_lock:
+        path = secret_path(c.tenant_id, c.id)
+        async with self._refresh_locks.setdefault(c.id, asyncio.Lock()):
+            # Lượt chờ khóa: có thể lượt trước đã làm mới xong → dùng luôn, không đổi lần nữa
+            # (nhà cung cấp xoay vòng refresh token sẽ từ chối token cũ).
+            latest = await self._vault.get(path)
+            if (
+                latest.get("access_token")
+                and float(latest.get("expires_at") or 0) - time.time() > _TOKEN_MARGIN_S
+            ):
+                return latest["access_token"]
+            refresh = latest.get("refresh_token") or refresh
             tokens = await self._oauth.refresh(provider, refresh)
-        fresh = {
-            "access_token": tokens.access_token,
-            "refresh_token": tokens.refresh_token or refresh,
-            "expires_at": str(int(tokens.expires_at)),
-        }
-        await self._vault.put(secret_path(c.tenant_id, c.id), fresh)
+            fresh = {
+                "access_token": tokens.access_token,
+                "refresh_token": tokens.refresh_token or refresh,
+                "expires_at": str(int(tokens.expires_at)),
+            }
+            await self._vault.put(path, fresh)
         return tokens.access_token
 
     # ------------------------------------------------------------------ tiện ích
