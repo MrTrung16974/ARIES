@@ -552,7 +552,7 @@
                 @if (hasConnection(c.id)) {
                   <div class="skill-body">
                     <div class="tools-grid">
-                      @for (t of connectorOf(c)?.tools ?? []; track t.name) {
+                      @for (t of connectionTools(c); track t.name) {
                         <div class="tool-item">
                           <mat-checkbox
                             [ngModel]="connToolAllowed(c.id, t.name)"

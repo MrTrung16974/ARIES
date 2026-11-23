@@ -5,7 +5,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from aiagent.plugin_sdk.manifest import PluginManifest
+from aiagent.plugin_sdk.manifest import PluginManifest, ToolSpec
+from aiagent.plugin_sdk.net import Endpoint, NetworkPolicy
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,10 @@ class ConnectionContext:
     connector_id: str
     config: dict[str, Any]
     secrets: dict[str, str] = field(default_factory=dict, repr=False)
+    # Chính sách đích mạng do core cấp: plugin gọi `await network.check(Endpoint(...))` cho mọi
+    # đích phát sinh lúc chạy (redirect, URL trong tham số…). Đích trong cấu hình thì core đã kiểm
+    # qua `Plugin.network_targets` trước khi giao connection.
+    network: NetworkPolicy | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -49,6 +54,7 @@ class ToolContext:
     run_id: str
     config: dict[str, Any] = field(default_factory=dict)
     connection: ConnectionContext | None = None
+    tool: ToolSpec | None = None  # tool đang được gọi (kể cả `binding` của tool động)
 
 
 @dataclass(frozen=True)
@@ -93,6 +99,16 @@ class Plugin(ABC):
     async def test_connection(self, connection: ConnectionContext) -> HealthStatus:
         """Connector: kiểm tra kết nối với cấu hình + secret (khi tạo/sửa connection)."""
         return HealthStatus(healthy=True, detail="Connector không hỗ trợ kiểm tra")
+
+    async def discover_tools(self, connection: ConnectionContext) -> list[ToolSpec]:
+        """Connector `dynamic_tools`: khám phá tool cho MỘT connection (đọc OpenAPI, gRPC
+        reflection…). Tên tool phải có tiền tố `<manifest.id>.`; dùng `binding` để nhớ cách gọi."""
+        return []
+
+    def network_targets(self, config: dict[str, Any]) -> list[Endpoint]:
+        """Các đích mạng mà cấu hình connection trỏ tới — core kiểm theo `NetworkPolicy` khi lưu
+        cấu hình (không DNS) và trước mỗi lần dùng (có DNS). Connector nối mạng nên khai báo."""
+        return []
 
     async def poll_trigger(
         self,

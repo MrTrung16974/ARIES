@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from aiagent.adapters.db import Database
 from aiagent.modules.connections.domain import Connection, ConnectionScope, ConnectionStatus
+from aiagent.plugin_sdk import ToolSpec
 from aiagent.shared_kernel.errors import ConflictError, NotFoundError
+
+logger = logging.getLogger(__name__)
 
 _INSERT = text(
     """
@@ -18,20 +23,23 @@ _INSERT = text(
     VALUES (:id, :tenant_id, :name, :connector_id, :scope, :owner_id, CAST(:config AS jsonb),
             CAST(:secret_keys AS jsonb), :status)
     RETURNING id, tenant_id, name, connector_id, scope, owner_id, config, secret_keys, status,
-           last_test_ok, last_test_note, last_test_at, created_at, updated_at
+           last_test_ok, last_test_note, last_test_at, created_at, updated_at,
+           tools, risk_overrides, tools_synced_at
     """
 )
 _GET = text(
     """
     SELECT id, tenant_id, name, connector_id, scope, owner_id, config, secret_keys, status,
-           last_test_ok, last_test_note, last_test_at, created_at, updated_at
+           last_test_ok, last_test_note, last_test_at, created_at, updated_at,
+           tools, risk_overrides, tools_synced_at
       FROM connections.connections WHERE id = :id
     """
 )
 _LIST = text(
     """
     SELECT id, tenant_id, name, connector_id, scope, owner_id, config, secret_keys, status,
-           last_test_ok, last_test_note, last_test_at, created_at, updated_at
+           last_test_ok, last_test_note, last_test_at, created_at, updated_at,
+           tools, risk_overrides, tools_synced_at
       FROM connections.connections
      WHERE status <> 'deleted' ORDER BY name
     """
@@ -41,16 +49,33 @@ _SAVE = text(
     UPDATE connections.connections
        SET name = :name, config = CAST(:config AS jsonb), secret_keys = CAST(:secret_keys AS jsonb),
            status = :status, last_test_ok = :last_test_ok, last_test_note = :last_test_note,
-           last_test_at = :last_test_at, updated_at = now()
+           last_test_at = :last_test_at, tools = CAST(:tools AS jsonb),
+           risk_overrides = CAST(:risk_overrides AS jsonb), tools_synced_at = :tools_synced_at,
+           updated_at = now()
      WHERE id = :id
     RETURNING id, tenant_id, name, connector_id, scope, owner_id, config, secret_keys, status,
-           last_test_ok, last_test_note, last_test_at, created_at, updated_at
+           last_test_ok, last_test_note, last_test_at, created_at, updated_at,
+           tools, risk_overrides, tools_synced_at
     """
 )
 
 
 def _load(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
+
+
+def _tools(value: Any) -> tuple[ToolSpec, ...]:
+    out = []
+    for raw in _load(value) or []:
+        try:
+            out.append(ToolSpec.model_validate(raw))
+        except PydanticValidationError:  # dữ liệu cũ/hỏng: bỏ qua, đồng bộ lại sẽ sửa
+            logger.warning("Bỏ tool động không đọc được: %s", str(raw)[:100])
+    return tuple(out)
+
+
+def _tools_json(tools: tuple[ToolSpec, ...]) -> str:
+    return json.dumps([t.model_dump(mode="json") for t in tools], ensure_ascii=False)
 
 
 def _row(m: Any) -> Connection:
@@ -69,6 +94,9 @@ def _row(m: Any) -> Connection:
         last_test_at=m["last_test_at"],
         created_at=m["created_at"],
         updated_at=m["updated_at"],
+        tools=_tools(m["tools"]),
+        risk_overrides=dict(_load(m["risk_overrides"]) or {}),
+        tools_synced_at=m["tools_synced_at"],
     )
 
 
@@ -126,6 +154,9 @@ class SqlConnectionRepository:
                             "last_test_ok": c.last_test_ok,
                             "last_test_note": c.last_test_note,
                             "last_test_at": c.last_test_at,
+                            "tools": _tools_json(c.tools),
+                            "risk_overrides": json.dumps(c.risk_overrides),
+                            "tools_synced_at": c.tools_synced_at,
                         },
                     )
                 ).first()

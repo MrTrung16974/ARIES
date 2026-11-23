@@ -52,6 +52,7 @@ from aiagent.shared_kernel.events import InProcessEventBus
 from aiagent_plugins.connector_oidc import SsoProfileConnector
 from tests.conftest import AUDIENCE, ISSUER, JWKS_URL
 from tests.fakes import (
+    FakeApiConnector,
     FakeDbConnector,
     FakeOAuthClient,
     FakeUsers,
@@ -107,6 +108,11 @@ def notify() -> NotifySkill:
 @pytest.fixture
 def fakedb() -> FakeDbConnector:
     return FakeDbConnector()
+
+
+@pytest.fixture
+def fakeapi() -> FakeApiConnector:
+    return FakeApiConnector()
 
 
 @pytest.fixture
@@ -174,6 +180,7 @@ async def client(
     conv_repo,
     notify,
     fakedb,
+    fakeapi,
     vault,
     oauth_client,
     kb_repo,
@@ -193,7 +200,7 @@ async def client(
         async def check_redis() -> bool:
             return ready["redis"]
 
-        plugins = PluginRegistry(source=source_with(notify, fakedb, SsoProfileConnector()))
+        plugins = PluginRegistry(source=source_with(notify, fakedb, fakeapi, SsoProfileConnector()))
         plugins.load_all()
         audit = AuditService(audit_log)
         conversations = ConversationService(conv_repo)
@@ -888,6 +895,79 @@ async def test_agent_uses_connection_with_taint_and_approval(
     assert events[0][1]["hidden_tools"] == [f"connection:{conn_id}"]
     assert "tool_start" not in [n for n, _ in events]
     assert fakedb.seen_secrets == ["pw"]
+
+
+async def test_dynamic_tools_sync_override_and_run(
+    client: httpx.AsyncClient,
+    make_token,
+    fakeapi,
+    audit_log,  # type: ignore[no-untyped-def]
+) -> None:
+    builder = auth(make_token(sub="b1", roles=["builder"]))
+    admin = auth(make_token(sub="a1", roles=["admin"]))
+    connectors = (await client.get("/api/v1/connectors", headers=builder)).json()
+    assert next(x for x in connectors if x["id"] == "fakeapi")["dynamic_tools"] is True
+
+    r = await client.post(
+        "/api/v1/connections",
+        headers=builder,
+        json={"name": "API đơn hàng", "connector_id": "fakeapi", "config": {"host": "orders"}},
+    )
+    assert r.status_code == 201, r.text
+    cid = r.json()["id"]
+    assert [t["name"] for t in r.json()["tools"]] == ["fakeapi.ping"]  # chưa đồng bộ
+
+    # Test thành công → tự khám phá tool; tool rác (sai tiền tố/trùng/schema hỏng) bị loại
+    tested = (await client.post(f"/api/v1/connections/{cid}/test", headers=builder)).json()
+    assert tested["last_test_ok"] is True and "Đã đồng bộ 2 tool" in tested["last_test_note"]
+    names = [t["name"] for t in tested["tools"]]
+    assert names == ["fakeapi.ping", "fakeapi.get_order", "fakeapi.delete_order"]
+    assert tested["tools_synced_at"] is not None
+    assert "binding" not in json.dumps(tested) and "/orders" not in json.dumps(tested)
+
+    # Ghi đè rủi ro: Builder chỉ được nâng; Admin được hạ; tool lạ → 422
+    url = f"/api/v1/connections/{cid}"
+    lower = {"risk_overrides": {"fakeapi.delete_order": "read"}}
+    assert (await client.patch(url, headers=builder, json=lower)).status_code == 403
+    bad = {"risk_overrides": {"fakeapi.nope": "write"}}
+    assert (await client.patch(url, headers=builder, json=bad)).status_code == 422
+    raise_ = {"risk_overrides": {"fakeapi.get_order": "write"}}
+    r = await client.patch(url, headers=builder, json=raise_)
+    assert r.status_code == 200 and r.json()["risk_overrides"] == {"fakeapi.get_order": "write"}
+    risks = {t["name"]: t["risk"] for t in r.json()["tools"]}
+    assert risks["fakeapi.get_order"] == "write"
+    r = await client.patch(url, headers=admin, json={"risk_overrides": {}})
+    assert r.status_code == 200 and r.json()["risk_overrides"] == {}
+
+    # Đồng bộ thủ công; connector tool tĩnh thì không cần
+    r = await client.post(f"{url}/sync-tools", headers=builder)
+    assert r.status_code == 200 and len(r.json()["tools"]) == 3
+    assert "connection.tools_synced" in audit_log.actions()
+    db_conn = await _make_connection(client, make_token(sub="b1", roles=["builder"]), "DB")
+    r = await client.post(f"/api/v1/connections/{db_conn}/sync-tools", headers=builder)
+    assert r.status_code == 422
+
+    # Agent gắn tool động: runtime truyền binding qua ctx.tool, output bị coi là không tin cậy
+    spec = {
+        **SPEC,
+        "skills": [],
+        "connections": [{"connection_id": cid, "allowed_tools": ["fakeapi.get_order"]}],
+    }
+    r = await client.post("/api/v1/agents", json={"spec": spec}, headers=builder)
+    assert r.status_code == 201, r.text
+    agent_id = r.json()["id"]
+    await client.post(f"/api/v1/agents/{agent_id}/publish", json={"version": 1}, headers=builder)
+    r = await client.post(
+        f"/api/v1/agents/{agent_id}/chat",
+        headers=builder,
+        json={"message": '/tool fakeapi__get_order {"id": 7}'},
+    )
+    events = parse_sse(r.text)
+    assert events[-1][1]["status"] == "completed", events
+    tool_end = next(d for n, d in events if n == "tool_end")
+    assert tool_end["preview"].startswith("⟦DỮ LIỆU BÊN NGOÀI")
+    assert "GET /orders/{id}" in tool_end["preview"]
+    assert fakeapi.bindings == [{"method": "GET", "path": "/orders/{id}"}]
 
 
 async def _make_connection(client: httpx.AsyncClient, token: str, name: str) -> str:
@@ -2451,3 +2531,4 @@ async def test_check_each_provider_model(client: httpx.AsyncClient, make_token) 
     builder = auth(make_token(sub="b1", roles=["builder"]))
     assert (await client.post(url, headers=builder, json={"models": models})).status_code == 403
     assert (await client.post(url, headers=admin, json={"models": []})).status_code == 422
+

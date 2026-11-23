@@ -34,8 +34,10 @@ class ConnectorOut(BaseModel):
     version: str
     config_schema: dict[str, Any]
     secrets: list[str]
+    optional_secrets: list[str] = []
     tools: list[ConnectorToolOut]
     oauth_provider: str | None = None
+    dynamic_tools: bool = False
     ui_hints: dict[str, Any]
 
 
@@ -55,6 +57,10 @@ class ConnectionOut(BaseModel):
     updated_at: datetime
     can_manage: bool
     can_use: bool
+    # Tool hiệu lực (tĩnh + động); `binding` của tool động không trả ra.
+    tools: list[ConnectorToolOut]
+    risk_overrides: dict[str, str]
+    tools_synced_at: datetime | None
 
 
 class CreateConnectionIn(BaseModel):
@@ -70,6 +76,7 @@ class UpdateConnectionIn(BaseModel):
     config: dict[str, Any] | None = None
     secrets: dict[str, str] | None = Field(default=None, repr=False)
     enabled: bool | None = None
+    risk_overrides: dict[str, str] | None = None
 
 
 def _out(c: Any, p: Principal, conn: Connection) -> ConnectionOut:
@@ -90,6 +97,12 @@ def _out(c: Any, p: Principal, conn: Connection) -> ConnectionOut:
         updated_at=conn.updated_at,
         can_manage=svc.can_manage(p, conn),
         can_use=svc.can_use(p, conn),
+        tools=[
+            ConnectorToolOut(name=t.name, description=t.description, risk=t.risk.value)
+            for t in svc.tools_of(conn)
+        ],
+        risk_overrides=conn.risk_overrides,
+        tools_synced_at=conn.tools_synced_at,
     )
 
 
@@ -103,12 +116,14 @@ async def list_connectors(_: AnyUser, c: ContainerDep) -> list[ConnectorOut]:
             version=m.version,
             config_schema=m.config_schema,
             secrets=list(m.secrets),
+            optional_secrets=list(m.optional_secrets),
             tools=[
                 ConnectorToolOut(name=t.name, description=t.description, risk=t.risk.value)
                 for t in m.tools
             ],
             ui_hints=m.ui_hints,
             oauth_provider=m.oauth_provider,
+            dynamic_tools=m.dynamic_tools,
         )
         for m in c.connections.connectors()
     ]
@@ -148,6 +163,7 @@ async def update_connection(
         config=body.config,
         secrets=body.secrets,
         enabled=body.enabled,
+        risk_overrides=body.risk_overrides,
     )
     return _out(c, p, conn)
 
@@ -155,6 +171,12 @@ async def update_connection(
 @router.post("/connections/{connection_id}/test", response_model=ConnectionOut)
 async def test_connection(connection_id: UUID, p: AnyUser, c: ContainerDep) -> ConnectionOut:
     return _out(c, p, await c.connections.test(p, connection_id))
+
+
+@router.post("/connections/{connection_id}/sync-tools", response_model=ConnectionOut)
+async def sync_connection_tools(connection_id: UUID, p: AnyUser, c: ContainerDep) -> ConnectionOut:
+    """Khám phá lại tool động của connection (OpenAPI, gRPC reflection…) — ADR-0023."""
+    return _out(c, p, await c.connections.sync_tools(p, connection_id))
 
 
 @router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)

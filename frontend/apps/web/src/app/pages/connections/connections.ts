@@ -23,10 +23,11 @@ import { Notice, Tag } from '@aiagent/ui';
 interface FieldDef {
   key: string;
   label: string;
-  kind: 'text' | 'number' | 'boolean' | 'select' | 'list';
+  kind: 'text' | 'number' | 'boolean' | 'select' | 'list' | 'textarea';
   required: boolean;
   options: string[];
   hint: string;
+  placeholder: string;
 }
 
 /** Sinh trường form từ config_schema của connector (chỉ các kiểu đơn giản). */
@@ -35,6 +36,7 @@ export function fieldsOf(schema: JsonSchema): FieldDef[] {
   return Object.entries(schema.properties ?? {}).map(([key, p]) => {
     let kind: FieldDef['kind'] = 'text';
     if (p.enum) kind = 'select';
+    else if (p.type === 'string' && p.contentMediaType) kind = 'textarea';
     else if (p.type === 'integer' || p.type === 'number') kind = 'number';
     else if (p.type === 'boolean') kind = 'boolean';
     else if (p.type === 'array') kind = 'list';
@@ -44,6 +46,12 @@ export function fieldsOf(schema: JsonSchema): FieldDef[] {
       kind,
       required: required.has(key),
       options: (p.enum ?? []).map(String),
+      placeholder:
+        p.contentMediaType === 'application/x-pem-file'
+          ? '-----BEGIN CERTIFICATE-----'
+          : p.contentMediaType === 'text/x-protobuf'
+            ? 'syntax = "proto3";'
+            : '',
       hint: kind === 'list' ? 'Phân tách bằng dấu phẩy' : (p.description ?? ''),
     };
   });
@@ -285,6 +293,24 @@ function initialValues(
                     </mat-select>
                   </mat-form-field>
                 }
+                @case ('textarea') {
+                  <mat-form-field appearance="outline" class="wide">
+                    <mat-label>{{ f.label }}</mat-label>
+                    <textarea
+                      matInput
+                      class="pem"
+                      rows="4"
+                      spellcheck="false"
+                      [name]="f.key"
+                      [(ngModel)]="e.values[f.key]"
+                      [required]="f.required"
+                      [placeholder]="f.placeholder"
+                    ></textarea>
+                    @if (f.hint) {
+                      <mat-hint>{{ f.hint }}</mat-hint>
+                    }
+                  </mat-form-field>
+                }
                 @default {
                   <mat-form-field appearance="outline">
                     <mat-label>{{ f.label }}</mat-label>
@@ -303,21 +329,38 @@ function initialValues(
               }
             }
             @for (s of c.secrets; track s) {
-              <mat-form-field appearance="outline">
+              <mat-form-field appearance="outline" [class.wide]="isMultilineSecret(c, s)">
                 <mat-label>
                   <mat-icon class="sm" svgIcon="key" aria-hidden="true" />
                   {{ s }}
                 </mat-label>
-                <input
-                  matInput
-                  type="password"
-                  autocomplete="new-password"
-                  [name]="'secret_' + s"
-                  [(ngModel)]="e.secrets[s]"
-                  [required]="!e.id"
-                />
+                @if (isMultilineSecret(c, s)) {
+                  <!-- Khóa riêng PEM: ô nhiều dòng, che chữ bằng CSS; không bao giờ hiển thị lại -->
+                  <textarea
+                    matInput
+                    class="pem secret"
+                    rows="4"
+                    spellcheck="false"
+                    autocomplete="off"
+                    [name]="'secret_' + s"
+                    [(ngModel)]="e.secrets[s]"
+                    [required]="!e.id && !(c.optional_secrets ?? []).includes(s)"
+                    placeholder="-----BEGIN PRIVATE KEY-----"
+                  ></textarea>
+                } @else {
+                  <input
+                    matInput
+                    type="password"
+                    autocomplete="new-password"
+                    [name]="'secret_' + s"
+                    [(ngModel)]="e.secrets[s]"
+                    [required]="!e.id && !(c.optional_secrets ?? []).includes(s)"
+                  />
+                }
                 @if (e.id) {
                   <mat-hint>Để trống = giữ nguyên giá trị đã lưu</mat-hint>
+                } @else if ((c.optional_secrets ?? []).includes(s)) {
+                  <mat-hint>Không bắt buộc</mat-hint>
                 }
               </mat-form-field>
             }
@@ -384,6 +427,21 @@ function initialValues(
               </div>
             </div>
 
+            @if (isDynamic(c)) {
+              <div class="cfg">
+                @for (t of c.tools; track t.name) {
+                  <span
+                    class="flow-chip"
+                    [class.chip-read]="t.risk === 'read'"
+                    [title]="t.description + ' · rủi ro: ' + t.risk"
+                    >{{ t.name }}</span
+                  >
+                } @empty {
+                  <span class="flow-chip">Chưa có tool — bấm “Đồng bộ tool”</span>
+                }
+              </div>
+            }
+
             @if (c.last_test_at) {
               <ui-notice
                 [severity]="c.last_test_ok ? 'success' : 'error'"
@@ -406,6 +464,17 @@ function initialValues(
                   <mat-icon svgIcon="play_arrow" />
                   {{ busyId() === c.id ? 'Đang kiểm tra…' : 'Kiểm tra' }}
                 </button>
+                @if (isDynamic(c)) {
+                  <button
+                    mat-stroked-button
+                    class="pill-btn"
+                    type="button"
+                    (click)="syncTools(c)"
+                    [disabled]="busyId() === c.id"
+                  >
+                    <mat-icon svgIcon="sync" /> Đồng bộ tool
+                  </button>
+                }
                 <button
                   mat-stroked-button
                   class="pill-btn"
@@ -517,6 +586,17 @@ function initialValues(
       grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
       gap: 0.3rem 0.9rem;
       align-items: center;
+    }
+    .grid .wide {
+      grid-column: 1 / -1;
+    }
+    textarea.pem {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem;
+      line-height: 1.35;
+    }
+    textarea.secret {
+      -webkit-text-security: disc; /* che khóa riêng khi nhập */
     }
     .oauth-box {
       padding: 0.85rem 1rem;
@@ -669,7 +749,17 @@ export class Connections implements OnInit {
     return Object.entries(c.config)
       .filter(([, v]) => v !== '' && v !== null && !(Array.isArray(v) && !v.length))
       .slice(0, 6)
-      .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : String(v)}`);
+      .map(([k, v]) => {
+        const text = Array.isArray(v) ? v.join(',') : String(v);
+        if (text.includes('-----BEGIN ')) return `${k}=(PEM)`;
+        return `${k}=${text.length > 60 ? text.slice(0, 60) + '…' : text}`;
+      });
+  }
+
+  /** Secret nhiều dòng (khóa riêng PEM) do connector khai báo trong ui_hints. */
+  protected isMultilineSecret(c: ConnectorInfo, s: string): boolean {
+    const list = c.ui_hints?.['multiline_secrets'];
+    return Array.isArray(list) && list.includes(s);
   }
 
   protected providerName(id: string): string | null {
@@ -752,6 +842,25 @@ export class Connections implements OnInit {
   protected test(c: ConnectionInfo): void {
     this.busyId.set(c.id);
     this.api.test(c.id).subscribe({
+      next: () => {
+        this.busyId.set(null);
+        this.reload();
+      },
+      error: (err) => {
+        this.busyId.set(null);
+        this.fail(err);
+      },
+    });
+  }
+
+  /** Connector có tool khám phá theo từng kết nối (OpenAPI, gRPC…) — ADR-0023. */
+  protected isDynamic(c: ConnectionInfo): boolean {
+    return !!this.connectors().find((x) => x.id === c.connector_id)?.dynamic_tools;
+  }
+
+  protected syncTools(c: ConnectionInfo): void {
+    this.busyId.set(c.id);
+    this.api.syncTools(c.id).subscribe({
       next: () => {
         this.busyId.set(null);
         this.reload();

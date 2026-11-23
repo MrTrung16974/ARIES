@@ -6,39 +6,19 @@ egress qua proxy (Squid) có allowlist để đóng hẳn.
 
 from __future__ import annotations
 
-import asyncio
-import ipaddress
-import socket
-from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
+from aiagent.plugin_sdk.net import Resolver, system_resolver
+from aiagent.plugin_sdk.net import ip_literal as _ip_literal
+from aiagent.plugin_sdk.net import is_public as _is_public
+
 ALLOWED_PORTS = frozenset({80, 443, 8080, 8443})
-Resolver = Callable[[str, int], Awaitable[list[str]]]
+
+__all__ = ["ALLOWED_PORTS", "BlockedUrlError", "Resolver", "check_url", "system_resolver"]
 
 
 class BlockedUrlError(ValueError):
     """URL bị chặn — thông điệp an toàn để trả về model."""
-
-
-async def system_resolver(host: str, port: int) -> list[str]:
-    infos = await asyncio.get_running_loop().getaddrinfo(
-        host, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP
-    )
-    return sorted({str(info[4][0]) for info in infos})
-
-
-def _ip_literal(host: str) -> str | None:
-    try:
-        return str(ipaddress.ip_address(host.strip("[]")))
-    except ValueError:
-        return None
-
-
-def _is_public(ip: str) -> bool:
-    addr = ipaddress.ip_address(ip)
-    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
-        addr = addr.ipv4_mapped
-    return addr.is_global and not addr.is_multicast
 
 
 async def check_url(url: str, resolver: Resolver | None = system_resolver) -> str:

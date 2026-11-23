@@ -19,10 +19,12 @@ from uuid import UUID, uuid4
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from pydantic import ValidationError as PydanticValidationError
 
 from aiagent.modules.audit.application import AuditService
 from aiagent.modules.audit.domain import Outcome
 from aiagent.modules.connections.domain import (
+    RISK_ORDER,
     Connection,
     ConnectionRepositoryPort,
     ConnectionScope,
@@ -32,10 +34,20 @@ from aiagent.modules.connections.domain import (
     OAuthProvider,
     SecretVaultPort,
     TokenSet,
+    effective_tools,
     secret_path,
 )
 from aiagent.modules.identity.domain import Principal, Role
-from aiagent.plugin_sdk import ConnectionContext, PluginKind, PluginManifest
+from aiagent.plugin_sdk import (
+    BlockedEndpointError,
+    ConnectionContext,
+    NetworkPolicy,
+    Plugin,
+    PluginKind,
+    PluginManifest,
+    RiskLevel,
+    ToolSpec,
+)
 from aiagent.shared_kernel.clock import utcnow
 from aiagent.shared_kernel.errors import (
     AppError,
@@ -50,6 +62,8 @@ _TOKEN_MARGIN_S = 60
 _NAME_RE = re.compile(r"^[\w][\w .\-()]{0,79}$", re.UNICODE)
 MAX_SECRET_CHARS = 8192
 TEST_TIMEOUT_S = 15.0
+DISCOVER_TIMEOUT_S = 30.0
+MAX_DYNAMIC_TOOLS = 200
 
 
 class ConnectionService:
@@ -62,6 +76,7 @@ class ConnectionService:
         *,
         oauth: OAuthClientPort | None = None,
         providers: dict[str, OAuthProvider] | None = None,
+        network: NetworkPolicy | None = None,
     ) -> None:
         self._repo = repo
         self._vault = vault
@@ -70,6 +85,8 @@ class ConnectionService:
         self._oauth = oauth
         self.providers: dict[str, OAuthProvider] = dict(providers or {})
         self._refresh_lock = asyncio.Lock()
+        # None = không kiểm đích mạng (chỉ dùng trong test); container luôn truyền chính sách.
+        self._network = network
 
     # ------------------------------------------------------------------ quyền
     @staticmethod
@@ -98,6 +115,31 @@ class ConnectionService:
         if plugin is None or plugin.manifest.kind is not PluginKind.CONNECTOR:
             raise ValidationError(f"Connector '{connector_id}' không tồn tại hoặc đang tắt.")
         return plugin.manifest
+
+    def tools_of(self, c: Connection) -> list[ToolSpec]:
+        """Tool hiệu lực của connection (tĩnh + động); [] nếu connector đang tắt."""
+        plugin = self._connectors.get(c.connector_id)
+        if plugin is None or plugin.manifest.kind is not PluginKind.CONNECTOR:
+            return []
+        return effective_tools(plugin.manifest, c)
+
+    def _check_targets_syntax(self, connector_id: str, config: dict[str, Any]) -> None:
+        """Lúc lưu cấu hình: chặn sớm đích mạng rõ ràng bị cấm (không phân giải DNS)."""
+        plugin = self._connectors.get(connector_id)
+        if self._network is None or plugin is None:
+            return
+        try:
+            for target in plugin.network_targets(config):
+                self._network.check_syntax(target)
+        except BlockedEndpointError as exc:
+            raise ValidationError(str(exc)) from exc
+
+    async def _check_targets(self, plugin: Plugin | None, c: Connection) -> None:
+        """Trước mỗi lần dùng: kiểm đầy đủ (kể cả IP phân giải ra)."""
+        if self._network is None or plugin is None:
+            return
+        for target in plugin.network_targets(c.config):
+            await self._network.check(target)
 
     @staticmethod
     def _check_config(manifest: PluginManifest, config: dict[str, Any]) -> dict[str, Any]:
@@ -173,8 +215,9 @@ class ConnectionService:
             raise ValidationError("Connector này kết nối bằng OAuth — dùng nút “Kết nối với …”.")
         name = self.check_name(name)
         self._check_config(manifest, config)
+        self._check_targets_syntax(connector_id, config)
         secrets = {k: v for k, v in self._check_secrets(manifest, secrets).items() if v}
-        missing = set(manifest.secrets) - set(secrets)
+        missing = set(manifest.secrets) - set(manifest.optional_secrets) - set(secrets)
         if missing:
             raise ValidationError(f"Thiếu secret: {', '.join(sorted(missing))}")
         return await self._store(principal, name, connector_id, scope, config, secrets)
@@ -262,6 +305,7 @@ class ConnectionService:
         config: dict[str, Any] | None = None,
         secrets: dict[str, str] | None = None,
         enabled: bool | None = None,
+        risk_overrides: dict[str, str] | None = None,
     ) -> Connection:
         c = await self._managed(principal, connection_id)
         manifest = self.manifest_of(c.connector_id)
@@ -270,6 +314,7 @@ class ConnectionService:
             changes["name"] = self.check_name(name)
         if config is not None:
             changes["config"] = self._check_config(manifest, config)
+            self._check_targets_syntax(c.connector_id, config)
         if secrets:
             # Chỉ ghi đè key có giá trị mới; key bỏ trống giữ nguyên giá trị cũ.
             fresh = {k: v for k, v in self._check_secrets(manifest, secrets).items() if v}
@@ -280,6 +325,8 @@ class ConnectionService:
                 changes["secret_keys"] = sorted(merged)
         if enabled is not None:
             changes["status"] = ConnectionStatus.ACTIVE if enabled else ConnectionStatus.DISABLED
+        if risk_overrides is not None:
+            changes["risk_overrides"] = self._check_overrides(principal, c, risk_overrides)
         if not changes:
             return c
         saved = await self._repo.save(replace(c, **changes, updated_at=utcnow()))
@@ -299,18 +346,36 @@ class ConnectionService:
         plugin = self._connectors.get(c.connector_id)
         if plugin is None:
             raise ValidationError(f"Connector '{c.connector_id}' đang tắt.")
-        ctx = await self._context(c)
+        tool_changes: dict[str, Any] = {}
         try:
-            async with asyncio.timeout(TEST_TIMEOUT_S):
-                status = await plugin.test_connection(ctx)
-            ok, note = status.healthy, status.detail
-        except TimeoutError:
-            ok, note = False, f"Quá thời gian ({TEST_TIMEOUT_S:.0f}s)."
-        except Exception:
-            logger.exception("Test connection %s lỗi", c.id)
-            ok, note = False, "Connector gặp lỗi nội bộ khi kiểm tra."
+            ctx = await self._context(c)
+        except BlockedEndpointError as exc:
+            ok, note = False, f"Đích mạng bị chặn: {exc}"
+        else:
+            try:
+                async with asyncio.timeout(TEST_TIMEOUT_S):
+                    status = await plugin.test_connection(ctx)
+                ok, note = status.healthy, status.detail
+            except TimeoutError:
+                ok, note = False, f"Quá thời gian ({TEST_TIMEOUT_S:.0f}s)."
+            except Exception:
+                logger.exception("Test connection %s lỗi", c.id)
+                ok, note = False, "Connector gặp lỗi nội bộ khi kiểm tra."
+            if ok and plugin.manifest.dynamic_tools:
+                # Kết nối tốt → làm mới luôn danh sách tool (UI tự test sau khi lưu).
+                try:
+                    tool_changes = self._tool_changes(c, await self._discover(plugin, ctx))
+                    note = f"{note} Đã đồng bộ {len(tool_changes['tools'])} tool.".strip()
+                except AppError as exc:
+                    note = f"{note} Không đồng bộ được tool: {exc.message}".strip()
         saved = await self._repo.save(
-            replace(c, last_test_ok=ok, last_test_note=note[:500], last_test_at=utcnow())
+            replace(
+                c,
+                **tool_changes,
+                last_test_ok=ok,
+                last_test_note=note[:500],
+                last_test_at=utcnow(),
+            )
         )
         await self._record(
             principal,
@@ -320,6 +385,94 @@ class ConnectionService:
             outcome=Outcome.SUCCESS if ok else Outcome.FAILURE,
         )
         return saved
+
+    # ------------------------------------------------------------------ tool động (ADR-0023)
+    async def sync_tools(self, principal: Principal, connection_id: UUID) -> Connection:
+        """Gọi connector khám phá lại tool của connection (OpenAPI, gRPC reflection…)."""
+        c = await self._managed(principal, connection_id)
+        plugin = self._connectors.get(c.connector_id)
+        if plugin is None:
+            raise ValidationError(f"Connector '{c.connector_id}' đang tắt.")
+        if not plugin.manifest.dynamic_tools:
+            raise ValidationError("Connector này có bộ tool cố định — không cần đồng bộ.")
+        try:
+            ctx = await self._context(c)
+        except BlockedEndpointError as exc:
+            raise ValidationError(f"Đích mạng bị chặn: {exc}") from exc
+        changes = self._tool_changes(c, await self._discover(plugin, ctx))
+        saved = await self._repo.save(replace(c, **changes, updated_at=utcnow()))
+        await self._record(principal, "connection.tools_synced", saved, {"tools": len(saved.tools)})
+        return saved
+
+    async def _discover(self, plugin: Plugin, ctx: ConnectionContext) -> tuple[ToolSpec, ...]:
+        try:
+            async with asyncio.timeout(DISCOVER_TIMEOUT_S):
+                raw = await plugin.discover_tools(ctx)
+        except TimeoutError as exc:
+            raise AppError(f"Khám phá tool quá thời gian ({DISCOVER_TIMEOUT_S:.0f}s).") from exc
+        except (ConnectionError, OSError, BlockedEndpointError) as exc:
+            raise AppError(str(exc)[:300] or "Không kết nối được để khám phá tool.") from exc
+        except AppError:
+            raise
+        except Exception as exc:
+            logger.exception("Connector %s lỗi khi khám phá tool", plugin.manifest.id)
+            raise AppError("Connector gặp lỗi nội bộ khi khám phá tool.") from exc
+        return self._sanitize_tools(plugin.manifest, raw)
+
+    @staticmethod
+    def _sanitize_tools(manifest: PluginManifest, raw: list[ToolSpec]) -> tuple[ToolSpec, ...]:
+        """Tool động từ hệ thống ngoài: bắt buộc tiền tố, không trùng tool tĩnh, schema hợp lệ,
+        output luôn không tin cậy, giới hạn số lượng."""
+        prefix = f"{manifest.id}."
+        seen = {t.name for t in manifest.tools}
+        out: list[ToolSpec] = []
+        for item in raw:
+            try:
+                tool = item if isinstance(item, ToolSpec) else ToolSpec.model_validate(item)
+                Draft202012Validator.check_schema(tool.input_schema)
+            except (PydanticValidationError, SchemaError):
+                logger.warning("Bỏ tool động không hợp lệ của connector %s", manifest.id)
+                continue
+            if not tool.name.startswith(prefix) or tool.name in seen:
+                logger.warning("Bỏ tool động %s (sai tiền tố hoặc trùng tên)", tool.name)
+                continue
+            seen.add(tool.name)
+            out.append(tool.model_copy(update={"untrusted_output": True}))
+            if len(out) >= MAX_DYNAMIC_TOOLS:
+                logger.warning("Connector %s trả quá %d tool — cắt bớt", manifest.id, len(raw))
+                break
+        return tuple(out)
+
+    @staticmethod
+    def _tool_changes(c: Connection, tools: tuple[ToolSpec, ...]) -> dict[str, Any]:
+        names = {t.name for t in tools}
+        return {
+            "tools": tools,
+            # Bỏ ghi đè của tool không còn tồn tại.
+            "risk_overrides": {k: v for k, v in c.risk_overrides.items() if k in names},
+            "tools_synced_at": utcnow(),
+        }
+
+    @staticmethod
+    def _check_overrides(
+        principal: Principal, c: Connection, overrides: dict[str, str]
+    ) -> dict[str, str]:
+        """Ghi đè rủi ro tool động. Chỉ Admin được HẠ mức rủi ro (bớt bước duyệt)."""
+        known = {t.name: t for t in c.tools}
+        out: dict[str, str] = {}
+        for name, value in overrides.items():
+            tool = known.get(name)
+            if tool is None:
+                raise ValidationError(f"Kết nối không có tool động '{name}'.")
+            try:
+                risk = RiskLevel(value)
+            except ValueError as exc:
+                raise ValidationError(f"Mức rủi ro không hợp lệ: {value}") from exc
+            if RISK_ORDER[risk] < RISK_ORDER[tool.risk] and not principal.has_any_role(Role.ADMIN):
+                raise ForbiddenError("Chỉ Admin được hạ mức rủi ro của tool.")
+            if risk is not tool.risk:
+                out[name] = risk.value
+        return out
 
     # ------------------------------------------------------------------ broker
     async def usable(self, principal: Principal, connection_ids: list[str]) -> list[Connection]:
@@ -339,9 +492,14 @@ class ConnectionService:
         c = await self._repo.get(principal.tenant_id, UUID(connection_id))
         if c is None or not self.can_use(principal, c):
             raise ForbiddenError("Kết nối không còn khả dụng với bạn.")
-        return await self._context(c)
+        try:
+            return await self._context(c)
+        except BlockedEndpointError as exc:
+            raise ForbiddenError(f"Kết nối '{c.name}' trỏ tới đích mạng bị chặn: {exc}") from exc
 
     async def _context(self, c: Connection) -> ConnectionContext:
+        """BlockedEndpointError nếu cấu hình trỏ tới đích mạng bị cấm."""
+        await self._check_targets(self._connectors.get(c.connector_id), c)
         secrets = await self._vault.get(secret_path(c.tenant_id, c.id)) if c.secret_keys else {}
         if set(c.secret_keys) - set(secrets):
             # OpenBao chế độ dev lưu trong RAM: khởi động lại là mất secret.
@@ -357,6 +515,7 @@ class ConnectionService:
             connector_id=c.connector_id,
             config=dict(c.config),
             secrets=secrets,
+            network=self._network,
         )
 
     async def _fresh_access_token(

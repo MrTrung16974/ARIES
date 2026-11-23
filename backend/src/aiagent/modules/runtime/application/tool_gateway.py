@@ -85,6 +85,8 @@ class ConnectionRef:
     id: str
     name: str
     connector_id: str
+    # Tool hiệu lực của connection (tĩnh + động, ADR-0023); None = dùng manifest của connector.
+    tools: tuple[ToolSpec, ...] | None = None
 
 
 class ConnectionAccessPort(Protocol):
@@ -246,21 +248,14 @@ class BoundTools:
                 "preview": content,
             }
 
-        ctx = self.ctx
+        ctx = replace(self.ctx, tool=bound.spec)
         citations: object = None
         try:
             if bound.connection is not None:
                 if self.access is None:
                     raise AppError("Credential broker chưa được cấu hình.")
                 connection = await self.access.open(self.principal, bound.connection.id)
-                ctx = ToolContext(
-                    tenant_id=ctx.tenant_id,
-                    user_id=ctx.user_id,
-                    agent_id=ctx.agent_id,
-                    run_id=ctx.run_id,
-                    config=ctx.config,
-                    connection=connection,
-                )
+                ctx = replace(ctx, connection=connection)
             async with asyncio.timeout(self.timeout_s):
                 result = await bound.plugin.call_tool(name, arguments, ctx)
             content, is_error = result.content, result.is_error
@@ -404,7 +399,8 @@ class ToolGateway:
                     bound.hidden.append(f"connector:{ref.connector_id}")
                     continue
                 allowed = set(conn.allowed_tools)
-                for tool in plugin.manifest.tools:
+                tools = ref.tools if ref.tools is not None else plugin.manifest.tools
+                for tool in tools:
                     if not allowed or tool.name in allowed:
                         self._add(bound, plugin, tool, ref)
 

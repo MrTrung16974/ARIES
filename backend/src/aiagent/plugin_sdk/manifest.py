@@ -67,6 +67,9 @@ class ToolSpec(BaseModel):
     # Tool đọc nhưng gọi ra mạng theo URL trong tham số (web.fetch…): khi run đã nhiễm, chỉ được
     # gọi URL đã có nguyên văn trong hội thoại — chặn rò dữ liệu qua query string (ADR-0021).
     network: bool = False
+    # Dữ liệu riêng của plugin cho tool động (method + path, tên RPC…). Core lưu cùng tool và
+    # trả lại qua `ToolContext.tool`; KHÔNG gửi cho model.
+    binding: dict[str, Any] = Field(default_factory=dict)
 
 
 class TriggerSpec(BaseModel):
@@ -90,12 +93,18 @@ class PluginManifest(BaseModel):
     api_version: int = Field(ge=1)
     config_schema: dict[str, Any] = Field(default_factory=dict)
     secrets: tuple[str, ...] = ()
+    # Secret không bắt buộc lúc tạo connection (vd. API không xác thực) — tập con của `secrets`.
+    optional_secrets: tuple[str, ...] = ()
     # Connector dùng OAuth (ADR-0018): broker lấy/làm mới access token, plugin chỉ nhận
     # `secrets["access_token"]` (không bao giờ thấy refresh token).
     oauth_provider: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{1,30}$")
     oauth_scopes: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()
     tools: tuple[ToolSpec, ...] = ()
+    # Connector có tool khác nhau theo từng connection (OpenAPI, gRPC reflection…): core gọi
+    # `Plugin.discover_tools` khi kiểm tra/đồng bộ và lưu kết quả cùng connection (ADR-0023).
+    # Tên tool động phải có tiền tố `<id>.`; output luôn bị coi là không tin cậy.
+    dynamic_tools: bool = False
     triggers: tuple[TriggerSpec, ...] = ()
     ui_hints: dict[str, Any] = Field(default_factory=dict)
 

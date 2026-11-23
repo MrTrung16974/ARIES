@@ -294,6 +294,11 @@ export class AgentEditor implements OnInit {
     return this.connectors().find((x) => x.id === c.connector_id);
   }
 
+  /** Tool của chính kết nối (có cả tool động); API cũ không có thì lấy theo connector. */
+  protected connectionTools(c: ConnectionInfo): ConnectorInfo['tools'] {
+    return c.tools ?? this.connectorOf(c)?.tools ?? [];
+  }
+
   /** Kết nối hiển thị: được dùng, hoặc đã gắn sẵn trong spec (vẫn giữ được). */
   protected readonly connectionChoices = computed(() => this.connections());
 
@@ -310,7 +315,7 @@ export class AgentEditor implements OnInit {
       return;
     }
     // Mặc định chỉ tool đọc; tool ghi/phá hủy phải chủ động bật (và vẫn cần duyệt).
-    const read = (this.connectorOf(c)?.tools ?? [])
+    const read = this.connectionTools(c)
       .filter((t) => t.risk === 'read')
       .map((t) => t.name);
     this.spec.connections = [
@@ -331,7 +336,7 @@ export class AgentEditor implements OnInit {
   protected toggleConnTool(c: ConnectionInfo, tool: string, on: boolean): void {
     const b = this.spec.connections.find((x) => x.connection_id === c.id);
     if (!b) return;
-    const all = (this.connectorOf(c)?.tools ?? []).map((t) => t.name);
+    const all = this.connectionTools(c).map((t) => t.name);
     const current = b.allowed_tools.length ? b.allowed_tools : all;
     const next = on
       ? [...new Set([...current, tool])]

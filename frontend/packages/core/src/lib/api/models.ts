@@ -365,9 +365,13 @@ export interface ConnectorInfo {
   version: string;
   config_schema: JsonSchema;
   secrets: string[];
+  /** Secret được để trống lúc tạo (vd. API không cần xác thực). */
+  optional_secrets?: string[];
   tools: ToolSpec[];
   ui_hints: Record<string, unknown>;
   oauth_provider: string | null;
+  /** Tool khám phá theo từng kết nối (OpenAPI, gRPC…) — ADR-0023. */
+  dynamic_tools: boolean;
 }
 
 export interface JsonSchema {
@@ -381,6 +385,8 @@ export interface JsonSchema {
   items?: JsonSchema;
   minimum?: number;
   maximum?: number;
+  /** `application/x-pem-file` → ô nhập nhiều dòng (chứng chỉ PEM). */
+  contentMediaType?: string;
 }
 
 export type ConnectionScope = 'personal' | 'workspace';
@@ -401,6 +407,10 @@ export interface ConnectionInfo {
   updated_at: string;
   can_manage: boolean;
   can_use: boolean;
+  /** Tool hiệu lực của kết nối (tĩnh + động, đã áp mức rủi ro ghi đè). */
+  tools: ToolSpec[];
+  risk_overrides: Record<string, ToolSpec['risk']>;
+  tools_synced_at: string | null;
 }
 
 export interface CreateConnection {
@@ -416,6 +426,7 @@ export interface UpdateConnection {
   config?: Record<string, unknown>;
   secrets?: Record<string, string>;
   enabled?: boolean;
+  risk_overrides?: Record<string, ToolSpec['risk']>;
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';

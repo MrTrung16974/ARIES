@@ -12,7 +12,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
 
-from aiagent.plugin_sdk import Plugin, PluginManifest
+from aiagent.plugin_sdk import Plugin, PluginManifest, RiskLevel, ToolSpec
 
 
 class ConnectionScope(StrEnum):
@@ -42,6 +42,33 @@ class Connection:
     last_test_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    # Tool động do connector khám phá cho riêng connection này (ADR-0023) + mức rủi ro ghi đè.
+    tools: tuple[ToolSpec, ...] = ()
+    risk_overrides: dict[str, str] = field(default_factory=dict)
+    tools_synced_at: datetime | None = None
+
+
+RISK_ORDER: dict[RiskLevel, int] = {
+    RiskLevel.READ: 0,
+    RiskLevel.WRITE: 1,
+    RiskLevel.EXTERNAL_SEND: 2,
+    RiskLevel.DESTRUCTIVE: 3,
+}
+
+
+def effective_tools(manifest: PluginManifest, c: Connection) -> list[ToolSpec]:
+    """Tool dùng được của connection: tool tĩnh của connector + tool động (đã áp risk ghi đè)."""
+    out = list(manifest.tools)
+    seen = {t.name for t in out}
+    if not manifest.dynamic_tools:
+        return out
+    for t in c.tools:
+        if t.name in seen:
+            continue
+        seen.add(t.name)
+        override = c.risk_overrides.get(t.name)
+        out.append(t.model_copy(update={"risk": RiskLevel(override)}) if override else t)
+    return out
 
 
 def secret_path(tenant_id: str, connection_id: UUID) -> str:
@@ -120,6 +147,7 @@ class ConnectorLookupPort(Protocol):
 
 
 __all__ = [
+    "RISK_ORDER",
     "Connection",
     "ConnectionRepositoryPort",
     "ConnectionScope",
@@ -130,5 +158,6 @@ __all__ = [
     "OAuthStatePort",
     "SecretVaultPort",
     "TokenSet",
+    "effective_tools",
     "secret_path",
 ]

@@ -19,6 +19,7 @@ import asyncpg
 from aiagent.plugin_sdk import (
     PLUGIN_API_VERSION,
     ConnectionContext,
+    Endpoint,
     HealthStatus,
     Plugin,
     PluginKind,
@@ -287,6 +288,10 @@ class PostgresConnector(Plugin):
         async with self._connect(conn, readonly=False) as db:
             status = await db.execute(tree.sql(dialect="postgres"))
         return ToolResult(f"Đã thực hiện: {status}")
+
+    def network_targets(self, config: dict[str, Any]) -> list[Endpoint]:
+        host = config.get("host")
+        return [Endpoint(str(host), int(config.get("port", 5432)))] if host else []
 
     async def test_connection(self, connection: ConnectionContext) -> HealthStatus:
         try:

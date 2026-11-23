@@ -7,6 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import cast
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import SecretStr
@@ -110,7 +111,14 @@ from aiagent.modules.runtime.infrastructure.openai_compat_model import (
 from aiagent.modules.runtime.infrastructure.provider_factory import DefaultProviderFactory
 from aiagent.modules.runtime.infrastructure.react_graph import LangGraphReactLoop
 from aiagent.modules.runtime.infrastructure.sql_provider_repository import SqlProviderRepository
-from aiagent.plugin_sdk import ConnectionContext, Plugin, PluginKind, PluginManifest, ToolSpec
+from aiagent.plugin_sdk import (
+    ConnectionContext,
+    NetworkPolicy,
+    Plugin,
+    PluginKind,
+    PluginManifest,
+    ToolSpec,
+)
 from aiagent.shared_kernel.events import EventBusPort, InProcessEventBus
 
 logger = logging.getLogger(__name__)
@@ -158,10 +166,9 @@ class ConnectionCatalogAdapter:
 
     async def tools_for(self, principal: Principal, connection_id: str) -> list[ToolSpec] | None:
         found = await self._service.usable(principal, [connection_id])
-        if not found:
+        if not found or self._plugins.get(found[0].connector_id) is None:
             return None
-        plugin = self._plugins.get(found[0].connector_id)
-        return list(plugin.manifest.tools) if plugin is not None else None
+        return self._service.tools_of(found[0])
 
 
 class ConnectionAccessAdapter:
@@ -172,7 +179,10 @@ class ConnectionAccessAdapter:
 
     async def usable(self, principal: Principal, connection_ids: list[str]) -> list[ConnectionRef]:
         found = await self._service.usable(principal, connection_ids)
-        return [ConnectionRef(str(c.id), c.name, c.connector_id) for c in found]
+        return [
+            ConnectionRef(str(c.id), c.name, c.connector_id, tuple(self._service.tools_of(c)))
+            for c in found
+        ]
 
     async def open(self, principal: Principal, connection_id: str) -> ConnectionContext:
         return await self._service.open(principal, connection_id)
@@ -212,9 +222,13 @@ class PluginCatalogProvider:
             plugin = self._plugins.get(c.connector_id)
             if plugin is None or not self._connections.can_use(principal, c):
                 continue
-            m = plugin.manifest
-            tools = [CatalogTool(t.name, t.description, t.risk.value) for t in m.tools]
-            out.append(CatalogConnection(str(c.id), c.name, c.connector_id, m.name, tools))
+            tools = [
+                CatalogTool(t.name, t.description, t.risk.value)
+                for t in self._connections.tools_of(c)
+            ]
+            out.append(
+                CatalogConnection(str(c.id), c.name, c.connector_id, plugin.manifest.name, tools)
+            )
         return out
 
     async def catalog_for(self, principal: Principal) -> Catalog:
@@ -317,6 +331,55 @@ class Container:
         names = list(self.health_checks)
         results = await asyncio.gather(*(run(self.health_checks[n]) for n in names))
         return dict(zip(names, results, strict=True))
+
+
+# Tên dịch vụ hạ tầng trong deploy/docker-compose.yml — connector không được trỏ vào.
+_INFRA_HOSTS = (
+    "traefik",
+    "postgres",
+    "redis",
+    "openbao",
+    "searxng",
+    "squid",
+    "ollama",
+    "embedder",
+    "reranker",
+    "keycloak",
+    "api",
+    "worker",
+    "web",
+)
+
+
+def build_network_policy(settings: Settings) -> NetworkPolicy:
+    """Chính sách đích mạng cho connector (ADR-0023): chặn hạ tầng của chính ARIES."""
+    urls = [
+        settings.database_url.get_secret_value(),
+        settings.redis_url.get_secret_value(),
+        settings.openbao_addr,
+        settings.embedder_url,
+        settings.reranker_url,
+        settings.oidc_issuer,
+        settings.ollama_base_url,
+    ]
+    if settings.migrator_database_url is not None:
+        urls.append(settings.migrator_database_url.get_secret_value())
+    urls += [str(v) for cfg in settings.plugin_config.values() for v in cfg.values()]
+    hosts = set(_INFRA_HOSTS) | set(settings.connector_blocked_hosts)
+    for url in urls:
+        if url and "://" in str(url):
+            try:
+                host = urlsplit(str(url)).hostname
+            except ValueError:
+                continue
+            if host:
+                hosts.add(host)
+    allowed = {h.strip().lower() for h in settings.connector_allowed_internal_hosts}
+    return NetworkPolicy.build(
+        blocked_hosts=sorted(h for h in hosts if h.lower() not in allowed),
+        allowed_networks=settings.connector_allowed_networks,
+        allow_loopback=settings.connector_allow_loopback,
+    )
 
 
 def build_oauth_providers(settings: Settings) -> dict[str, OAuthProvider]:
@@ -452,6 +515,7 @@ def build_container(settings: Settings) -> Container:
         audit,
         oauth=oauth_client,
         providers=build_oauth_providers(settings),
+        network=build_network_policy(settings),
     )
     oauth = OAuthBroker(
         connections,

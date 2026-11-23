@@ -13,6 +13,7 @@ from aiagent.plugin_sdk.manifest import (
     ToolSpec,
     TriggerSpec,
 )
+from aiagent.plugin_sdk.net import BlockedEndpointError, Endpoint, NetworkPolicy
 from aiagent.plugin_sdk.plugin import (
     ConnectionContext,
     HealthStatus,
@@ -27,8 +28,11 @@ from aiagent.plugin_sdk.plugin import (
 __all__ = [
     "ENTRY_POINT_GROUPS",
     "PLUGIN_API_VERSION",
+    "BlockedEndpointError",
     "ConnectionContext",
+    "Endpoint",
     "HealthStatus",
+    "NetworkPolicy",
     "Plugin",
     "PluginContext",
     "PluginKind",

@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     oauth_google_client_id: str | None = None
     oauth_google_client_secret: SecretStr | None = None
 
+    # Đích mạng của connector (ADR-0023). Luôn chặn: loopback, link-local (metadata cloud),
+    # multicast và các dịch vụ hạ tầng của ARIES (tự suy từ các URL trong cấu hình + danh sách
+    # dưới). IP riêng của công ty (10.x, 192.168.x…) được phép, trừ khi đặt allowed_networks.
+    connector_blocked_hosts: list[str] = Field(default_factory=list)
+    # Ngoại lệ có chủ đích, ví dụ ["postgres"] để demo connector đọc database aries_demo.
+    connector_allowed_internal_hosts: list[str] = Field(default_factory=list)
+    # CIDR, ví dụ ["10.20.0.0/16"]; rỗng = không giới hạn dải mạng.
+    connector_allowed_networks: list[str] = Field(default_factory=list)
+    connector_allow_loopback: bool = False  # chỉ khi chạy backend trực tiếp trên máy dev
+
     mcp_stdio_commands: dict[str, list[str]] = Field(
         default_factory=lambda: {"aries_demo": [sys.executable, "-m", "aiagent_plugins.mcp_demo"]}
     )

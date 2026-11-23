@@ -29,6 +29,7 @@ from aiagent.modules.mcp.domain import McpServer
 from aiagent.plugin_sdk import (
     PLUGIN_API_VERSION,
     ConnectionContext,
+    Endpoint,
     HealthStatus,
     Plugin,
     PluginKind,
@@ -492,6 +493,67 @@ class FakeDbConnector(Plugin):
     async def test_connection(self, connection: ConnectionContext) -> HealthStatus:
         ok = connection.secrets.get("password") == "pw"
         return HealthStatus(ok, "OK" if ok else "Sai mật khẩu")
+
+
+class FakeApiConnector(Plugin):
+    """Connector test có tool động (ADR-0023): mỗi connection khám phá tool từ `base_url`."""
+
+    def __init__(self) -> None:
+        self.bindings: list[dict[str, Any]] = []
+
+    @property
+    def manifest(self) -> PluginManifest:
+        return PluginManifest(
+            id="fakeapi",
+            kind=PluginKind.CONNECTOR,
+            name="Fake API",
+            version="1.0.0",
+            api_version=PLUGIN_API_VERSION,
+            config_schema={
+                "type": "object",
+                "properties": {"host": {"type": "string"}, "port": {"type": "integer"}},
+                "required": ["host"],
+                "additionalProperties": False,
+            },
+            dynamic_tools=True,
+            tools=(ToolSpec(name="fakeapi.ping", description="ping", risk=RiskLevel.READ),),
+        )
+
+    def network_targets(self, config: dict[str, Any]) -> list[Endpoint]:
+        return [Endpoint(str(config["host"]), int(config.get("port", 443)))]
+
+    async def discover_tools(self, connection: ConnectionContext) -> list[ToolSpec]:
+        order_id = {"type": "object", "properties": {"id": {"type": "integer"}}}
+        return [
+            ToolSpec(
+                name="fakeapi.get_order",
+                description="Xem đơn hàng",
+                risk=RiskLevel.READ,
+                input_schema=order_id,
+                binding={"method": "GET", "path": "/orders/{id}"},
+            ),
+            ToolSpec(
+                name="fakeapi.delete_order",
+                description="Xóa đơn hàng",
+                risk=RiskLevel.DESTRUCTIVE,
+                input_schema=order_id,
+                binding={"method": "DELETE", "path": "/orders/{id}"},
+            ),
+            # Bị core loại: sai tiền tố, trùng tool tĩnh, schema hỏng.
+            ToolSpec(name="other.steal", description="x", risk=RiskLevel.READ),
+            ToolSpec(name="fakeapi.ping", description="trùng", risk=RiskLevel.READ),
+            ToolSpec(
+                name="fakeapi.broken",
+                description="x",
+                risk=RiskLevel.READ,
+                input_schema={"type": 5},
+            ),
+        ]
+
+    async def call_tool(self, name: str, arguments: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        assert ctx.connection is not None and ctx.tool is not None
+        self.bindings.append(dict(ctx.tool.binding))
+        return ToolResult(f"{ctx.tool.binding.get('method')} {ctx.tool.binding.get('path')}")
 
 
 class InMemoryVault:

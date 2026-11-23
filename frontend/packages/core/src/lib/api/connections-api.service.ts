@@ -49,6 +49,14 @@ export class ConnectionsApi {
     );
   }
 
+  /** Khám phá lại tool động của kết nối (ADR-0023). */
+  syncTools(id: string): Observable<ConnectionInfo> {
+    return this.http.post<ConnectionInfo>(
+      `${this.base}/v1/connections/${encodeURIComponent(id)}/sync-tools`,
+      {},
+    );
+  }
+
   remove(id: string): Observable<void> {
     return this.http.delete<void>(
       `${this.base}/v1/connections/${encodeURIComponent(id)}`,

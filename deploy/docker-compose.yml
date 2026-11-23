@@ -37,6 +37,9 @@ x-backend-env: &backend-env
   # Cấu hình không bí mật theo plugin.
   AIAGENT_PLUGIN_CONFIG: '{"web": {"searxng_url": "http://searxng:8080", "fetch_proxy": "http://squid:3129"}}'
   AIAGENT_PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+  # Đích mạng của connector (ADR-0023): hạ tầng ARIES (postgres, redis, openbao…) luôn bị chặn.
+  AIAGENT_CONNECTOR_ALLOWED_INTERNAL_HOSTS: ${CONNECTOR_ALLOWED_INTERNAL_HOSTS:-[]}
+  AIAGENT_CONNECTOR_ALLOWED_NETWORKS: ${CONNECTOR_ALLOWED_NETWORKS:-[]}
   # OAuth cho connector (ADR-0018). Bỏ trống secret = tắt nhà cung cấp đó.
   AIAGENT_OAUTH_PROVIDERS: >-
     {"keycloak": {"name": "SSO nội bộ (Keycloak)",
