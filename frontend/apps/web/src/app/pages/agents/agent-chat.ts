@@ -81,6 +81,21 @@ interface ChatItem {
   thinking?: string;
   error?: string;
   streaming?: boolean;
+  /** Tin nhắn người dùng đã gửi — có khi lỗi tạm thời (quá tải, mất kết nối) để bấm thử lại. */
+  retryMessage?: string;
+  retryable?: boolean;
+}
+
+/** Lỗi tạm thời của model/mạng: hiện nút thử lại. */
+const RETRYABLE_CODES = new Set(['llm_rate_limited', 'llm_unavailable']);
+function isRetryable(code?: unknown, status?: number): boolean {
+  return (
+    RETRYABLE_CODES.has(String(code)) ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
 }
 
 interface RunUsage {
@@ -264,10 +279,23 @@ export class AgentChat implements OnInit, OnDestroy {
     this.abort?.abort();
   }
 
-  protected async send(): Promise<void> {
-    const message = this.inputCtrl.value.trim();
+  /** Gửi lại tin nhắn bị lỗi tạm thời: bỏ cặp hỏi–đáp lỗi rồi gửi lại như mới. */
+  protected retry(item: ChatItem): void {
+    const message = item.retryMessage;
     if (!message || this.busy()) return;
-    this.inputCtrl.setValue('');
+    this.items.update((list) => {
+      const i = list.indexOf(item);
+      if (i < 0) return list;
+      const from = list[i - 1]?.role === 'user' ? i - 1 : i;
+      return [...list.slice(0, from), ...list.slice(i + 1)];
+    });
+    void this.send(message);
+  }
+
+  protected async send(text?: string): Promise<void> {
+    const message = (text ?? this.inputCtrl.value).trim();
+    if (!message || this.busy()) return;
+    if (text === undefined) this.inputCtrl.setValue('');
     this.error.set(null);
     this.busy.set(true);
 
@@ -276,6 +304,7 @@ export class AgentChat implements OnInit, OnDestroy {
       text: '',
       tools: [],
       streaming: true,
+      retryMessage: message,
     };
     this.items.update((list) => [
       ...list,
@@ -396,6 +425,7 @@ export class AgentChat implements OnInit, OnDestroy {
             break;
           case 'error':
             reply.error = String(d['message'] ?? 'Lỗi');
+            reply.retryable = isRetryable(d['code']);
             break;
         }
         touch();
@@ -406,9 +436,11 @@ export class AgentChat implements OnInit, OnDestroy {
         reply.error = 'Đã dừng.';
       } else if (e instanceof ChatStreamError) {
         reply.error = e.message;
+        reply.retryable = isRetryable(e.code, e.status);
         if (e.status === 409) this.threadId.set(null);
       } else {
         reply.error = 'Mất kết nối tới máy chủ.';
+        reply.retryable = true;
       }
     } finally {
       reply.streaming = false;

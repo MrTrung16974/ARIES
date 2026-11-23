@@ -13,6 +13,7 @@ Lịch sử trong ARIES theo định dạng Messages API (content block). Adapte
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -69,6 +70,15 @@ class OpenAICompatConfig:
     # Lọc danh sách model tự lấy từ /models (ví dụ OpenRouter chỉ lấy ":free").
     model_suffix: str | None = None
     extra_headers: dict[str, str] = field(default_factory=dict)
+    # Khi model quá tải (5xx) hoặc bị giới hạn (429): thử lại cùng model `overload_retries` lần
+    # (chờ retry_delay_s, 2×, 4×…), rồi lần lượt chuyển sang các model dự phòng.
+    fallback_models: tuple[str, ...] = ()
+    overload_retries: int = 0  # bootstrap đặt theo settings.llm_overload_retries
+    retry_delay_s: float = 1.0
+
+
+class ModelOverloadedError(ModelUnavailableError):
+    """Provider quá tải/lỗi tạm thời (5xx) — thử lại hoặc chuyển model dự phòng được."""
 
 
 # ---------------------------------------------------------------------- chuyển đổi định dạng
@@ -288,6 +298,8 @@ class OpenAICompatChatModel:
         if status < 400:
             return
         if status == 429:
+            # Ghi lại chi tiết: 429 có thể là rate limit tạm thời hoặc hết/không có quota (limit: 0).
+            logger.warning("%s 429 (model %s): %s", self._label, model, body[:1000])
             raise ModelRateLimitedError()
         if status in (401, 403):
             raise ModelUnavailableError(f"API key của {self._label} không hợp lệ hoặc thiếu quyền.")
@@ -303,16 +315,66 @@ class OpenAICompatChatModel:
         logger.error("%s lỗi %s: %s", self._label, status, body[:2000])
         if status == 400:
             raise ModelUnavailableError(f"Yêu cầu gửi tới model không hợp lệ{suffix}.")
-        if status == 503:
-            raise ModelUnavailableError(f"{self._label} đang quá tải, thử lại sau{suffix}.")
+        if status in (500, 502, 503, 504):
+            raise ModelOverloadedError(f"{self._label} đang quá tải, thử lại sau{suffix}.")
         raise ModelUnavailableError()
 
+    # ------------------------------------------------------------------ retry + fallback
+    def _candidates(self, model: str) -> list[str]:
+        return [model, *(m for m in dict.fromkeys(self._cfg.fallback_models) if m != model)]
+
+    async def _backoff(self, model: str, attempt: int, exc: Exception) -> None:
+        delay = self._cfg.retry_delay_s * (2**attempt)
+        logger.warning(
+            "%s model %s lỗi tạm thời (%s) — thử lại sau %.1fs", self._label, model, exc, delay
+        )
+        await asyncio.sleep(delay)
+
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelEvent]:
-        payload = self._payload(request)
+        """Như `_stream_model`, kèm thử lại khi quá tải và chuyển model dự phòng.
+
+        Chỉ thử lại khi chưa phát sự kiện nào (lỗi xảy ra trước khi model trả nội dung) —
+        đã stream dở thì báo lỗi luôn để không lặp/trộn câu trả lời."""
+        last: ModelUnavailableError | ModelRateLimitedError | None = None
+        for i, model in enumerate(self._candidates(request.model)):
+            if i:
+                logger.warning(
+                    "%s chuyển sang model dự phòng %s (model %s lỗi: %s)",
+                    self._label,
+                    model,
+                    request.model,
+                    last,
+                )
+            attempt = 0
+            while True:
+                emitted = False
+                try:
+                    async for event in self._stream_model(request, model):
+                        emitted = True
+                        yield event
+                    return
+                except ModelOverloadedError as exc:
+                    if emitted:
+                        raise
+                    last = exc
+                    if attempt >= self._cfg.overload_retries:
+                        break
+                    await self._backoff(model, attempt, exc)
+                    attempt += 1
+                except ModelRateLimitedError as exc:
+                    # 429 thường là hết quota/giới hạn theo model → đổi model thay vì chờ.
+                    if emitted:
+                        raise
+                    last = exc
+                    break
+        raise last or ModelUnavailableError()
+
+    async def _stream_model(self, request: ModelRequest, model: str) -> AsyncIterator[ModelEvent]:
+        payload = {**self._payload(request), "model": model}
         attempt = 0
         while True:
             try:
-                async for event in self._stream_once(payload, request.model):
+                async for event in self._stream_once(payload, model):
                     yield event
                 return
             except ValueError:
@@ -422,10 +484,36 @@ class OpenAICompatChatModel:
 
     # ------------------------------------------------------------------ structured outputs
     async def generate_json(self, request: StructuredRequest) -> StructuredResult:
+        """`_generate_json_model` kèm thử lại khi quá tải và chuyển model dự phòng."""
+        last: ModelUnavailableError | ModelRateLimitedError | None = None
+        for i, model in enumerate(self._candidates(request.model)):
+            if i:
+                logger.warning(
+                    "%s chuyển sang model dự phòng %s (model %s lỗi: %s)",
+                    self._label,
+                    model,
+                    request.model,
+                    last,
+                )
+            for attempt in range(self._cfg.overload_retries + 1):
+                try:
+                    return await self._generate_json_model(request, model)
+                except ModelOverloadedError as exc:
+                    last = exc
+                    if attempt < self._cfg.overload_retries:
+                        await self._backoff(model, attempt, exc)
+                except ModelRateLimitedError as exc:
+                    last = exc
+                    break
+        raise last or ModelUnavailableError()
+
+    async def _generate_json_model(
+        self, request: StructuredRequest, model: str
+    ) -> StructuredResult:
         """JSON theo schema qua `response_format: json_schema`; provider không hỗ trợ →
         lùi về `json_object` + schema trong system prompt."""
         base: dict[str, Any] = {
-            "model": request.model,
+            "model": model,
             "max_tokens": request.max_tokens,
         }
         if self._cfg.send_reasoning_effort:
@@ -463,7 +551,7 @@ class OpenAICompatChatModel:
             if resp.status_code == 400 and i == 0:
                 logger.info("%s không nhận json_schema, lùi về json_object", self._label)
                 continue
-            self._raise_for_status(resp.status_code, resp.text, request.model)
+            self._raise_for_status(resp.status_code, resp.text, model)
             break
         if resp is None:  # pragma: no cover - attempts luôn có phần tử
             raise ModelUnavailableError()

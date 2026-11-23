@@ -574,6 +574,7 @@ class RunAgentService:
         tenant = p.principal.tenant_id
         status: RunStatus = RunStatus.FAILED
         error: str | None = "Run bị ngắt."
+        error_code: str | None = None  # mã AppError → client biết lỗi có retry được không
         usage = Usage()
         model_name = spec.model.model
         last_assistant_id: int | None = None  # để client gửi feedback cho câu trả lời (ADR-0020)
@@ -663,7 +664,7 @@ class RunAgentService:
         except TimeoutError:
             status, error = RunStatus.FAILED, f"Quá thời gian cho phép ({spec.limits.timeout_s}s)."
         except AppError as exc:
-            status, error = RunStatus.FAILED, exc.message
+            status, error, error_code = RunStatus.FAILED, exc.message, exc.code
         except Exception:
             logger.exception("Run %s lỗi", p.run.id)
             status, error = RunStatus.FAILED, "Lỗi nội bộ khi chạy agent."
@@ -672,7 +673,10 @@ class RunAgentService:
             await asyncio.shield(self._finish(p, status, usage, cost, error))
 
         if error and status not in _OK_STATUSES:
-            yield RunEvent(RunEventType.ERROR, {"message": error, "status": status.value})
+            yield RunEvent(
+                RunEventType.ERROR,
+                {"message": error, "status": status.value, "code": error_code},
+            )
         yield RunEvent(
             RunEventType.USAGE, {**usage.as_dict(), "cost_usd": estimate_cost(model_name, usage)}
         )

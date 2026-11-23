@@ -28,9 +28,20 @@ def _normalize_url(provider_id: str, base_url: str | None) -> str:
 
 
 class DefaultProviderFactory:
-    def __init__(self, *, app_name: str = "ARIES", timeout_s: float = 600.0) -> None:
+    def __init__(
+        self,
+        *,
+        app_name: str = "ARIES",
+        timeout_s: float = 600.0,
+        fallback_models: dict[str, list[str]] | None = None,
+        overload_retries: int = 2,
+        retry_delay_s: float = 1.0,
+    ) -> None:
         self._app_name = app_name
         self._timeout_s = timeout_s
+        self._fallback = fallback_models or {}
+        self._retries = overload_retries
+        self._retry_delay_s = retry_delay_s
 
     def build(
         self,
@@ -56,6 +67,9 @@ class DefaultProviderFactory:
             send_reasoning_effort=provider_id == "gemini",
             model_suffix=":free" if free_only else None,
             extra_headers=extra_headers,
+            fallback_models=tuple(self._fallback.get(provider_id, [])),
+            overload_retries=self._retries,
+            retry_delay_s=self._retry_delay_s,
         )
         return OpenAICompatChatModel(cfg, timeout_s=self._timeout_s)
 

@@ -21,6 +21,7 @@ from aiagent.modules.runtime.domain import (
     TurnCompleted,
 )
 from aiagent.modules.runtime.infrastructure.openai_compat_model import (
+    ModelOverloadedError,
     OpenAICompatChatModel,
     OpenAICompatConfig,
     to_openai_messages,
@@ -196,7 +197,8 @@ async def test_invalid_tool_json_retries_then_fails() -> None:
         (429, ModelRateLimitedError, ""),
         (401, ModelUnavailableError, "API key"),
         (404, ModelUnavailableError, "ollama pull qwen3:8b"),
-        (500, ModelUnavailableError, ""),
+        (500, ModelOverloadedError, ""),
+        (503, ModelOverloadedError, "quá tải"),
     ],
 )
 async def test_http_errors_are_mapped(status: int, exc: type[Exception], fragment: str) -> None:
@@ -281,3 +283,104 @@ def test_ollama_is_local_for_restricted_data() -> None:
     router = ModelRouter({"ollama": object(), "gemini": object()})  # type: ignore[dict-item]
     assert "ollama" in router._local
     assert "gemini" not in router._local
+
+
+# ---------------------------------------------------------------------- retry + fallback
+def _ok_sse(text: str) -> httpx.Response:
+    return httpx.Response(
+        200,
+        content=_sse(
+            {"model": "x", "choices": [{"delta": {"content": text}}]},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        ),
+        headers={"content-type": "text/event-stream"},
+    )
+
+
+def _overloaded() -> httpx.Response:
+    return httpx.Response(503, json=[{"error": {"code": 503, "message": "high demand"}}])
+
+
+async def test_overload_retries_same_model_then_succeeds() -> None:
+    replies = iter([_overloaded(), _ok_sse("xin chào")])
+    model, seen = _model(lambda r: next(replies), "gemini", overload_retries=2, retry_delay_s=0)
+    events = await _collect(model, _req())
+    assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "xin chào"
+    assert [p["model"] for p in seen] == ["qwen3:8b", "qwen3:8b"]
+
+
+async def test_overload_falls_back_to_next_model() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        m = json.loads(request.content)["model"]
+        return _ok_sse("từ dự phòng") if m == "backup" else _overloaded()
+
+    model, seen = _model(
+        handler,
+        "gemini",
+        fallback_models=("qwen3:8b", "backup"),  # trùng model chính → bỏ qua
+        overload_retries=1,
+        retry_delay_s=0,
+    )
+    events = await _collect(model, _req())
+    assert isinstance(events[-1], TurnCompleted)
+    assert [p["model"] for p in seen] == ["qwen3:8b", "qwen3:8b", "backup"]
+
+
+async def test_rate_limit_skips_retry_and_uses_fallback() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        m = json.loads(request.content)["model"]
+        return _ok_sse("ok") if m == "backup" else httpx.Response(429, json={"error": "quota"})
+
+    model, seen = _model(
+        handler, "gemini", fallback_models=("backup",), overload_retries=2, retry_delay_s=0
+    )
+    await _collect(model, _req())
+    assert [p["model"] for p in seen] == ["qwen3:8b", "backup"]
+
+
+async def test_all_models_overloaded_raises_last_error() -> None:
+    model, seen = _model(
+        lambda r: _overloaded(),
+        "gemini",
+        fallback_models=("backup",),
+        overload_retries=1,
+        retry_delay_s=0,
+    )
+    with pytest.raises(ModelOverloadedError):
+        await _collect(model, _req())
+    assert len(seen) == 4  # 2 lần model chính + 2 lần dự phòng
+
+
+async def test_no_retry_after_stream_started() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = _sse(
+            {"choices": [{"delta": {"content": "dở"}}]},
+            {"error": {"code": 503, "message": "high demand"}},
+        )
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    model, seen = _model(
+        handler, "gemini", fallback_models=("backup",), overload_retries=2, retry_delay_s=0
+    )
+    with pytest.raises(ModelOverloadedError):
+        await _collect(model, _req())
+    assert len(seen) == 1  # đã phát nội dung → không gửi lại, tránh trả lời lặp
+
+
+async def test_generate_json_falls_back_on_overload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if json.loads(request.content)["model"] != "backup":
+            return _overloaded()
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"a": 1}'}, "finish_reason": "stop"}]},
+        )
+
+    model, seen = _model(
+        handler, "gemini", fallback_models=("backup",), overload_retries=1, retry_delay_s=0
+    )
+    result = await model.generate_json(
+        StructuredRequest(model="main", system="s", prompt="p", schema={"type": "object"})
+    )
+    assert result.data == {"a": 1}
+    assert [p["model"] for p in seen] == ["main", "main", "backup"]

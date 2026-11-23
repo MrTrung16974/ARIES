@@ -271,3 +271,18 @@ header {
 summary mat-spinner {
   display: inline-block;
 }
+
+.error-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+
+  ui-notice {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .retry {
+    flex: none;
+  }
+}

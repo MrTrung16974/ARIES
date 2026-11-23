@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -446,11 +447,28 @@ def openai_compat_configs(settings: Settings) -> list[tuple[OpenAICompatConfig, 
     return out
 
 
+def fallback_models(settings: Settings) -> dict[str, list[str]]:
+    """Model dự phòng theo provider (dùng khi model chính quá tải / bị giới hạn)."""
+    return {
+        "gemini": settings.gemini_fallback_models,
+        "groq": settings.groq_fallback_models,
+        "openrouter": settings.openrouter_fallback_models,
+        "ollama": settings.ollama_fallback_models,
+    }
+
+
 def build_model_providers(settings: Settings) -> dict[str, ChatModelPort]:
     providers: dict[str, ChatModelPort] = {}
     if key := _secret(settings.anthropic_api_key):
         providers["anthropic"] = AnthropicChatModel(key, base_url=settings.anthropic_base_url)
+    fallbacks = fallback_models(settings)
     for cfg, _ in openai_compat_configs(settings):
+        cfg = dataclasses.replace(
+            cfg,
+            fallback_models=tuple(fallbacks.get(cfg.provider, [])),
+            overload_retries=settings.llm_overload_retries,
+            retry_delay_s=settings.llm_retry_delay_seconds,
+        )
         providers[cfg.provider] = OpenAICompatChatModel(
             cfg, timeout_s=settings.llm_request_timeout_seconds
         )
@@ -576,6 +594,9 @@ def build_container(settings: Settings) -> Container:
         DefaultProviderFactory(
             app_name=settings.app_name,
             timeout_s=settings.llm_request_timeout_seconds,
+            fallback_models=fallback_models(settings),
+            overload_retries=settings.llm_overload_retries,
+            retry_delay_s=settings.llm_retry_delay_seconds,
         ),
         router,
         model_catalog,

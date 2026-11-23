@@ -47,6 +47,21 @@ export interface BuilderItem {
     error: string | null;
   };
   error?: boolean;
+  /** Lỗi tạm thời (quá tải, mất kết nối): lưu yêu cầu để bấm thử lại. */
+  retry?: { payload: RunPayload; shown: string };
+}
+
+type RunPayload = { message: string } | { answers: Record<string, string> };
+
+const RETRYABLE_CODES = new Set(['llm_rate_limited', 'llm_unavailable']);
+function isRetryable(code?: unknown, status?: number): boolean {
+  return (
+    RETRYABLE_CODES.has(String(code)) ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
 }
 
 const RISK_LABEL: Record<string, string> = {
@@ -244,15 +259,25 @@ export class Builder implements OnInit, OnDestroy {
   }
 
   // ---------------------------------------------------------------- stream
+  /** Gửi lại yêu cầu bị lỗi tạm thời (không lặp lại tin nhắn của người dùng). */
+  protected retry(item: BuilderItem): void {
+    const r = item.retry;
+    if (!r || this.busy()) return;
+    this.items.update((list) => list.filter((x) => x !== item));
+    void this.run(r.payload, r.shown, false);
+  }
+
   private async run(
-    payload: { message: string } | { answers: Record<string, string> },
+    payload: RunPayload,
     shown: string,
+    echo = true,
   ): Promise<void> {
     const s = this.view();
     if (!s || this.busy()) return;
     this.busy.set(true);
     this.error.set(null);
-    this.push({ role: 'user', text: shown });
+    if (echo) this.push({ role: 'user', text: shown });
+    const retry = { payload, shown };
     this.abort = new AbortController();
     try {
       for await (const ev of this.api.send(s.id, payload, this.abort.signal)) {
@@ -330,6 +355,7 @@ export class Builder implements OnInit, OnDestroy {
               role: 'architect',
               text: String(d['message']),
               error: true,
+              retry: isRetryable(d['code']) ? retry : undefined,
             });
             break;
           case 'done':
@@ -341,13 +367,21 @@ export class Builder implements OnInit, OnDestroy {
         this.scrollDown();
       }
     } catch (e) {
+      const aborted = e instanceof DOMException && e.name === 'AbortError';
       const text =
         e instanceof ChatStreamError
           ? e.message
-          : e instanceof DOMException && e.name === 'AbortError'
+          : aborted
             ? 'Đã dừng.'
             : 'Mất kết nối tới máy chủ.';
-      this.push({ role: 'architect', text, error: true });
+      const canRetry =
+        e instanceof ChatStreamError ? isRetryable(e.code, e.status) : !aborted;
+      this.push({
+        role: 'architect',
+        text,
+        error: true,
+        retry: canRetry ? retry : undefined,
+      });
     } finally {
       this.status.set(null);
       this.progress.set(null);

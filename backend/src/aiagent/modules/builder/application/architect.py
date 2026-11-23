@@ -264,7 +264,7 @@ class ArchitectService:
                 yield event
         except AppError as exc:
             reply_parts.append(exc.message)
-            yield BuilderEvent("error", {"message": exc.message})
+            yield BuilderEvent("error", {"message": exc.message, "code": exc.code})
         except Exception:
             logger.exception("Architect lỗi ở phiên %s", session.id)
             yield BuilderEvent("error", {"message": "Architect gặp lỗi nội bộ."})

@@ -18,6 +18,9 @@ x-backend-env: &backend-env
   # Provider tương thích OpenAI (có gói free). Bỏ trống key = tắt. *_MODELS: JSON list, [] = tự lấy.
   AIAGENT_GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   AIAGENT_GEMINI_MODELS: ${GEMINI_MODELS:-[]}
+  # Model dự phòng khi model chính quá tải (503) / bị giới hạn (429) — thử theo thứ tự.
+  AIAGENT_GEMINI_FALLBACK_MODELS: '${GEMINI_FALLBACK_MODELS:-["gemini-3.5-flash","gemini-flash-lite-latest"]}'
+  AIAGENT_LLM_OVERLOAD_RETRIES: ${LLM_OVERLOAD_RETRIES:-2}
   AIAGENT_GROQ_API_KEY: ${GROQ_API_KEY:-}
   AIAGENT_GROQ_MODELS: ${GROQ_MODELS:-[]}
   AIAGENT_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -224,7 +227,7 @@ services:
   # ------------------------------------------------------------------ knowledge (ADR-0019)
   # TEI bản CPU, chỉ trong mạng nội bộ; tải model lần đầu qua egress proxy (allowlist HF).
   embedder:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cpu-1.9}
     # Batch nhỏ + 2 luồng: giới hạn RAM/CPU trên máy không GPU (ADR-0019).
     # --max-batch-tokens 2048 + --auto-truncate ⇒ max input length cũng = 2048 (chunk ~800 token).
     # Để 8192 thì warmup chạy chuỗi 8192 token → attention O(n²) vượt mem_limit → OOM-kill lặp.
@@ -251,7 +254,7 @@ services:
     # Tùy chọn (tốn thêm ~3–4 GB RAM): docker compose --profile rerank up -d reranker
     # Không bật thì tìm kiếm vẫn chạy (vector + từ khóa + RRF), chỉ không có bước rerank.
     profiles: [rerank]
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cpu-1.9}
     command: ["--model-id", "BAAI/bge-reranker-v2-m3", "--port", "80", "--auto-truncate",
               "--max-client-batch-size", "32", "--max-batch-tokens", "4096",
               "--tokenization-workers", "2"]

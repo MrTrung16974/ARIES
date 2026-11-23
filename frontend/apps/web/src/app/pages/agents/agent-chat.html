@@ -403,9 +403,17 @@
               <div class="bubble typing"><mat-spinner diameter="16" /></div>
             }
             @if (m.error) {
-              <ui-notice severity="error" [compact]="true">{{
-                m.error
-              }}</ui-notice>
+              <div class="error-row">
+                <ui-notice severity="error" [compact]="true">{{
+                  m.error
+                }}</ui-notice>
+                @if (m.retryable && m.retryMessage && !busy()) {
+                  <button mat-icon-button type="button" class="retry"
+                          (click)="retry(m)" aria-label="Thử lại" title="Thử lại">
+                    <mat-icon class="sm" svgIcon="refresh" />
+                  </button>
+                }
+              </div>
             }
           </div>
         </div>

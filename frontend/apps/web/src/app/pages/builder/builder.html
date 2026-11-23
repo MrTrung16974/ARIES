@@ -54,7 +54,15 @@
             />
             {{ m.role === 'user' ? 'Bạn' : 'ARIES Architect' }}
           </div>
-          <div class="bubble">{{ m.text }}</div>
+          <div class="bubble-row">
+            <div class="bubble">{{ m.text }}</div>
+            @if (m.retry && !busy()) {
+              <button mat-icon-button type="button" class="retry"
+                      (click)="retry(m)" aria-label="Thử lại" title="Thử lại">
+                <mat-icon class="sm" svgIcon="refresh" />
+              </button>
+            }
+          </div>
           @if (m.changes?.length) {
             <ul class="changes">
               @for (c of m.changes; track $index) {

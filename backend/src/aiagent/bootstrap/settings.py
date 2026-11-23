@@ -113,6 +113,14 @@ class Settings(BaseSettings):
     ollama_base_url: str | None = None
     ollama_models: list[str] = Field(default_factory=list)
     llm_request_timeout_seconds: float = Field(default=600.0, gt=0, le=3600)
+    # Model quá tải (5xx): thử lại cùng model N lần (chờ delay, 2×delay…); vẫn lỗi hoặc gặp 429
+    # thì lần lượt chuyển sang model dự phòng của provider (rỗng = không chuyển).
+    llm_overload_retries: int = Field(default=2, ge=0, le=5)
+    llm_retry_delay_seconds: float = Field(default=1.0, ge=0, le=30)
+    gemini_fallback_models: list[str] = Field(default_factory=list)
+    groq_fallback_models: list[str] = Field(default_factory=list)
+    openrouter_fallback_models: list[str] = Field(default_factory=list)
+    ollama_fallback_models: list[str] = Field(default_factory=list)
     # Model giả "fake-echo" cho dev/demo không cần key. Không bật ở prod.
     llm_fake_enabled: bool = False
     tool_timeout_seconds: float = Field(default=30.0, gt=0, le=300)

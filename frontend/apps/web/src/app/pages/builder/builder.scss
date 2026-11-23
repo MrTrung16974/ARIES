@@ -328,3 +328,17 @@
 .tab-body {
   padding: 0.65rem 0;
 }
+
+.bubble-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+
+  .bubble {
+    min-width: 0;
+  }
+
+  .retry {
+    flex: none;
+  }
+}
