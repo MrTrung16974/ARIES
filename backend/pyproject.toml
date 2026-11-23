@@ -54,6 +54,7 @@ postgres = "aiagent_plugins.connector_postgres:PostgresConnector"
 google = "aiagent_plugins.connector_oidc:GoogleAccountConnector"
 sso = "aiagent_plugins.connector_oidc:SsoProfileConnector"
 gmail = "aiagent_plugins.connector_gmail:GmailConnector"
+http_api = "aiagent_plugins.connector_http:HttpApiConnector"
 
 [project.scripts]
 aiagent-worker = "aiagent.workers.main:run"
